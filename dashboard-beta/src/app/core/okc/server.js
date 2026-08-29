@@ -1,5 +1,6 @@
 var net = require('net');
 var Watching = require('./watching');
+var scrub = require('./scrub').scrub;
 var os = require('os');
 var path = require('path');
 
@@ -203,10 +204,15 @@ async function plugin(imports, register) {
         //anywhere and set only here.
         var reach = actions ? function (n, a) { return actions.call(n, a); } : call;
 
+        //NOTHING LEAVES CARRYING A SECRET. Every answer that crosses this
+        //socket -- to the window, to okc.js, into a capture -- is scrubbed by
+        //field name first; see ./scrub.js for what that means and why by
+        //name. The value stays on the host for the thing that reads it in
+        //process; the wire sees `[held]`.
         client.on('okc:call', function (msg, reply) {
             if (typeof reply != 'function') return;
             reach(msg && msg.action, msg && msg.args).then(
-                function (result) { reply({ ok: true, result: result }); },
+                function (result) { reply({ ok: true, result: scrub(result) }); },
                 function (e) { reply({ ok: false, error: e.message }); }
             );
         });

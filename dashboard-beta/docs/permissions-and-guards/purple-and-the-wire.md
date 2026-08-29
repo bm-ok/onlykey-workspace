@@ -33,6 +33,18 @@ same list, and the Guarded shelf on Settings → Kit is the complete one.
 Everything else is one surface: the window, the command line and the next
 person use the same actions with the same rules.
 
+## What never crosses the wire
+
+Every answer that leaves the host over the socket — to the window, to
+`okc.js`, into a capture — is scrubbed by field name first: `token`,
+`password`, `secret`, `passphrase`, `privateKey`, `credential`, and anything
+ending in `Token`, `Password` or `Secret` reads `[held]`. The value stays on
+the host for the thing that reads it in process. Names that *describe* a
+secret — `holdsCredential`, `fingerprint`, `tokenName` — stay, because they
+are how you tell that one is held. `test/rules/no-secret-leaves.test.js`
+holds the rule; it was written the day `vmList` was found carrying every
+machine's bootstrap token out.
+
 ## Guards you add
 
 Settings → Guards lists every button and field the app has drawn
