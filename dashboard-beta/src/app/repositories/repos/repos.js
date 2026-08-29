@@ -197,7 +197,10 @@ module.exports = function repos(theme, okc) {
         //WHAT EACH PLACE IS, in one phrase, so the list reads without the badges
         //a table would have carried.
         function whatIs(l) {
-            if (l.self) return 'yours — work stays here';
+            //NOT "work stays here" ANY MORE. That described a fallback that no
+            //longer exists: picking your own remote is now a decision like any
+            //other, and while nothing is picked the work goes nowhere at all.
+            if (l.self) return 'yours';
             if (!l.fork) return 'the project';
             return 'a fork above yours';
         }
@@ -218,6 +221,29 @@ module.exports = function repos(theme, okc) {
                 pulls: which === 'pulls' ? next : reads.pulls
             }).then(function (x) { onChanged(x && x.note); },
                 function (e) { onChanged(e.message, true); });
+        }
+
+        //SAYING "NOWHERE" IS A DECISION AND IS ASKED FOR LIKE ONE. It is the
+        //answer for a repository this app should read and judge but never open a
+        //pull request from, and until there was a row for it the only way to
+        //express it was to leave the card amber for ever.
+        function chooseNowhere() {
+            if (now.off) return;
+            ask({
+                title: 'Send nothing from ' + r.repo + '?',
+                plain: [
+                    'No pull request is ever opened from this repository. Its issues and pull requests are '
+                        + 'still read, and a judge can still be asked to read one.',
+                    'Recorded as a decision, so this stops asking to be pointed somewhere.',
+                    'Pick one of the places below instead, at any time, and it starts sending again.'
+                ],
+                fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'I only read this one' }],
+                confirm: 'Send nothing from here',
+                onYes: function (v) {
+                    return okc.call('repoTargetSet', { repo: r.repo, off: true, why: v.why || null })
+                        .then(function (x) { onChanged(x && x.note); });
+                }
+            });
         }
 
         function choose(on) {
@@ -262,15 +288,24 @@ module.exports = function repos(theme, okc) {
                     anybody chose it, and that is the distinction this card
                     exists to make: the same remote means two different things
                     depending on whether somebody decided it. */}
+                {/* THREE STATES, AND TWO OF THEM USED TO READ THE SAME.
+                    "Nothing picked" drew the repository's own row as a ticked
+                    radio and then called itself not picked — so the one press
+                    that would have settled it was the press that changed
+                    nothing. Nothing picked now means nothing is sent, and
+                    "nowhere" is something somebody can actually say. */}
                 <Note>
-                    {now.chosen
-                        ? <span>{'Issues are read from ' + now.on + ' and pull requests open into it.'
-                            + (now.at ? ' You picked that on ' + String(now.at).slice(0, 10) + '.' : '')}</span>
-                        : <span>
-                            <strong>{'Nothing has been picked, so this keeps to itself. '}</strong>
-                            {'Issues and pull requests both stay on ' + (now.on || 'this repository')
-                                + '. That is right if this IS the project — say so below and it stops asking.'}
-                        </span>}
+                    {now.off
+                        ? <span>{'This sends work nowhere. Issues and pull requests are still read; no pull request is opened from it.'
+                            + (now.at ? ' Set on ' + String(now.at).slice(0, 10) + '.' : '')}</span>
+                        : now.chosen
+                            ? <span>{'Pull requests from here open into ' + now.on + '.'
+                                + (now.at ? ' You picked that on ' + String(now.at).slice(0, 10) + '.' : '')}</span>
+                            : <span>
+                                <strong>{'Nothing has been picked, so nothing is sent. '}</strong>
+                                {'A cut refuses until somewhere is chosen below — the fork you collaborate through, '
+                                    + 'the project itself, or nowhere if this repository should never send work.'}
+                            </span>}
                 </Note>
 
                 {chain && chain.stopped ? <Note kind="bad">{chain.stopped}</Note> : null}
@@ -296,6 +331,37 @@ module.exports = function repos(theme, okc) {
                                 <span className="muted">send to</span>
                             </React.Fragment>
                         }><span className="muted">read from</span></Part>
+
+                        {/* NOWHERE, AT THE TOP, AND IT IS A REAL ROW.
+                            A radio group where the answer "none of these" cannot
+                            be expressed has to fake it, and this one faked it by
+                            ticking the repository's own row — which is why the
+                            badge and the list contradicted each other. With this
+                            row present, the selection is always somewhere true:
+                            here while nothing is picked, and here again when
+                            somebody says so on purpose.
+
+                            IT IS NOT A READ QUESTION, so the two checkbox
+                            columns are empty rather than disabled — there is
+                            nothing being switched off, there is simply no such
+                            question about a destination that does not exist. */}
+                        <Part right={
+                            <React.Fragment>
+                                <span />
+                                <span />
+                                <label className="inline" title="Do not open pull requests from this repository at all">
+                                    <input type="radio" name={'sendto-' + r.repo}
+                                        checked={!now.on}
+                                        aria-label={'send work nowhere from ' + r.repo}
+                                        onChange={function () { chooseNowhere(); }} />
+                                </label>
+                            </React.Fragment>
+                        }>
+                            <Mono>nowhere</Mono>
+                            {now.off
+                                ? <Badge kind="ok">chosen</Badge>
+                                : (!now.chosen ? <Badge kind="warn">nothing picked yet</Badge> : null)}
+                        </Part>
 
                         {links.map(function (l) {
                             var canSend = l.self || l.mayOpen;
@@ -556,7 +622,17 @@ module.exports = function repos(theme, okc) {
                         //second time, and the fix this time is to ASK ABOUT THE
                         //TARGET rather than to rename the row again.
                         <KvRow label={r.target && r.target.upstream ? 'target fork' : 'work goes to'}>
-                            <Mono>{(r.target && r.target.on) || '(nowhere — no remote)'}</Mono>
+                            {/* THREE REASONS THERE IS NO DESTINATION AND THEY
+                                ARE NOT THE SAME. This said "(nowhere — no
+                                remote)" for all of them, which was written when
+                                the only way to have no target was to have no
+                                origin — and once nothing-picked stopped falling
+                                back to your own remote it started saying "no
+                                remote" about repositories that plainly have
+                                one, beside a line claiming work stays here. */}
+                            <Mono>{(r.target && r.target.on)
+                                || (r.target && r.target.off ? '(nowhere — chosen)'
+                                    : (r.target && r.target.self ? '(nothing picked)' : '(no remote called origin)'))}</Mono>
                             <span>{'  '}</span>
                             {/* YOUR OWN REMOTE IS NOT A TARGET FORK, and asking
                                 whether this token can open a pull request on it
@@ -568,8 +644,12 @@ module.exports = function repos(theme, okc) {
 
                                 The label goes with it. "target fork" promises a
                                 fork work is sent TO. */}
-                            {r.target && !r.target.upstream
-                                ? <span className="muted">work stays here — nothing is sent upstream</span>
+                            {r.target && !r.target.on
+                                ? <span className="muted">{r.target.off
+                                    ? 'nothing is opened from here, by choice'
+                                    : 'nothing is sent until somewhere is chosen below'}</span>
+                                : r.target && !r.target.upstream
+                                ? <span className="muted">work stays on your own remote — nothing is sent upstream</span>
                                 : !r.intoTarget
                                     ? <span className="muted">not asked yet</span>
                                     : <span className={r.intoTarget.mayOpen ? 'ok' : 'bad'}>

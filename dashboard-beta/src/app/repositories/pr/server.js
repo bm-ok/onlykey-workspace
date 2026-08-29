@@ -507,7 +507,29 @@ async function plugin(imports, register) {
 
         var known = await relayed('repositories');
         var row = ((known && known.repos) || []).filter(function (r) { return r.repo === repo; })[0];
-        var target = want.into || (row && row.target && row.target.on) || (remote.owner + '/' + remote.repo);
+
+        //---- WHERE IT GOES IS ASKED, NOT ASSUMED -----------------------------
+        //
+        //THIS FELL BACK TO YOUR OWN REMOTE, so a repository nobody had chosen a
+        //destination for opened a pull request FROM your fork INTO your fork —
+        //quietly, and looking exactly like a cut that had gone somewhere. On a
+        //workspace of somebody else's forks that was every repository at once.
+        //
+        //`want.into` STILL WINS, because a cut may name its own destination and
+        //the New PR Cut pane does. What is gone is guessing when nobody said.
+        var chose = row && row.target ? row.target : null;
+        var target = want.into || (chose && chose.on) || null;
+        if (!target) {
+            return {
+                repo: repo, opened: false,
+                why: chose && chose.off
+                    ? '"' + repo + '" is set to send work nowhere, so no pull request is opened from it. '
+                        + 'Repositories → Repos → Where work goes, if that should change.'
+                    : 'Nothing is picked for "' + repo + '", so there is nowhere to open a pull request. '
+                        + 'Repositories → Repos → Where work goes — pick the fork or the project it should go '
+                        + 'to, or pick "nowhere" if this repository should not send work at all.'
+            };
+        }
         var bits = String(target).split('/');
         var crossing = target !== (remote.owner + '/' + remote.repo);
         var head = crossing ? remote.owner + ':' + want.head : want.head;
@@ -1249,11 +1271,21 @@ async function plugin(imports, register) {
 
                     var mine = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
                     var row = rows.filter(function (x) { return x.repo === r.repo; })[0];
-                    var into = (row && row.target && row.target.on) || mine;
+                    //NULL WHERE NOBODY PICKED, so the preview shows the same
+                    //nothing the cut would refuse on rather than drawing your
+                    //own remote as the destination. `intoWhy` is the sentence
+                    //the pane puts in its place.
+                    var chose = row && row.target ? row.target : null;
+                    var into = (chose && chose.on) || null;
 
                     where.push({
                         repo: r.repo, branch: r.head, base: r.base, ahead: r.ahead,
                         from: mine, into: into,
+                        //WHY THERE IS NO DESTINATION, said here so the preview
+                        //does not have to guess which of the two it is.
+                        intoWhy: into ? null : (chose && chose.off
+                            ? 'set to send work nowhere'
+                            : 'nothing picked — Repositories → Repos → Where work goes'),
                         //AND WHETHER IT CROSSES AT ALL, which is the one-word
                         //version of the two addresses under it.
                         crossing: !!(mine && into && into !== mine),

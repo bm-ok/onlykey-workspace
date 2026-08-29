@@ -21,6 +21,9 @@ touches, tracked here as one landing. It needs a **line** to cut from and a
    on and off.
 4. **Cut it.** Pushes each branch to its repository's GitHub remote and
    opens the pull requests, into the repository chosen by *Send work to*.
+   A repository with nothing picked is **refused and named** rather than
+   guessed at, and one set to send **nowhere** is skipped with its reason —
+   the preview says the same thing beforehand, in the *into* column.
 
 ## Afterwards
 

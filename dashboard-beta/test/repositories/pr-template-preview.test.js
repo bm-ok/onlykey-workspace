@@ -147,12 +147,28 @@ test('it names the whole address on both sides, not just how many repositories',
     assert.match(said.where[0].intoUrl, /github\.com\/someone-else\/repo-one/);
 });
 
-test('with nowhere picked it goes to this host\'s own remote, and says it is not crossing', async () => {
+//THE PREVIEW SHOWS THE NOTHING THE CUT WOULD REFUSE ON.
+//
+//It used to draw this host's own remote as the destination when nobody had
+//picked one -- the same fallback the pane drew as a ticked radio while calling
+//itself "not picked". A preview that shows a pull request landing somewhere the
+//press would refuse is worse than no preview, because its whole job is being
+//believed.
+test('with nothing picked there is no destination, and it says which nothing it is', async () => {
     const w = await loaded({ repos: [{ repo: 'repo-one' }] });
     const said = await w.preview.run({ source: 'fix/thing', target: 'default' });
 
-    assert.equal(said.where[0].into, 'me/repo-one');
+    assert.equal(said.where[0].into, null, 'a destination nobody picked was drawn as the destination');
     assert.equal(said.where[0].crossing, false);
+    assert.match(said.where[0].intoWhy, /nothing picked/);
+});
+
+test('and one set to send nowhere says that instead', async () => {
+    const w = await loaded({ repos: [{ repo: 'repo-one', target: { off: true } }] });
+    const said = await w.preview.run({ source: 'fix/thing', target: 'default' });
+
+    assert.equal(said.where[0].into, null);
+    assert.match(said.where[0].intoWhy, /nowhere/);
 });
 
 test('the target comes from the repository record, never from the git remote', async () => {

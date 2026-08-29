@@ -507,14 +507,60 @@ test('moving origin makes what was learnt read as stale, not as current', async 
 //WHERE WORK GOES, WHICH IS A DECISION AND NOT A FACT.
 //---------------------------------------------------------------------------
 
-test('unset means your own remote, and it says which it is showing', async () => {
+//UNSET USED TO MEAN "YOUR OWN REMOTE", AND THAT WAS THE DEFECT.
+//
+//The pane drew that fallback as a ticked radio and its badge said "not picked"
+//in the same corner. Both described the same repository and only one could be
+//right; pressing the ticked row changed nothing, so the amber could never be
+//cleared. On a workspace of somebody else's forks, "keeps to itself" also meant
+//"opens a pull request from your fork into your fork" on nine repositories.
+//
+//SENDING HAS NO DEFAULT NOW. Reading still does -- a folder full of issues
+//reading as empty because nobody chose a destination would be a worse lie.
+test('unset means nothing is sent, while reading still falls back to your own remote', async () => {
     const { actions } = await anApp(REPO_OK);
     const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
 
-    assert.equal(row.target.on, 'anowner/arepo');
+    assert.equal(row.target.on, null, 'a destination nobody picked was offered as the destination');
     assert.equal(row.target.chosen, false, 'it claimed somebody picked this');
+    assert.equal(row.target.off, false, 'nothing picked is not the same as picking nowhere');
+    assert.equal(row.target.self, 'anowner/arepo', 'the row still says which one is yours');
     assert.equal(row.target.upstream, false);
-    assert.equal(row.issuesOn, 'anowner/arepo');
+    assert.equal(row.issuesOn, 'anowner/arepo', 'reading lost its default along with sending');
+});
+
+//AND "NOWHERE" IS SOMETHING SOMEBODY CAN SAY. A repository this app should read
+//and judge but never open a pull request from is an ordinary thing to have, and
+//it was unsayable: the only way to express it was to leave the card amber.
+test('nowhere is a decision, and it stops the asking', async () => {
+    const { actions } = await anApp(REPO_OK);
+
+    const set = await actions.call('repoTargetSet', { repo: 'repo-one', off: true, why: 'I only read this one' });
+    assert.equal(set.target.off, true);
+    assert.equal(set.target.on, null);
+    assert.equal(set.target.chosen, true, 'saying nowhere on purpose still reads as undecided');
+    assert.match(set.target.why, /only read/);
+
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.target.off, true, 'it did not survive being read back');
+    assert.equal(row.issuesOn, 'anowner/arepo', 'sending nowhere stopped it reading anywhere');
+
+    //AND IT IS UNDONE BY PICKING SOMEWHERE, like any other answer.
+    const back = await actions.call('repoTargetSet', { repo: 'repo-one', on: 'upstream/theirs' });
+    assert.equal(back.target.off, false);
+    assert.equal(back.target.on, 'upstream/theirs');
+});
+
+//A COMMAND LINE HAS NO TYPES, and `--off false` arrives as the string "false",
+//which is truthy. The one command somebody would type to turn sending back on
+//would switch it off and answer "Saved."
+test('--off takes a value rather than trusting the flag to be there', async () => {
+    const { actions } = await anApp(REPO_OK);
+    await actions.call('repoTargetSet', { repo: 'repo-one', on: 'upstream/theirs' });
+
+    const still = await actions.call('repoTargetSet', { repo: 'repo-one', on: 'upstream/theirs', off: 'false' });
+    assert.equal(still.target.off, false, '"false" was read as a request to switch sending off');
+    assert.equal(still.target.on, 'upstream/theirs');
 });
 
 test('a chosen target is kept, said with who and why, and can be cleared', async () => {
@@ -536,9 +582,12 @@ test('a chosen target is kept, said with who and why, and can be cleared', async
     row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
     assert.equal(row.target.on, 'upstream/theirs', 'a check threw away where work goes');
 
+    //CLEARING GOES BACK TO BEING ASKED, which is a different thing from saying
+    //nowhere: one is "I have not decided", the other is "I have, and it is no".
     const cleared = await actions.call('repoTargetSet', { repo: 'repo-one', on: '' });
     assert.equal(cleared.target.chosen, false);
-    assert.equal(cleared.target.on, 'anowner/arepo', 'clearing left it pointed at nowhere');
+    assert.equal(cleared.target.off, false, 'unpicking was recorded as a decision to send nowhere');
+    assert.equal(cleared.target.on, null, 'clearing left it pointed somewhere nobody chose');
 });
 
 test('a target that is not owner and repository is refused', async () => {

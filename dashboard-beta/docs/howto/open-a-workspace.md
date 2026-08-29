@@ -19,7 +19,14 @@ tab, every task and every machine's clone is about the one that is open.
    requests* is the good state. A fork shows *one above yours* and *the
    project*; **Send work to** picks which of the chain your pull requests go
    to, and **Read issues from** which of the chain's trackers are read.
-4. **Repositories → Overview** for everything open at once: issues, pull
+4. **Pick where work goes on every repository.** Until you do, the card says
+   *not picked*, the selection sits on **nowhere**, and a cut refuses — this
+   app does not guess a destination, because guessing meant opening a pull
+   request from your fork into your fork on every repository at once.
+   **nowhere** is also a real answer, recorded like any other: a repository
+   whose issues you read and whose pull requests you judge, but which never
+   sends work.
+5. **Repositories → Overview** for everything open at once: issues, pull
    requests, cuts.
 
 ## Command line

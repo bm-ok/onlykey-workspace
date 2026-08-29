@@ -177,7 +177,14 @@ async function plugin(imports, register) {
     //is read as "the same as where work goes", which is both the old answer and
     //a sensible default.
     function readsOf(note, remote) {
-        var fallback = targetOf(note, remote).on;
+        //READING STILL FALLS BACK TO YOUR OWN REMOTE, and only reading does.
+        //`targetOf().on` stopped falling back when nothing is picked — see
+        //there — because SENDING somewhere nobody chose is the defect. Reading
+        //from your own fork is what somebody with no preference means, and the
+        //list going empty because no target was picked would be a pane saying
+        //there is nothing to read on a repository full of issues.
+        var t = targetOf(note, remote);
+        var fallback = t.on || t.self;
         var kept = (note && note.reads) || {};
         function set(which) {
             var list = Array.isArray(kept[which]) ? kept[which].filter(Boolean) : null;
@@ -293,13 +300,43 @@ async function plugin(imports, register) {
                 };
     }
 
+    //---- AND "NOWHERE" IS A THIRD ANSWER, NOT THE ABSENCE OF ONE -----------
+    //
+    //`on` FELL BACK TO YOUR OWN REMOTE WHEN NOTHING WAS PICKED, and the pane
+    //drew that fallback as a selected radio while its badge said "not picked".
+    //Both were describing the same repository and only one of them could be
+    //right: either something was chosen or nothing was, and the row was ticked
+    //either way. Pressing the ticked row changed nothing, so the amber could
+    //never be cleared — the one state the card exists to make visible was the
+    //one state it could not leave.
+    //
+    //THE FALLBACK IS GONE. Nothing picked means nothing is sent: `on` is null,
+    //no row is ticked, and a cut refuses and says which press would fix it.
+    //That is also the safer default for a workspace of somebody else's forks,
+    //where "keeps to itself" quietly meant "opens a pull request from your fork
+    //into your fork" on nine repositories at once.
+    //
+    //`off` IS SOMEBODY SAYING SO. A repository this app should not send work
+    //from at all is an ordinary thing to have — read its issues, judge its pull
+    //requests, never open one — and it was unsayable. It is a CHOICE, so it
+    //counts as `chosen` and the asking stops.
+    //A COMMAND LINE HAS NO TYPES, so `--off false` arrives as the STRING
+    //"false", which is truthy — and the one command somebody would type to turn
+    //sending back ON would switch it off and answer "Saved." The same trap
+    //../settings/server.js writes a page about.
+    function offAsked(v) {
+        return v === true || v === 1 || v === 'true' || v === '1' || v === 'on' || v === 'yes' || v === 'off';
+    }
+
     function targetOf(note, remote) {
         var self = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
         var picked = note && note.target && note.target.on ? String(note.target.on) : null;
+        var off = !!(note && note.target && note.target.off);
         return {
-            on: picked || self,
+            on: off ? null : picked,
+            off: off,
             self: self,
-            chosen: !!picked,
+            chosen: !!picked || off,
             at: (note && note.target && note.target.at) || null,
             by: (note && note.target && note.target.by) || null,
             why: (note && note.target && note.target.why) || null,
@@ -2482,8 +2519,9 @@ async function plugin(imports, register) {
                         openIssues: note.issues ? note.issues.length : null,
 
                         //WHERE ISSUES ARE READ FROM, which is the target and not
-                        //the parent. Unset means your own remote.
-                        issuesOn: targetOf(note, remote).on,
+                        //the parent. Unset means your own remote — reading has a
+                        //sensible default even though sending no longer does.
+                        issuesOn: targetOf(note, remote).on || targetOf(note, remote).self,
                         //THE SETS, BESIDE THE ONE VALUE. `issuesOn` stays what
                         //it was — the single place, for anything still asking
                         //that question — and `reads` is where more than one can
@@ -2875,8 +2913,8 @@ async function plugin(imports, register) {
         }));
 
         undo.push(actions.define('repoTargetSet', {
-            about: 'Choose where work from a repository is sent, and where its issues are read from',
-            takes: ['repo', 'on', 'why'],
+            about: 'Choose where work from a repository is sent. --off records "nowhere"; no --on at all unpicks it',
+            takes: ['repo', 'on', 'why', 'off'],
             run: async function (args) {
                 var a = args || {};
                 var name = String(a.repo || '').trim();
@@ -2895,9 +2933,24 @@ async function plugin(imports, register) {
                 try { remote = await refs.origin(name); } catch (e) { /* said below */ }
 
                 var on = a.on == null ? '' : String(a.on).trim();
-                //UNSETTING IS SETTING IT BACK TO YOUR OWN, and it is how somebody
-                //undoes a choice. An empty string means "no choice", not "nowhere".
-                if (!on) {
+                //---- THREE ANSWERS, AND "NOWHERE" IS ONE OF THEM -------------
+                //
+                //An empty `on` still means "no choice" — it is how somebody
+                //undoes a decision and goes back to being asked. `off` is the
+                //other thing an empty destination could have meant and could not
+                //be said: this repository sends work nowhere, on purpose. Read
+                //its issues, judge its pull requests, never open one.
+                //
+                //TWO EMPTY-LOOKING STATES THAT MEAN OPPOSITE THINGS, so they are
+                //two fields rather than one value with a special case in it.
+                if (offAsked(a.off)) {
+                    note.target = {
+                        off: true,
+                        at: new Date().toISOString(),
+                        by: actions.whoAsked(a),
+                        why: a.why ? String(a.why) : null
+                    };
+                } else if (!on) {
                     delete note.target;
                 } else {
                     if (on.split('/').length !== 2) {
@@ -2926,7 +2979,13 @@ async function plugin(imports, register) {
                 //and it is the fact the row exists to show.
                 var now = targetOf(note, remote);
                 try {
-                    note.intoTarget = Object.assign({}, await canOpenIn(now.on), { chosen: now.chosen });
+                    //NOTHING TO PROBE WHEN NOTHING IS PICKED. `canOpenIn(null)`
+                    //asks GitHub about a repository called "null"; the honest
+                    //answer is that there is no destination to have a verdict
+                    //about yet.
+                    note.intoTarget = now.on
+                        ? Object.assign({}, await canOpenIn(now.on), { chosen: now.chosen })
+                        : null;
                 } catch (e) {
                     //NOT KNOWING IS ITS OWN ANSWER, and better than the previous
                     //target's. The row says it plainly rather than showing a
@@ -2942,15 +3001,23 @@ async function plugin(imports, register) {
 
                 notes[name] = note;
                 doc.write(notes);
-                log.on('git', name).info(now.chosen
-                    ? 'work from here goes to ' + now.on + (now.why ? ' — ' + now.why : '')
-                    : 'work from here goes to its own remote again');
+                //THREE ANSWERS, THREE SENTENCES. Written as two, the third one
+                //came out as "Work from onlykey-testing goes to null" — the
+                //shape of a message that was never given the state it is
+                //describing.
+                log.on('git', name).info(now.off
+                    ? 'nothing is sent from here' + (now.why ? ' — ' + now.why : '')
+                    : now.chosen
+                        ? 'work from here goes to ' + now.on + (now.why ? ' — ' + now.why : '')
+                        : 'where work from here goes is unpicked again');
                 return {
                     repo: name,
                     target: now,
-                    note: now.chosen
-                        ? 'Work from ' + name + ' goes to ' + now.on + ', and its issues are read from there. Check it to gather them.'
-                        : 'Cleared. Work from ' + name + ' goes to its own remote, and its issues are read from there.'
+                    note: now.off
+                        ? 'Nothing is sent from ' + name + '. Its issues and pull requests are still read, and a judge can still be asked to read one.'
+                        : now.chosen
+                            ? 'Work from ' + name + ' goes to ' + now.on + ', and its issues are read from there. Check it to gather them.'
+                            : 'Unpicked. Nothing is sent from ' + name + ' until somewhere is chosen; its issues are read from its own remote.'
                 };
             }
         }));
