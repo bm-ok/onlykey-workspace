@@ -78,6 +78,13 @@ seconds and a rebuilt package to answer what `npm run check` answers in five.
 Roughly: 5 seconds versus 90. Reaching for build+restart on a UI change is an
 hour a day of nothing.
 
+**Check that nothing is mid-turn before saving a server-side file.** A save
+reloads the server half, and the reload drops the channel a machine is
+holding: the supervisor's turn ends with `this host is shutting down`, a
+sweep dies between writing its note and recording what arrived. Before any
+`server.js` edit: `okc.js supervisorState --json` says `thinking: false` and
+`okc.js queueState --json` shows nothing `running`. Hold the save otherwise.
+
 **`okc-bootstrap.tar` is what a fresh workspace starts from, and it goes stale
 by hand.** After a skill, job, prompt or contract is approved here, run
 `node tools/okc.js bootstrapShip` — it rewrites the repo's tar from the live set

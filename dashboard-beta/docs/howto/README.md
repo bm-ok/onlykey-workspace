@@ -14,6 +14,7 @@ as the window.
 - [Hand an issue to the supervisor](hand-an-issue-to-the-supervisor.md)
 - [Send a drafted reply, close or review](send-a-drafted-reply.md)
 - [Cut a pull request](cut-a-pull-request.md)
+- [Catch the workspace up after a merge](catch-the-workspace-up.md)
 - [Judge a pull request from outside](judge-a-pull-request-from-outside.md)
 - [Approve a skill change](approve-a-skill-change.md)
 - [Run the drills](run-the-drills.md)
