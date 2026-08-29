@@ -1264,8 +1264,30 @@ test('a fork behind where its work goes is an errand: sync the fork', async () =
     const items = await source.waiting();
     assert.equal(items.length, 1);
     assert.match(JSON.stringify(items[0]), /1 commit\(s\) behind up\/arepo main/);
-    assert.match(JSON.stringify(items[0]), /Sync the fork/);
+    assert.match(JSON.stringify(items[0]), /Sync fork/);
+    assert.equal(items[0].where.pane, 'Sync', 'the errand does not send a person to the Sync pane');
     void state;
+});
+
+test('catching the workspace up syncs the forks that are behind first, then pulls here, then asks GitHub again', async () => {
+    const answers = Object.assign({}, BEHIND, {
+        '/repos/anowner/arepo/merge-upstream': { status: 200, body: { merge_type: 'fast-forward', message: 'ok' } }
+    });
+    const { actions, asked } = await anApp(answers, undefined, undefined, { settings: { read: async () => ({}) } });
+    await actions.call('repoTargetSet', { repo: 'repo-one', on: 'up/arepo', why: 'the project' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const said = await actions.call('workspaceSync', {});
+    assert.equal(said.forks.length, 1);
+    assert.equal(said.forks[0].how, 'fast-forward');
+    //FORK FIRST, THEN GITHUB AGAIN: the merge-upstream POST comes before the last compare.
+    const order = asked.map((a, i) => [a, i]).filter(([a]) => /merge-upstream|\/compare\//.test(a));
+    assert.ok(order.length >= 2, 'nothing was synced or re-read: ' + asked.join(' | '));
+    assert.ok(/merge-upstream/.test(order[order.length - 2][0]) || /merge-upstream/.test(order[0][0]));
+    assert.ok(/\/compare\//.test(order[order.length - 1][0]), 'GitHub was not asked again after the sync');
+    //THIS HOST HAS NO ORIGIN IN THE HARNESS, and that is said rather than hidden.
+    assert.ok(said.here && typeof said.here.note === 'string');
+    assert.match(said.note, /1 of 1 fork\(s\) synced/);
 });
 
 test('a fork level with where its work goes is no errand, and a fork that sends work to itself is not asked', async () => {

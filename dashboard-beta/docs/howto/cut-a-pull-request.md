@@ -49,7 +49,10 @@ in the inbox:
    retire it, and its branches if you want them gone.
 
 In that order: the fork first, then this host, or the host fast-forwards to
-a fork that is itself behind.
+a fork that is itself behind. **Repositories → Sync** is all of it in one
+place: every repository's two standings, the two buttons per row, and
+**Catch up everything** (`workspaceSync`), which does the forks first, then
+this host, then asks GitHub again.
 
 ## Command line
 

@@ -1329,7 +1329,7 @@ async function plugin(imports, register) {
                             + (bt.ahead ? ', and ' + bt.ahead + ' ahead' : '')
                             + ' — a change that landed there is not on the fork, so anything cut from it now starts '
                             + 'from before it. Sync fork on its card brings ' + bt.head + ' up, then Pull it here.',
-                        imports.inbox.at('Repositories', 'Repos', name),
+                        imports.inbox.at('Repositories', 'Sync', name),
                         { since: (notes[name] || {}).checked || null, id: name }
                     ));
                 }
@@ -1358,7 +1358,7 @@ async function plugin(imports, register) {
                             + ' and origin\'s is at ' + String(note.upstreamHead).slice(0, 7)
                             + ' — something landed that this copy has not fetched, and a machine set up from here '
                             + 'would clone the old one. Sync fetches and fast-forwards.',
-                        imports.inbox.at('Repositories', 'Repos', name),
+                        imports.inbox.at('Repositories', 'Sync', name),
                         { since: note.checked || null, id: name }
                     ));
                 }
@@ -2590,6 +2590,64 @@ async function plugin(imports, register) {
         //fork-chain block in `ask`. Recorded with WHO and WHY, because "why is
         //this pointed at the root instead of the parent" is a question somebody
         //asks weeks later.
+        //---- THE WHOLE WORKSPACE, CAUGHT UP, IN ORDER -----------------------
+        //
+        //THREE COPIES OF EVERY DEFAULT BRANCH DRIFT ONE WAY after a merge: the
+        //fork behind where its work goes, this host behind the fork. One act:
+        //every fork that the sweep says is behind is synced on GitHub first,
+        //then every default branch here is fetched and fast-forwarded (only
+        //fast-forwarded), then GitHub is asked again so the standings shown
+        //are read, not assumed. Forks first, or this host fast-forwards to a
+        //fork that is itself behind. Best effort per repository: one that
+        //cannot be synced is named and the rest carry on.
+        undo.push(actions.define('workspaceSync', {
+            about: 'Catch the whole workspace up, in order: every fork behind where its work goes is synced on '
+                + 'GitHub, then every default branch here is fetched and fast-forwarded, then GitHub is asked again',
+            takes: [],
+            run: async function () {
+                var found = await workspace.repos();
+                if (!found.length) throw new Error('There are no repositories in this workspace to catch up.');
+                var notes = (await read()) || {};
+
+                var forks = [];
+                for (var i = 0; i < found.length; i++) {
+                    var name = found[i].name;
+                    var bt = (notes[name] || {}).behindTarget;
+                    if (!bt || !(bt.behind > 0)) continue;
+                    try {
+                        var r = await actions.call('repoForkSync', { repo: name, branch: bt.head });
+                        var row = (r && r.repos && r.repos[0]) || {};
+                        forks.push({ repo: name, from: bt.on, was: bt.behind, how: row.how || null, why: row.why || null });
+                    } catch (e) {
+                        forks.push({ repo: name, from: bt.on, was: bt.behind, how: null, why: e.message });
+                    }
+                }
+
+                var here = [];
+                for (var k = 0; k < found.length; k++) {
+                    var def = (notes[found[k].name] || {}).upstreamDefault || null;
+                    here = here.concat(await catchUp(found[k].name, def));
+                }
+                var pulled = syncSaid(here);
+
+                var checked = null;
+                try { checked = await actions.call('repositoriesCheck', {}); } catch (e) { checked = { why: e.message }; }
+
+                var synced = forks.filter(function (f) { return f.how && f.how !== 'none' && !f.why; }).length;
+                var stuckForks = forks.filter(function (f) { return f.why; });
+                return {
+                    forks: forks, here: pulled, checked: !!(checked && !checked.why),
+                    note: (forks.length
+                        ? synced + ' of ' + forks.length + ' fork(s) synced from where their work goes'
+                            + (stuckForks.length ? ' (' + stuckForks.map(function (f) { return f.repo + ' — ' + f.why; }).join('; ') + ')' : '')
+                            + '. '
+                        : 'No fork was behind where its work goes. ')
+                        + 'Here: ' + pulled.note
+                        + (checked && checked.why ? ' GitHub could not be asked again: ' + checked.why : ' GitHub was asked again.')
+                };
+            }
+        }));
+
         undo.push(actions.define('repoTargetSet', {
             about: 'Choose where work from a repository is sent, and where its issues are read from',
             takes: ['repo', 'on', 'why'],

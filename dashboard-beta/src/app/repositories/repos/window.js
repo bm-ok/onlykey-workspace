@@ -1,5 +1,6 @@
 var makeChassis = require('../chassis');
 var makeRepos = require('./repos');
+var makeSync = require('./sync');
 
 //Repos: what this workspace is made of, and whether the far end of each one can
 //still be reached.
@@ -21,6 +22,13 @@ async function plugin(imports, register) {
             'What this workspace is made of, and whether the far end of each one can still be reached. '
             + 'Everything above is local and instant; anything about GitHub was asked for on purpose and carries when it was asked.',
             makeRepos(theme, okc))
+    });
+
+    //THE WHOLE WORKSPACE, SYNCED FROM ONE PANE. Not through the chassis:
+    //this one is about every repository at once, not the picked one.
+    shell.pane({
+        tab: 'Repositories', name: 'Sync', order: 25,
+        Component: makeSync(theme, okc)
     });
 
     await register(null, {});
