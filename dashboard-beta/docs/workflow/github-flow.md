@@ -47,6 +47,10 @@ request — wakes it again. That is how you talk to it.
 - Inbox — everything waiting on you: drafts, skill proposals.
 - Repositories → Issues — issues *and open pull requests*, each with its
   conversation and any draft's Send button.
+- Repositories → PR cuts — the picked cut's **story**: every request in and
+  act out, the supervisor's wakes, the tasks and judgements between, newest
+  first, the initiator at the bottom.
+- Repositories → Sync — what is behind after a merge, and the buttons.
 - Judge — every judgement and its report.
 - Supervisor → Chat — what it said after each waking; Todo — what it thinks
   is on whose desk.

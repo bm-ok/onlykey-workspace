@@ -1,11 +1,9 @@
 # dashboard-beta
 
-Source of trust is the old dashboard, actually read it for the shape of the app.
-
 Only use claude credentials for testing worker, judge, and supervisor workflow., 
 Test everything else without credentials as possible.
 
-During porting, target tests to the features in progress, then run the whole test suite as the final gate.
+while developing Target tests to the features in progress, then run the whole test suite as the final gate.
 
 if provide a scrren shot and markup, read both beucase markkup will show rendered dropdown options the user cant photo
 
@@ -79,6 +77,13 @@ seconds and a rebuilt package to answer what `npm run check` answers in five.
 
 Roughly: 5 seconds versus 90. Reaching for build+restart on a UI change is an
 hour a day of nothing.
+
+**`okc-bootstrap.tar` is what a fresh workspace starts from, and it goes stale
+by hand.** After a skill, job, prompt or contract is approved here, run
+`node tools/okc.js bootstrapShip` — it rewrites the repo's tar from the live set
+and prints which entries moved, with both sizes, which is the line the commit
+message needs. It went fourteen thousand characters behind once because the
+only other way was a window press and a save-as over the checked-in file.
 
 ## The backslash trap
 

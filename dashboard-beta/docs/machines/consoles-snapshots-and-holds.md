@@ -27,6 +27,13 @@ as the new base, and starts again — for a machine that was set up by hand.
 A snapshot of a running machine stores its RAM, so it refuses; stop it
 first.
 
+## What a listing never says
+
+`vmList` carries each machine's spec without its bootstrap token or its
+login. Both live on the spec so a rebuild can use them; neither belongs in
+a `--json` answer, a capture or a log line. Anything that prints one is a
+bug.
+
 ## Holds
 
 `vmHolds --name X` says what a machine is holding that is not here:
