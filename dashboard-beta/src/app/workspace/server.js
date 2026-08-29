@@ -427,7 +427,17 @@ async function plugin(imports, register) {
             takes: ['dir'],
             run: async function (args) {
                 var a = args || {};
-                use(a.dir);
+                //THE LARGEST ACT THIS APP TAKES, AND IT LEFT NO TRACE. Every
+                //other line in the events — a task, a branch, a reply — is a
+                //statement about the open folder, so a run of them that spans a
+                //switch reads as one story about one project and is two. It was
+                //noticed by opening an empty workspace and finding the events
+                //unchanged: `remembered` was there and `opened` was not.
+                var before = null;
+                try { before = await dir(); } catch (e) { before = null; }
+                var open = use(a.dir);
+                log.good('opened ' + open + (before && before !== open ? ' — was ' + before : '')
+                    + '. What is armed follows the folder, so this one is set to whatever it was set to.');
                 return all();
             }
         }));
@@ -482,7 +492,14 @@ async function plugin(imports, register) {
 
         undo.push(actions.define('workspaceClose', {
             about: 'Put down the workspace that is open, leaving it on the list',
-            run: async function () { close(); return all(); }
+            run: async function () {
+                var before = null;
+                try { before = await dir(); } catch (e) { before = null; }
+                close();
+                log.info('closed ' + (before || 'the workspace')
+                    + '. It stays on the list, and what was set for it stays with it.');
+                return all();
+            }
         }));
 
         undo.push(actions.define('workspaceForget', {
