@@ -105,36 +105,13 @@ async function plugin(imports, register) {
         //at once — three actions would be three round trips and three moments
         //at which they could disagree about which cuts are free.
         undo.push(actions.define('diy', {
-            about: 'Every piece of work of my own: what it is, what it is sitting on, and which cuts are free',
+            about: 'Every piece of work of my own, what it is sitting on, and what a new one could be made from',
             needs: 'workspace',
             takes: [],
             run: async function () {
                 var items = await store.all();
                 var held = await whoHolds();
-                var taken = await store.cutsTaken();
 
-                //THE CUTS, FROM THE PLUGIN THAT OWNS BRANCHES. `cut: true` is
-                //what marks a real cut as opposed to any old branch somebody
-                //made — ../repositories/branches decides that, not this.
-                var cuts = [];
-                try {
-                    var board = await actions.call('branchBoard', {});
-                    cuts = ((board && board.branches) || [])
-                        .filter(function (b) { return b.cut; })
-                        .map(function (b) {
-                            var by = taken[b.name] || null;
-                            return {
-                                branch: b.name,
-                                repos: (b.in || []).length,
-                                reason: (b.note && b.note.reason) || null,
-                                //SAID, NOT FILTERED OUT. The pane leaves a taken
-                                //one out of its picker; the ANSWER says who has
-                                //it, because "why is my branch not in the list"
-                                //is the question that gets asked next.
-                                takenBy: by
-                            };
-                        });
-                } catch (e) { /* branches unreadable; the seats are still worth answering */ }
 
                 //---- AND WHAT A SEAT COULD BE MADE FROM --------------------
                 //
@@ -208,13 +185,50 @@ async function plugin(imports, register) {
 
                 return {
                     items: items.map(function (it) { return seatOf(it, held); }),
-                    cuts: cuts,
                     machines: machines,
                     signIns: signIns,
                     note: items.length
                         ? null
                         : 'Nothing of your own yet. This is the lane nothing else touches: not the queue, not the '
                             + 'judge, not the sweep.'
+                };
+            }
+        }));
+
+        //---- WHAT A PIECE OF WORK COULD BE PUT ON -------------------------
+        //
+        //ITS OWN ACTION, AND IT USED TO BE PART OF `diy`. That answer is polled
+        //every few seconds to draw the pane; this one walks the repositories
+        //through ../repositories/branches to find out which branches are cuts.
+        //Bundling them meant paying for the second on every tick of the first —
+        //on a project of nine repositories that is real git work, twelve times a
+        //minute, to draw a list that had not changed.
+        //
+        //ASKED WHEN A PICKER OPENS, which is the only time the answer is used:
+        //the dialog behind + and the one behind Edit. Nothing draws it.
+        undo.push(actions.define('diyCuts', {
+            about: 'The branch cuts a piece of work could be put on, and which are already spoken for',
+            needs: 'workspace',
+            takes: [],
+            run: async function () {
+                var taken = await store.cutsTaken();
+
+                var board = await actions.call('branchBoard', {});
+                return {
+                    cuts: ((board && board.branches) || [])
+                        .filter(function (b) { return b.cut; })
+                        .map(function (b) {
+                            return {
+                                branch: b.name,
+                                repos: (b.in || []).length,
+                                reason: (b.note && b.note.reason) || null,
+                                //SAID, NOT FILTERED OUT. The pane leaves a taken
+                                //one out of its picker; the ANSWER says who has
+                                //it, because "why is my branch not in the list"
+                                //is the question that gets asked next.
+                                takenBy: taken[b.name] || null
+                            };
+                        })
                 };
             }
         }));

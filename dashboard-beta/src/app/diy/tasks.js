@@ -112,17 +112,41 @@ module.exports = function tasks(theme, okc, remember) {
         var [said, setSaid] = useState(null);
 
         var items = (got && got.items) || [];
-        var cuts = (got && got.cuts) || [];
+
+        //---- THE CUTS ARE FETCHED WHEN A PICKER OPENS ---------------------
+        //
+        //THEY USED TO RIDE ALONG WITH THE POLL, and finding out which branches
+        //are cuts means walking the repositories — so the pane paid for that
+        //every few seconds to draw a list nothing was looking at. On nine
+        //repositories that is most of what made this tab slow.
+        //
+        //`cutsBy` IS ONLY FOR THE REPO COUNT beside a cut's name in the
+        //checklist, so it is empty until a dialog has been opened once. An
+        //absent count draws as nothing rather than as a wrong number.
+        var [cuts, setCuts] = useState([]);
 
         var cutsBy = {};
         cuts.forEach(function (c) { cutsBy[c.branch] = c; });
 
         var s = items.filter(function (x) { return x.id === picked; })[0] || null;
 
-        //WHAT IS ON THE CUT, ASKED ONLY WHEN THERE IS ONE. ../core/okc/ask.js
-        //takes a falsy action to mean "not yet", which is how a pane with a
-        //selection avoids asking a question that has no answer.
-        var { state: carries } = okc.use(s && s.cut ? 'branchArtifacts' : null, { branch: s && s.cut }, 15000);
+        //---- WHAT IS ON THE CUT, ASKED ONLY WHEN SOMEBODY ASKS -------------
+        //
+        //`branchArtifacts` TAKES ELEVEN SECONDS on a project of nine
+        //repositories: it walks every one of them for a log and a diff. This
+        //pane polled it every fifteen seconds, so one call finished four seconds
+        //before the next began and the tab took half a minute to show anything.
+        //
+        //IT WAS NEVER MEASURED ANYWHERE REAL. On a workspace of three small
+        //repositories it was fast enough to look free, and it went out on a
+        //timer beside reads that genuinely are.
+        //
+        //NO INTERVAL AND NO SELECTION TRIGGER. ../core/okc/ask.js reads once
+        //when `everyMs` is falsy, and the branch is only set by a press — so
+        //picking a seat costs nothing and the eleven seconds are spent when
+        //somebody has asked for them and is expecting a wait.
+        var [reading, setReading] = useState(null);
+        var { state: carries } = okc.use(reading ? 'branchArtifacts' : null, { branch: reading });
 
         function run(action, args, saying) {
             return okc.call(action, args).then(function (r) {
@@ -192,15 +216,19 @@ module.exports = function tasks(theme, okc, remember) {
         //in the store; this is the courtesy in front of it, because a picker
         //that lists something and then rejects it taught you the rule by wasting
         //the attempt.
-        function cutOptions(exceptId) {
-            var free = cuts.filter(function (c) { return !c.takenBy || c.takenBy.id === exceptId; });
+        //TAKING THE LIST AS AN ARGUMENT, because the caller has just awaited it
+        //and React has not re-rendered yet — reading `cuts` here would read the
+        //state as it was before the fetch, and the picker would open empty the
+        //first time and correct itself on the second press.
+        function cutOptions(exceptId, list) {
+            var free = (list || []).filter(function (c) { return !c.takenBy || c.takenBy.id === exceptId; });
             return [{ value: '', label: 'none yet — pick one later' }].concat(free.map(function (c) {
                 return { value: c.branch, label: c.branch + ' — ' + c.repos + ' repos' };
             }));
         }
 
-        function gone(exceptId) {
-            return cuts.filter(function (c) { return c.takenBy && c.takenBy.id !== exceptId; }).length;
+        function gone(exceptId, list) {
+            return (list || []).filter(function (c) { return c.takenBy && c.takenBy.id !== exceptId; }).length;
         }
 
         //WHAT EACH ONE IS ALREADY DOING, ON ITS OWN LINE. A list of bare machine
@@ -234,8 +262,33 @@ module.exports = function tasks(theme, okc, remember) {
         //works them out afterwards. A form that asked for them here would be
         //asking somebody to configure a runner before they have written down
         //what they are doing.
-        function makeOne() {
-            var short = gone(null);
+        //---- THE CUTS, BEFORE A DIALOG THAT NEEDS THEM --------------------
+        //
+        //AWAITED RATHER THAN DRAWN FROM A POLL. `ask` builds its fields once,
+        //when it opens, so the list has to be in hand first — a dialog that
+        //filled in a second later would be one somebody had already answered.
+        //
+        //THE PRESS IS WHAT PAYS FOR IT, which is the whole point: seconds spent
+        //when a picker is opened rather than seconds spent every few seconds
+        //whether or not anyone is looking.
+        async function withCuts() {
+            try {
+                var said = await okc.call('diyCuts', {});
+                var got2 = (said && said.cuts) || [];
+                setCuts(got2);
+                return got2;
+            } catch (e) {
+                //A PICKER WITH NOTHING IN IT IS STILL USABLE — "none yet" is a
+                //real answer — so this says what went wrong and opens anyway
+                //rather than swallowing the press.
+                setSaid({ bad: true, text: 'Could not read the branch cuts: ' + e.message });
+                return [];
+            }
+        }
+
+        async function makeOne() {
+            var have = await withCuts();
+            var short = gone(null, have);
             ask({
                 title: 'Start a piece of work',
                 plain: [
@@ -254,7 +307,7 @@ module.exports = function tasks(theme, okc, remember) {
                         hint: 'This is for you to read when you come back to it — not a brief, and nothing is sent anywhere.'
                     },
                     {
-                        name: 'cut', label: 'Branch cut to push into', options: cutOptions(null),
+                        name: 'cut', label: 'Branch cut to push into', options: cutOptions(null, have),
                         hint: 'The bucket the work goes in. Every repository sits on this branch on the machine, with '
                             + 'origin pointing back at this host.'
                             + (short ? ' ' + short + ' already belong to something here and are not offered — one piece of work per cut.' : '')
@@ -280,7 +333,8 @@ module.exports = function tasks(theme, okc, remember) {
         //else and orphan what was pushed. Shown disabled rather than hidden,
         //because "this cannot change" is a different sentence from "there is
         //nothing here". The store refuses it too — this is the courtesy.
-        function editOne(x) {
+        async function editOne(x) {
+            var have = await withCuts();
             var has = !!x.cut;
             ask({
                 title: 'Change ' + x.title,
@@ -304,7 +358,7 @@ module.exports = function tasks(theme, okc, remember) {
                             hint: 'Fixed for the life of this piece of work. To work on another branch, start another one.'
                         }
                         : {
-                            name: 'cut', label: 'Branch cut to push into', options: cutOptions(x.id),
+                            name: 'cut', label: 'Branch cut to push into', options: cutOptions(x.id, have),
                             hint: 'Settable once. Cuts that belong to something else here are not offered.'
                         }
                 ],
@@ -448,21 +502,44 @@ module.exports = function tasks(theme, okc, remember) {
                                     character by character must not be shouted. */}
                                 <Group>
                                     <Head>the cut <Muted>{s.cut}</Muted></Head>
-                                    {!carries
-                                        ? <Skeleton rows={2} />
-                                        : carrying.length
-                                            ? carrying.map(function (r) {
-                                                var top = (r.commits || [])[0];
-                                                return (
-                                                    <div key={r.repo}>
-                                                        <Part right={<Badge kind="ok">{r.ahead + (r.ahead === 1 ? ' commit' : ' commits')}</Badge>}>
-                                                            <Mono>{r.repo}</Mono>
-                                                        </Part>
-                                                        <PartWhy>{top ? (top.subject || top.message || top.id) : 'ahead of ' + r.base}</PartWhy>
-                                                    </div>
-                                                );
-                                            })
-                                            : <Empty>{'Nothing pushed yet. The branch is cut in ' + repos.length + ' repositories and every one is level with its base.'}</Empty>}
+
+                                    {/*---- ASKED FOR, NOT ASSUMED ------------
+
+                                        READING THIS IS SECONDS OF WORK, not a
+                                        field. It is a log and a diff in every
+                                        repository the branch is cut in, so on a
+                                        real project it is a wait — and a wait
+                                        somebody chose is a different thing from
+                                        a tab that hangs.
+
+                                        THE BUTTON SAYS HOW LONG. A press with
+                                        no idea of the cost is one somebody makes
+                                        twice, then decides the app is broken. */}
+                                    {reading !== s.cut
+                                        ? <div>
+                                            <Part right={<Button onClick={function () { setReading(s.cut); }}>Read it</Button>}>
+                                                what is on it
+                                            </Part>
+                                            <PartWhy>
+                                                A log and a diff in each of the repositories this branch is cut
+                                                in — seconds rather than instant, so it is read when you ask.
+                                            </PartWhy>
+                                        </div>
+                                        : !carries
+                                            ? <Skeleton rows={2} />
+                                            : carrying.length
+                                                ? carrying.map(function (r) {
+                                                    var top = (r.commits || [])[0];
+                                                    return (
+                                                        <div key={r.repo}>
+                                                            <Part right={<Badge kind="ok">{r.ahead + (r.ahead === 1 ? ' commit' : ' commits')}</Badge>}>
+                                                                <Mono>{r.repo}</Mono>
+                                                            </Part>
+                                                            <PartWhy>{top ? (top.subject || top.message || top.id) : 'ahead of ' + r.base}</PartWhy>
+                                                        </div>
+                                                    );
+                                                })
+                                                : <Empty>{'Nothing pushed yet. The branch is cut in ' + repos.length + ' repositories and every one is level with its base.'}</Empty>}
                                 </Group>
 
                                 {/*---- WHAT DOES NOT HAPPEN TO IT ------------
