@@ -58,6 +58,16 @@ async function plugin(imports, register) {
     //under `ui` and registers a Settings pane.
     shell.pane({ tab: 'Keys', name: 'Claude Worker', order: 10, Component: GuestsFor('worker') });
     shell.pane({ tab: 'Keys', name: 'Claude Judge', order: 20, Component: GuestsFor('judge') });
+    //THE PERSON'S OWN, BESIDE THE OTHER TWO RUNNER SIGN-INS AND BEFORE THE
+    //SUPERVISOR — worker, judge and diy are all lent to a runner and are the
+    //same kind of thing; the supervisor's is the one that is never lent at all.
+    //
+    //IT IS A ROLE AND NOT A SECOND WORKER SIGN-IN. A person holding a worker
+    //credential for an afternoon is an afternoon the queue cannot run, and their
+    //work arrives billed to the identity the queue's output is attributed to.
+    //See ../../vms/ours/roles.js, which keeps `diy` out of `takesQueuedWork` for
+    //the matching reason on the machine side.
+    shell.pane({ tab: 'Keys', name: 'Claude DIY', order: 25, Component: GuestsFor('diy') });
     shell.pane({ tab: 'Keys', name: 'Claude supervisor', order: 30, Component: GuestsFor('supervisor') });
 
     //---- AND A SIGNPOST WHERE THEY WERE -----------------------------------

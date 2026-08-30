@@ -136,10 +136,17 @@ function accountOf(raw) {
 //ANYTHING UNRECOGNISED IS A WORKER, which is the least-privileged of the three:
 //a worker sign-in may only go to a runner. Defaulting the other way would let a
 //record with a typo in it reach a supervisor machine.
-var ROLES = ['worker', 'judge', 'supervisor'];
+//`diy` IS THE HUMAN'S. Same disk as a worker and the same job API, and a
+//separate identity because the person's afternoon should not be billed to the
+//pool the queue draws from -- and because the queue's workers and the person
+//have to be able to be signed in at the same time.
+var ROLES = ['worker', 'judge', 'supervisor', 'diy'];
 
 function roleFrom(said) {
-    return said === 'supervisor' ? 'supervisor' : said === 'judge' ? 'judge' : 'worker';
+    return said === 'supervisor' ? 'supervisor'
+        : said === 'judge' ? 'judge'
+            : said === 'diy' ? 'diy'
+                : 'worker';
 }
 
 function isRole(said) { return ROLES.indexOf(String(said || '').toLowerCase()) >= 0; }

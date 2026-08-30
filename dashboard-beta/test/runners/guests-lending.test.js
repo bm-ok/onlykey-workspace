@@ -91,13 +91,18 @@ test('a runner tagged judge is not one tagged supervisor either', () => {
 
 //---- a machine that has not said what it is ------------------------------------
 
-test('an untagged machine gets nothing, and is told the two words that fix it', () => {
+test('an untagged machine gets nothing, and is told the words that fix it', () => {
     //NO TAG IS NOT A DEFAULT, it is an unanswered question. "Not allowed" about
     //a machine somebody just built is useless next to the fix.
+    //
+    //THREE TAGS NOW AND IT WAS TWO. `diy` is the person's own role — a runner
+    //sign-in like the other two — so the sentence that lists what a machine can
+    //be told it is has to list it, or it sends somebody to tag a machine
+    //"worker" for a seat that must never be queued.
     const why = whyNotOn('worker', null, 'k1', 'kit-1');
 
     assert.match(why, /kit-1 has not been told what it is for/);
-    assert.match(why, /give it the "worker" tag or the "judge" tag with vmTags/);
+    assert.match(why, /give it the "worker", "judge" or "diy" tag with vmTags/);
     assert.match(why, /"k1" can go to it/);
 });
 

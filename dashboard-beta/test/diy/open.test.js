@@ -3,6 +3,7 @@ const assert = require('node:assert');
 
 const actionsPlugin = require('../../src/app/core/actions/main');
 const diyPlugin = require('../../src/app/diy/server');
+const roles = require('../../src/app/vms/ours/roles');
 
 //---------------------------------------------------------------------------
 //THE ONE PRESS.
@@ -35,9 +36,12 @@ function doc() {
 
 //THE MACHINE AS THE REGISTER HOLDS IT. `forTasks: false` is kept back,
 //`connected` is dialled in, `branch` is what it claims.
+//TAGGED `diy`, WHICH IS THE POOL. A person's seat has to be a machine the queue
+//will never pick up, and that tag is what says so — see ../../src/app/vms/ours/
+//roles.js, which keeps `diy` out of `takesQueuedWork` for exactly that reason.
 const VM = (over) => Object.assign({
     name: 'beta-diy1', running: false, connected: false,
-    forTasks: undefined, branch: null, holdsCredential: false, tags: ['worker']
+    forTasks: undefined, branch: null, holdsCredential: false, tags: ['diy']
 }, over || {});
 
 beforeEach(() => {
@@ -45,7 +49,7 @@ beforeEach(() => {
     called = [];
     vms = { 'beta-diy1': VM() };
     guests = [
-        { name: 'worker-b2', role: 'worker', has: true, holder: null },
+        { name: 'diy-b1', role: 'diy', has: true, holder: null },
         { name: 'super-a2', role: 'supervisor', has: true, holder: null }
     ];
 });
@@ -77,9 +81,15 @@ async function anApp() {
             ensure: () => ({}), writeConfig: () => 'ssh_config', ensureInclude: () => ({ added: false }),
             readingOf: (vm) => ({ name: vm.name, address: '10.0.0.2', user: 'okc', alias: 'okc-' + vm.name, usesOurKey: true })
         },
+        //THE REAL ROLE RULES, NOT A GUESS AT THEM. A stand-in answering
+        //`canBe` with its own idea of what a tag means is a stand-in that
+        //passes while the app disagrees with it — so the register's own reader
+        //is used, which is the one thing here that must not be faked.
         ours: {
             get: (n) => vms[n],
-            read: () => Object.keys(vms).map((k) => vms[k])
+            read: () => Object.keys(vms).map((k) => vms[k]),
+            canBe: roles.canBe,
+            kindsOf: roles.kindsOf
         },
         repoWorkspaces: { folderFor: () => '/home/okc/workspace' },
         state: { here: { doc: doc } }
@@ -115,7 +125,7 @@ test('from cold it does all five, in order', async () => {
     const it = await start(actions);
 
     const said = await actions.call('diyOpen',
-        { id: it.id, machine: 'beta-diy1', signIn: 'worker-b2', _fromTest: true });
+        { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
 
     //THE ORDER IS THE CLAIM. Laying the workspace before the machine has
     //dialled in has nothing to talk to; lending the sign-in before the
@@ -140,7 +150,7 @@ test('the second press does nothing but open it', async () => {
     const actions = await anApp();
     const it = await start(actions);
 
-    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'worker-b2', _fromTest: true });
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
     called = [];
 
     await actions.call('diyOpen', { id: it.id, _fromTest: true });
@@ -156,7 +166,7 @@ test('it remembers the machine and the sign-in, so it only asks once', async () 
     const actions = await anApp();
     const it = await start(actions);
 
-    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'worker-b2', _fromTest: true });
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
 
     const list = await actions.call('diy', {});
     const mine = list.items[0];
@@ -212,7 +222,7 @@ test('with no sign-in it refuses, and names the ones that are free', async () =>
         () => actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', _fromTest: true }),
         (e) => {
             assert.match(e.message, /no sign-in chosen/);
-            assert.match(e.message, /worker-b2 \(worker\)/);
+            assert.match(e.message, /diy-b1 \(diy\)/);
             //A SUPERVISOR SIGN-IN IS NOT A THING TO OFFER HERE. Lending one to
             //a runner is refused downstream anyway, and offering it makes the
             //refusal something the person walks into.

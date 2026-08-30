@@ -129,7 +129,13 @@ module.exports = function guests(theme, okc, remember) {
                         ? 'It will be kept as a SUPERVISOR sign-in: never lent to a machine, and what this host decides work with.'
                         : role === 'judge'
                             ? 'It will be kept as a JUDGE sign-in: lent to a machine to read somebody else’s work, and never the sign-in that produced it.'
-                            : 'It will be kept as a WORKER sign-in: lent to a machine while it works, and taken back after.'
+                            : role === 'diy'
+                                //THE HUMAN'S OWN, AND THE SENTENCE SAYS THE TWO
+                                //THINGS THAT MAKE IT DIFFERENT FROM A WORKER'S:
+                                //the queue never spends it, and the machine it
+                                //goes to is one the queue cannot take.
+                                ? 'It will be kept as a DIY sign-in: yours, lent to a machine tagged diy that the queue never picks up — so it is not one of the identities the queue draws from, and holding it does not cost the pool a worker.'
+                                : 'It will be kept as a WORKER sign-in: lent to a machine while it works, and taken back after.'
                 ],
                 //---- AND THE ROLE IS NOT ASKED FOR ------------------------
                 //

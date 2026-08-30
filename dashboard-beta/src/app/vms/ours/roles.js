@@ -9,7 +9,7 @@
 //
 //TAGS ARE OTHERWISE FREE TEXT AND DELIBERATELY SO: they are what somebody calls
 //a kind of machine, and the tags that exist are the tags on the machines. The
-//three below are the ones this app gives a meaning to, which is why they are
+//four below are the ones this app gives a meaning to, which is why they are
 //named here rather than typed at each place that checks one.
 //---------------------------------------------------------------------------
 
@@ -35,6 +35,21 @@ var SUPERVISOR = 'supervisor';
 var JUDGE = 'judge';
 var WORKER = 'worker';
 
+//AND THE HUMAN'S OWN.
+//
+//DIY IS A ROLE LIKE THE OTHER THREE, and it is the person's. A DIY machine is
+//the same disk as a worker and runs the same job API — what makes it a different
+//kind is WHO IS SITTING IN IT: a person, running their own session by hand,
+//instead of a model running a brief the queue handed out.
+//
+//WHICH IS WHY IT IS A ROLE AND NOT A LABEL ON A WORKER. Two things follow from
+//the tag and neither is cosmetic: the queue must never pick it up (see
+//`takesQueuedWork` below, which stays worker-or-judge), and it is lent its OWN
+//sign-in rather than borrowing a worker's. Sharing the worker identity would
+//bill a person's afternoon to the pool the queue draws from, and would mean the
+//queue's workers and the person could not both be signed in at once.
+var DIY = 'diy';
+
 //AND THE POOL EVERY OTHER MACHINE IS IN.
 //
 //A tag is how work asks for a KIND of machine. Machines with no tag were a kind
@@ -47,7 +62,7 @@ function tagged(vm, want) {
     return ((vm && vm.tags) || []).some(function (t) { return String(t).toLowerCase() === want; });
 }
 
-//WHICH OF THE THREE A MACHINE IS.
+//WHICH OF THE FOUR A MACHINE IS.
 //
 //SILENCE IS NOT AN ANSWER. This once said "worker" for a machine carrying no
 //role tag, on the grounds that every machine made before the tag existed was an
@@ -63,6 +78,7 @@ function kindsOf(vm) {
     var out = [];
     if (tagged(vm, WORKER)) out.push('worker');
     if (tagged(vm, JUDGE)) out.push('judge');
+    if (tagged(vm, DIY)) out.push('diy');
     return out;
 }
 
@@ -88,6 +104,11 @@ function kindOf(vm) {
 //A SUPERVISOR IS NOT IN THE POOL AT ALL, and that is not a preference: it runs
 //Claude Code to decide what work to give, and a machine that decides what work
 //to give should not also be given some.
+//DIY IS DELIBERATELY NOT IN THIS LIST. A DIY machine is a person's seat, and
+//the whole point of the role is that nothing hands it work: the tick must not
+//pick it up, roll it back to base, and run a task over the top of somebody's
+//afternoon. So the queue's question stays worker-or-judge, and adding `diy` here
+//would quietly undo the reason the role exists.
 function takesQueuedWork(vm) { return canBe(vm, 'worker') || canBe(vm, 'judge'); }
 
 //FOR SAYING, NEVER FOR DECIDING. "worker+judge" is what somebody reads on a
@@ -95,7 +116,7 @@ function takesQueuedWork(vm) { return canBe(vm, 'worker') || canBe(vm, 'judge');
 function kindSaid(vm) { return kindsOf(vm).join('+') || 'no role yet'; }
 
 module.exports = {
-    SUPERVISOR: SUPERVISOR, JUDGE: JUDGE, WORKER: WORKER, POOL: POOL,
+    SUPERVISOR: SUPERVISOR, JUDGE: JUDGE, WORKER: WORKER, DIY: DIY, POOL: POOL,
     kindOf: kindOf, kindsOf: kindsOf, canBe: canBe,
     kindSaid: kindSaid, takesQueuedWork: takesQueuedWork
 };

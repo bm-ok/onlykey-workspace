@@ -147,11 +147,33 @@ async function plugin(imports, register) {
                 //supervisor task work would roll it back mid-thought — and
                 //offering something whose only outcome is a refusal is how a
                 //person learns a rule by walking into it.
+                //---- THE POOL IS THE `diy` TAG -----------------------------
+                //
+                //ASKED OF ../vms/ours, WHICH OWNS WHAT A TAG MEANS. A machine's
+                //role is a tag on its record and `kindsOf` is the one reader of
+                //it — writing `tags.indexOf('diy')` here would be a second
+                //reading of the same fact, and the second one is the one that
+                //turns out to be wrong.
+                //
+                //ONLY DIY MACHINES, rather than everything with the supervisor
+                //filtered out. A person's seat has to be a machine the queue
+                //will never pick up, and `diy` is exactly what says so —
+                //offering a worker here would hand somebody a machine the tick
+                //can roll back underneath them.
                 var machines = (ours.read() || [])
-                    .filter(function (v) { return (v.tags || []).indexOf('supervisor') < 0; })
+                    .filter(function (v) { return ours.canBe(v, 'diy'); })
                     .map(function (v) {
                         var whose = null;
                         items.forEach(function (x) { if (x.machine === v.name) whose = x.title; });
+
+                        //WHETHER A SIGN-IN COULD EVEN GO ON IT, worked out here
+                        //rather than found out at the far end of the press. See
+                        //POOL above: `diy` says which machines are ours to take,
+                        //and the ROLE tag is what ../runners/guests lends
+                        //against — a machine in the pool with no role is one the
+                        //press sets up completely and then cannot sign in.
+                        var roles = ours.kindsOf(v) || [];
+
                         return {
                             name: v.name,
                             running: !!v.running,
@@ -159,15 +181,28 @@ async function plugin(imports, register) {
                             holdsCredential: !!v.holdsCredential,
                             branch: v.branch || null,
                             tags: v.tags || [],
+                            roles: roles,
+                            takesASignIn: roles.length > 0,
                             usedBy: whose
                         };
                     });
 
+                //---- AND ONLY THE PERSON'S OWN SIGN-INS --------------------
+                //
+                //A DIY SIGN-IN, NOT A WORKER'S. ../runners/guests refuses a
+                //worker credential on a machine tagged diy anyway — so offering
+                //one here would be this pane handing somebody a choice whose
+                //only outcome is a refusal five steps into the press.
+                //
+                //AND THE REASON IT REFUSES IS THE REASON THE ROLE EXISTS: the
+                //pool the queue draws from is finite, so a person holding a
+                //worker sign-in for an afternoon is an afternoon the queue
+                //cannot run.
                 var signIns = [];
                 try {
                     var all = await actions.call('guests', {});
                     signIns = ((all && all.guests) || [])
-                        .filter(function (g) { return g.has && g.role !== 'supervisor'; })
+                        .filter(function (g) { return g.has && g.role === 'diy'; })
                         .map(function (g) { return { name: g.name, role: g.role, holder: g.holder || null }; });
                 } catch (e) { /* no sign-ins kept here; the rest of the answer stands */ }
 

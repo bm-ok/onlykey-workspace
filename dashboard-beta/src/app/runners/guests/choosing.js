@@ -38,7 +38,7 @@
 
 var shape = require('./shape');
 
-var KINDS = ['worker', 'judge', 'supervisor'];
+var KINDS = ['worker', 'judge', 'supervisor', 'diy'];
 
 //WHAT A MACHINE OF THIS KIND IS CALLED, for a sentence somebody reads. All
 //three are RUNNERS — a runner is a virtual machine in the pool, and the tag says

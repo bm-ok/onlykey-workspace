@@ -1,13 +1,22 @@
 //---------------------------------------------------------------------------
 //WHICH SIGN-IN MAY GO TO WHICH MACHINE.
 //
-//THREE ROLES, AND THE DIFFERENCE IS ENTIRELY WHO SPENDS THE IDENTITY:
+//FOUR ROLES, AND THE DIFFERENCE IS ENTIRELY WHO SPENDS THE IDENTITY:
 //
 //  worker      lent to a machine that does the work
 //  judge       lent to a machine that READS work and never writes it
 //  supervisor  never lent to a worker or a judge. It is the sign-in this host
 //              decides with — the model that chooses what work to give rather
 //              than the one doing it.
+//  diy         the person's own. Same disk as a worker and the same job API;
+//              what differs is who is sitting in it.
+//
+//WHY DIY HAS ITS OWN RATHER THAN BORROWING A WORKER'S. Two reasons, and neither
+//is bookkeeping. The pool the queue draws from is finite, so a person holding a
+//worker sign-in for an afternoon is an afternoon the queue cannot run — the
+//person and the workers have to be able to be signed in at once. And work a
+//person does by hand should not arrive billed to the identity the queue's
+//output is attributed to.
 //
 //WHY A JUDGE HAS ITS OWN. A judge says whether work holds, and a worker writes
 //the work. Sharing one identity between them makes "who said this is good" and
@@ -33,7 +42,8 @@ var shape = require('./shape');
 var SAYS = {
     worker: 'a worker sign-in',
     judge: 'a judge sign-in',
-    supervisor: 'a supervisor sign-in'
+    supervisor: 'a supervisor sign-in',
+    diy: 'a DIY sign-in'
 };
 
 //---- and what a machine is called, which is the same word three times ------
@@ -49,7 +59,8 @@ var SAYS = {
 var MACHINE_SAYS = {
     worker: 'a runner tagged worker',
     judge: 'a runner tagged judge',
-    supervisor: 'a runner tagged supervisor'
+    supervisor: 'a runner tagged supervisor',
+    diy: 'a runner tagged diy'
 };
 
 //---- what the machine may be, as a LIST -------------------------------------
@@ -105,8 +116,9 @@ function whyNotOn(role, machineKind, name, machine) {
     //the two words that fix it.
     if (!can.length) {
         return machine + ' has not been told what it is for, so nothing can be lent to it. A machine '
-            + 'holds a worker\'s identity or a judge\'s, and the tag is how it says which — give it the '
-            + '"worker" tag or the "judge" tag with vmTags, and then "' + name + '" can go to it.';
+            + 'holds a worker\'s identity, a judge\'s, or the person\'s own, and the tag is how it says '
+            + 'which — give it the "worker", "judge" or "diy" tag with vmTags, and then "' + name
+            + '" can go to it.';
     }
 
     if (can.indexOf(want) >= 0) return null;
@@ -118,9 +130,19 @@ function whyNotOn(role, machineKind, name, machine) {
         : want === 'judge'
             ? 'A judge has its own identity so that reading a change and writing one are separate '
                 + 'accounts — lending it elsewhere collapses that back into one.'
-            : 'A runner tagged ' + (is === 'supervisor' ? 'supervisor' : 'judge') + ' signs in as '
-                + 'itself: this would hold one of the identities the worker runners draw from, and '
-                + 'bill that machine\'s work to a worker.';
+            //---- AND THE PERSON'S OWN, ON A MACHINE THE QUEUE CAN TAKE -----
+            //
+            //THIS IS THE FAILURE THE ROLE EXISTS TO STOP, so it names it rather
+            //than saying the tags disagree. The tick would roll that machine
+            //back to base and run a task on it — under the person's identity,
+            //over the top of whatever they had open.
+            : want === 'diy'
+                ? 'A DIY sign-in is the person\'s own, and ' + machine + ' is one the queue can pick up. '
+                    + 'The tick would roll it back and spend that identity on work nobody asked it to do. '
+                    + 'Tag a machine "diy" and the queue leaves it alone.'
+                : 'A runner tagged ' + (is === 'supervisor' ? 'supervisor' : is) + ' signs in as '
+                    + 'itself: this would hold one of the identities the worker runners draw from, and '
+                    + 'bill that machine\'s work to a worker.';
 
     return '"' + name + '" is ' + SAYS[want] + ' and ' + machine + ' is ' + MACHINE_SAYS[is] + '. ' + why;
 }
