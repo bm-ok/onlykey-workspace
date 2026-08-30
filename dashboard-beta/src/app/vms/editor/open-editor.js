@@ -1,6 +1,7 @@
 var fs = require('fs');
 var path = require('path');
 var cp = require('child_process');
+var makePlatforms = require('./remote-platform');
 
 //---------------------------------------------------------------------------
 //OPENING THE WORK IN VS CODE, WHEREVER THE WORK IS.
@@ -71,6 +72,14 @@ module.exports = function openEditor(deps) {
     var there = d.there || function (p) {
         try { return fs.existsSync(p); } catch (e) { return false; }
     };
+
+    //THE SAME `say`, `env`, `platform` AND `there` THIS ALREADY TAKES, handed
+    //on — so a test that injects a fake disk here gets one for both halves
+    //rather than one half reading the real settings.json.
+    var platforms = d.platforms || makePlatforms({
+        env: env, platform: platform, there: there, say: say,
+        readFile: d.readFile, writeFile: d.writeFile, home: d.home
+    });
 
     //---- where the editor actually is, and how that was decided ------------
     //
@@ -195,6 +204,31 @@ module.exports = function openEditor(deps) {
         var spec = launchSpec(exe, args);
         var to = say.apply(null, ['editor'].concat(it.tags || []));
 
+        //---- BEFORE IT STARTS, NOT AFTER --------------------------------
+        //
+        //REMOTE-SSH READS THIS AT CONNECT TIME. Written afterwards it would be
+        //correct for the next press and useless for this one — and this one is
+        //the press somebody is watching.
+        //
+        //ONLY FOR A REMOTE. Opening a folder on this computer has no host to
+        //have a platform, and writing an entry for one would put a machine name
+        //in somebody's settings that nothing ever reads.
+        //
+        //AND IT NEVER STOPS THE LAUNCH. `ensure` answers rather than throwing;
+        //the worst case is the dialog somebody was already getting, which is
+        //not a reason to refuse to open an editor. See ./remote-platform.js.
+        var platformSaid = it.remote
+            ? platforms.ensure(it.remote, exe)
+            : { added: false, why: 'nothing remote to say it about' };
+
+        if (!platformSaid.added && platformSaid.file && platformSaid.why !== 'already there') {
+            //SAID ONCE, AND NOT AS A FAILURE. VS Code will ask which platform
+            //it is and carry on working the moment that is answered, so this is
+            //a convenience that did not happen, not a broken press. It names the
+            //file, because the fix is one line somebody can type.
+            to.warn('VS Code may ask which platform ' + it.remote + ' is: ' + platformSaid.why);
+        }
+
         var attempted = spec.file + ' ' + spec.argv.map(function (a) {
             return /\s/.test(a) ? '"' + a + '"' : a;
         }).join(' ');
@@ -240,7 +274,8 @@ module.exports = function openEditor(deps) {
             var done = function () {
                 if (settled) return;
                 to.good('VS Code was asked to open it.');
-                finish(resolve, { opened: it.dir, on: it.remote || null, using: exe, found: found.from });
+                finish(resolve, { opened: it.dir, on: it.remote || null, using: exe, found: found.from,
+                platform: platformSaid.added ? 'told VS Code it is Linux' : platformSaid.why });
             };
 
             var child;
@@ -277,6 +312,9 @@ module.exports = function openEditor(deps) {
 
     return {
         open: open,
+        //HANDED OUT so the DIY press can say whether it wrote the entry, and so
+        //somebody can ask without opening an editor to find out.
+        platforms: platforms,
         discover: discover,
         folderUri: folderUri,
         launchSpec: launchSpec,

@@ -23,7 +23,7 @@ const makeEditor = require('../../src/app/vms/editor/open-editor');
 //a half per case and hangs when something never settles.
 //---------------------------------------------------------------------------
 
-let spawned, fake, clock, said, files;
+let spawned, fake, clock, said, files, wrote;
 
 function fakeChild() {
     const c = new EventEmitter();
@@ -45,6 +45,15 @@ function editor(over) {
         //one spelling has to meet both.
         there: (p) => files.has(String(p).split('\\').join('/')),
         env: { LOCALAPPDATA: 'C:/Users/x/AppData/Local', ProgramFiles: 'C:/Program Files', COMSPEC: 'C:/Windows/cmd.exe' },
+        //NO PATH TO A REAL settings.json, AND NO REAL WRITER EITHER. `open` now
+        //tells VS Code the far end is Linux on its way past — see
+        //../../src/app/vms/editor/remote-platform.js — and a harness that leaves
+        //those two on the defaults is a suite that edits whoever ran it's
+        //editor config. Belt and braces: no home for a path to be built from,
+        //and a writer that records instead of writing.
+        home: () => '',
+        readFile: () => { throw new Error('a test read the real settings.json'); },
+        writeFile: (p, text) => { wrote.push({ file: p, text: text }); },
         platform: 'win32',
         after: (ms, fn) => { const t = { ms, fn, live: true }; clock.push(t); return t; },
         clear: (t) => { if (t) t.live = false; },
@@ -79,7 +88,7 @@ const fire = (ms) => {
     t.fn();
 };
 
-beforeEach(() => { spawned = []; fake = {}; clock = []; said = []; files = new Set(); });
+beforeEach(() => { spawned = []; fake = {}; clock = []; said = []; files = new Set(); wrote = []; });
 
 //---- where the editor is ------------------------------------------------------
 
@@ -195,9 +204,74 @@ test('it resolves on the grace window, because the editor outlives this call', (
 
     fire(1500);
     return within('open()', p).then((r) => {
-        assert.deepEqual(r, { opened: '/a', on: null, using: '/snap/bin/code', found: 'found where it installs' });
+        //`platform` SAYS WHAT IT DID ABOUT THE "which platform is this host"
+        //dialog — see ../../src/app/vms/editor/remote-platform.js. A local
+        //folder has no host to have a platform, so it says so rather than
+        //leaving the field off and making its absence mean two things.
+        assert.deepEqual(r, {
+            opened: '/a', on: null, using: '/snap/bin/code', found: 'found where it installs',
+            platform: 'nothing remote to say it about'
+        });
         assert.equal(fake.child.unreffed, true, 'it held the process it does not own');
     });
+});
+
+//---- and the dialog it stops before it appears --------------------------------
+//
+//REMOTE-SSH ASKS "Select the platform of the remote host" the first time it is
+//pointed at a host it has not seen, and WAITS. No server is installed, no
+//extension runs, no folder opens. So the one press this app has for getting into
+//a machine ended on a dialog, for every machine ever built.
+
+test('a remote open tells VS Code the far end is Linux, BEFORE it starts', () => {
+    //BEFORE, BECAUSE REMOTE-SSH READS IT AT CONNECT TIME. Written afterwards it
+    //would be correct for the next press and useless for this one — and this one
+    //is the press somebody is watching.
+    const order = [];
+    files.add('/snap/bin/code');
+
+    editor({
+        platform: 'linux', env: {},
+        exec: (file, argv, opts, cb) => {
+            order.push('launched');
+            spawned.push({ file, argv, opts });
+            fake.cb = cb;
+            fake.child = fakeChild();
+            return fake.child;
+        },
+        platforms: { ensure: (alias) => { order.push('told about ' + alias); return { added: true, why: 'added it' }; } }
+    }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
+
+    assert.deepEqual(order, ['told about okc-ok-diy1', 'launched']);
+});
+
+test('and a LOCAL open says nothing about a platform, because there is no host', () => {
+    //AN ENTRY FOR A LOCAL FOLDER would put a name in somebody's settings that
+    //nothing ever reads.
+    files.add('/snap/bin/code');
+    let asked = 0;
+
+    editor({
+        platform: 'linux', env: {},
+        platforms: { ensure: () => { asked++; return { added: true }; } }
+    }).open({ dir: '/a' });
+
+    assert.equal(asked, 0, 'it wrote a remote platform entry for a folder on this computer');
+});
+
+test('and it opens the editor anyway when it could not write the entry', () => {
+    //THE WORST CASE IS THE DIALOG SOMEBODY WAS ALREADY GETTING. A press that
+    //refuses because it could not save a click is worse than the click.
+    files.add('/snap/bin/code');
+
+    editor({
+        platform: 'linux', env: {},
+        platforms: { ensure: () => ({ added: false, file: '/x/settings.json', why: 'it could not be written: EACCES' }) }
+    }).open({ dir: '/a', remote: 'okc-h' });
+
+    assert.equal(spawned.length, 1, 'it did not start the editor');
+    //AND IT SAID SO, naming the file, because the fix is one line somebody can type.
+    assert.ok(said.some((l) => /warn .*may ask which platform/.test(l)), said.join(' | '));
 });
 
 test('a clean exit resolves at once rather than waiting out the grace', () => {
