@@ -2,6 +2,7 @@ var fs = require('fs');
 var path = require('path');
 
 var makeLibrary = require('./entries');
+var makeLayout = require('./layout');
 var chain = require('./chain');
 var starters = require('./starters');
 
@@ -20,18 +21,33 @@ var starters = require('./starters');
 //./entries.js is the rules an approval is made of. ./chain.js is how the three
 //link up. This half is the stores and the doors, and decides nothing.
 //
-//---- where each of the three lives, which is not the same place -----------
+//---- where all three live, which used to be two different places ----------
 //
-//A JOB IS KEPT PER WORKSPACE. It is a SCRIPT that runs against the folder of
-//repositories that is open, and its code is a file on disk beside the record.
+//ALL THREE ARE THE WORKSPACE'S, in its `.okc` drawer, laid out the way a
+//bootstrap bundle is:
 //
-//A PROMPT AND A CONTRACT ARE KEPT PER COMPUTER. "Read the README against the
-//code and say where they disagree" names no branch and no repository, and a
-//library that emptied itself when somebody switched workspace is one nobody
-//would spend an afternoon building.
+//    library.json          what is here, and what each thing is
+//    contracts/<id>.md     prompts/<id>.md     jobs/<id>.js
 //
-//THAT ASYMMETRY IS THE DESIGN, not an oversight to tidy up, and it is why this
-//half consumes ../core/state rather than one drawer of it.
+//SO THE DRAWER IS A BUNDLE. An exported tar unpacked into a workspace is that
+//workspace's library, and there is no import that rewrites one shape into
+//another, because there is one shape. ./layout.js is the store and it asks
+//../bootstrap/bundle.js for the folder names rather than repeating them.
+//
+//IT WAS AN ASYMMETRY AND THIS FILE ARGUED FOR IT: a job is a script that runs
+//against the open folder, while "read the README against the code" names no
+//repository — so jobs were the workspace's and the other two the computer's.
+//
+//WHAT THAT MISSED IS THE CONTRACT. A contract is the limits a worker runs under
+//ON THIS PROJECT, and a prompt is what it is told to do with THESE
+//repositories — so a second folder inherited the first one's rules without
+//being told, and the half-and-half library was one where the jobs moved and the
+//limits binding them did not.
+//
+//THE COST IS REAL AND WAS TAKEN KNOWINGLY: opening a fresh workspace now finds
+//an empty library, and an afternoon of writing prompts does not follow you to
+//the next project. Dropping in an exported bundle is the answer to that, which
+//is the other half of why the layout is the bundle's.
 //
 //---- and the code is not ../core/archive's ---------------------------------
 //
@@ -76,16 +92,24 @@ async function plugin(imports, register) {
 
     //---- WHERE AN APPROVED COPY GOES, PER KIND --------------------------
     //
-    //A PROMPT AND A CONTRACT ARE THE HOST'S; A JOB IS THE WORKSPACE'S. So a job
-    //is filed under the workspace it belongs to, and without that two
-    //workspaces with a job of the same name would share one history and each
-    //would look as though the other had been editing it.
+    //ALL THREE ARE FILED UNDER THEIR WORKSPACE, and it was jobs only — because
+    //jobs were the only one kept per workspace. Now that all three are, two
+    //workspaces can hold a contract of the same name and each needs its own
+    //past; sharing one would make each look as though the other had been
+    //editing it.
     //
     //WRITTEN ONCE, WHICH IT WAS NOT UNTIL SOMETHING READ THESE BACK. A copy kept
     //under one id and looked for under another is not an error — it is an empty
     //history, which reads exactly like "this has never been approved" and is the
     //one answer nobody would question.
-    var SCOPED = { job: true, prompt: false, contract: false };
+    //
+    //THE VERSIONS THEMSELVES STAY IN THE HOST'S DRAWER, keyed by this prefix,
+    //rather than moving into `.okc` with the entries. What a thing WAS when it
+    //was approved is the evidence behind a refusal — see ../guards — and it is
+    //the one thing that should survive somebody deleting a folder to start
+    //again. A bundle carries no approvals either, which is the same rule from
+    //the other side: approving is the receiving host's act.
+    var SCOPED = { job: true, prompt: true, contract: true };
 
     //THE WORKSPACE'S OWN NAME FOR ITSELF, NOT ITS DRAWER'S. This read the
     //basename of `here.where()`, which used to BE the slug — the drawer was
@@ -132,13 +156,47 @@ async function plugin(imports, register) {
         };
     }
 
-    var contracts = makeLibrary('contract', function () { return state.app.doc('contracts'); }, {
+    //---- ALL THREE FOLLOW THE WORKSPACE -----------------------------------
+    //
+    //JOBS ALREADY DID AND THE OTHER TWO DID NOT, which made the library half a
+    //workspace's and half the host's: open a second folder and its jobs were its
+    //own, while the contracts limiting them and the prompts driving them were
+    //still the first folder's.
+    //
+    //THEY ARE ABOUT THE WORK, WHICH IS WHAT DECIDES. A contract is the rules a
+    //worker runs under ON THIS PROJECT; a prompt is what it is told to do with
+    //THESE repositories. Neither means anything away from the folder they were
+    //written for, and a second project inheriting them is inheriting somebody
+    //else's limits without being told.
+    //
+    //ASKED FOR PER CALL AND ASYNC, the same shape jobs already had — which
+    //workspace is open is resolved on every call, and that is what makes
+    //switching folders change the library with nothing subscribing to anything.
+    //---- AND KEPT THE WAY A BUNDLE IS LAID OUT ----------------------------
+    //
+    //`library.json` beside `contracts/`, `prompts/`, `jobs/` and `skills/` — the
+    //same folders `bootstrapExport` writes and `bootstrapImport` reads. So a
+    //workspace's drawer IS a bundle: an exported tar unpacked into one is that
+    //workspace's library, and there is no import step that rewrites one shape
+    //into another because there are no longer two shapes.
+    //
+    //IT WAS THREE JSON BLOBS with the text escaped inside them, and job code
+    //already on disk in `jobs/<id>.js` — so a third of this layout existed and
+    //the other two kept prose in a form nobody could read without the app. See
+    //./layout.js, which asks ../bootstrap/bundle.js for the folder names rather
+    //than repeating them.
+    function kept(kind) {
+        var box = makeLayout(function () { return state.here.where(); }, kind);
+        return function () { return box.at(); };
+    }
+
+    var contracts = makeLibrary('contract', kept('contract'), {
         keepApproved: keeping('contract'),
         writes: ['text'],
         needsBody: 'Write the rules. An empty contract would be handed to a worker as no limits at all.'
     });
 
-    var prompts = makeLibrary('prompt', function () { return state.app.doc('prompts'); }, {
+    var prompts = makeLibrary('prompt', kept('prompt'), {
         keepApproved: keeping('prompt'),
         writes: ['text', 'contractId'],
         //THE CONTRACT IS PART OF WHAT WAS APPROVED. See ./entries.js.
@@ -146,7 +204,7 @@ async function plugin(imports, register) {
         needsBody: 'Write the prompt. An empty one would be handed to a worker as an empty instruction.'
     });
 
-    var jobs = makeLibrary('job', async function () { return await state.here.doc('jobs'); }, {
+    var jobs = makeLibrary('job', kept('job'), {
         keepApproved: keeping('job'),
         writes: ['promptId', 'tags'],
         approvedWith: ['promptId'],
