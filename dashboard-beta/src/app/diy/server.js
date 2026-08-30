@@ -27,6 +27,13 @@
 //---------------------------------------------------------------------------
 
 var makeStore = require('./store');
+var guestEditor = require('../vms/editor/on-the-guest');
+
+//WHAT MAKES THIS EDITOR WORTH OPENING. A DIY machine exists so somebody can run
+//their own claude session in it, and the VS Code half of that is one extension —
+//which runs on the MACHINE, not on this desktop. Named once, here, rather than
+//spelled into a shell command in the middle of the press.
+var CLAUDE_EXTENSION = 'anthropic.claude-code';
 
 plugin.consumes = ['app', 'log', 'editor', 'ssh', 'ours', 'repoWorkspaces', 'state'];
 plugin.provides = [];
@@ -897,6 +904,47 @@ async function plugin(imports, register) {
 
                 var said = await editor.open({ dir: folder, remote: m.alias, tags: [name] });
 
+                //---- AND CLAUDE INSIDE IT ---------------------------------
+                //
+                //AN EDITOR OPENED ON A MACHINE WITH NO CLAUDE IN IT is most of
+                //a press. The extension runs in the REMOTE extension host, so
+                //the one installed on this desktop is not the one that window
+                //uses — it says so itself: "This extension is disabled in this
+                //workspace because it is defined to run in the Remote Extension
+                //Host."
+                //
+                //AFTER `open`, NOT BEFORE, and this is the whole reason it is
+                //here rather than up beside the workspace. There is no VS Code
+                //server on a machine that has just been rolled back to base —
+                //the editor puts one there when it connects — so before the
+                //launch there is nothing to install with. See ../vms/editor/
+                //on-the-guest.js, which waits on the machine rather than making
+                //this host ask over and over.
+                //
+                //AND IT NEVER FAILS THE PRESS. The editor is open either way,
+                //and refusing to report a press that worked because a
+                //convenience did not is how somebody stops believing what this
+                //answers.
+                var extension = { done: false, why: null };
+                try {
+                    var ran = await actions.call('vmRun', {
+                        name: name,
+                        what: 'making sure claude is in the editor over there',
+                        timeout: (guestEditor.WAIT_SECONDS + 60) * 1000,
+                        command: guestEditor.installing(CLAUDE_EXTENSION)
+                    });
+                    extension = guestEditor.said(ran && ran.output);
+                } catch (e) {
+                    extension = { done: false, why: 'it could not be asked: ' + e.message };
+                }
+
+                if (extension.done) {
+                    if (extension.why !== 'already there') to.good('claude in the editor: ' + extension.why);
+                } else {
+                    to.warn('claude may not be in the editor on ' + name
+                        + (extension.why ? ': ' + extension.why : ''));
+                }
+
                 //NOT AN ERROR, AND WORTH SAYING. A machine built before this app
                 //had a key of its own has somebody else's public half in its
                 //authorized_keys, so the config leaves it to ssh's defaults —
@@ -917,8 +965,17 @@ async function plugin(imports, register) {
                     usesOurKey: m.usesOurKey,
                     using: said && said.using,
                     found: said && said.found,
+
+                    //WHETHER THE EDITOR HAS CLAUDE IN IT, on the answer rather
+                    //than only in the log. It is the difference between an
+                    //editor and the reason for opening one, and a press that
+                    //quietly half-worked is the shape of every bug in this file
+                    //so far.
+                    claude: extension.done ? extension.why : false,
+
                     note: 'VS Code was asked to open ' + folder + ' on ' + m.alias
                         + ' (' + m.user + '@' + m.address + ').'
+                        + (extension.done ? '' : ' Claude may not be in it' + (extension.why ? ' — ' + extension.why : '.'))
                         + (m.usesOurKey ? '' : ' It was not built with this app\'s key, so ssh will use its own default identity.')
                 };
             }

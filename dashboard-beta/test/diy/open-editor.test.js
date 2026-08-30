@@ -30,7 +30,7 @@ const diyPlugin = require('../../src/app/diy/server');
 //   the Keys pane earlier is a press that works on the machine it was written on.
 //---------------------------------------------------------------------------
 
-let asked, said, register, machines, homeSays;
+let asked, said, register, machines, homeSays, guestExtension;
 
 //BUILT RATHER THAN TYPED. A backslash-n written into this file through a shell
 //heredoc arrives as a REAL newline — see ../../CLAUDE.md, which has the same
@@ -58,9 +58,10 @@ const READING = (over) => Object.assign({
 }, over || {});
 
 beforeEach(() => {
-    asked = { opened: [], ssh: [], ran: [] };
+    asked = { opened: [], ssh: [], ran: [], order: [] };
     said = [];
     homeSays = '/home/okc';
+    guestExtension = 'installed';
     machines = { 'beta-worker1': VM() };
     register = READING();
 });
@@ -78,10 +79,24 @@ async function anApp(over) {
     //and a URI does not expand shell variables — so this is asked before the
     //editor is opened. It answers the way the real `vmRun` does: the echoed
     //`$ what` line, then the output.
+    //TWO THINGS ARE ASKED OF THE MACHINE IN THIS PRESS, and they are told apart
+    //the way the guest would tell them apart — by what the command IS. A stub
+    //answering both with one canned reply would let either half pass while the
+    //other never ran.
     actions.define('vmRun', {
         about: 'vmRun',
         run: async (a) => {
             asked.ran.push(a.command);
+            asked.order.push(/install-extension/.test(a.command) ? 'install' : 'ask-home');
+
+            if (/install-extension/.test(a.command)) {
+                if (guestExtension === 'throw') throw new Error('it is not dialled in');
+                //THE SHAPE THE REAL SCRIPT ANSWERS IN — a line among whatever
+                //else a guest shell decided to print. See
+                //../../src/app/vms/editor/on-the-guest.js.
+                return { code: 0, output: 'Welcome to Ubuntu' + EOL + 'okc-extension ' + guestExtension };
+            }
+
             if (homeSays === null) throw new Error('the machine said nothing');
             return { code: 0, output: '$ ' + a.what + EOL + homeSays };
         }
@@ -97,6 +112,10 @@ async function anApp(over) {
         editor: {
             open: async (it) => {
                 asked.opened.push(it);
+                //ONE LIST FOR BOTH, because the claim about the extension is
+                //that it is installed AFTER the editor is launched — and two
+                //separate lists cannot be compared for order.
+                asked.order.push('editor.open');
                 return { opened: it.dir, on: it.remote, using: 'code.cmd', found: 'found where it installs' };
             }
         },
@@ -238,7 +257,10 @@ test('and it is asked ONCE, however many times the editor is opened', async () =
     await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
     await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
 
-    assert.equal(asked.ran.length, 1, 'it asked ' + asked.ran.length + ' times: ' + asked.ran.join(' | '));
+    //COUNTED BY WHICH QUESTION IT IS. Two things are asked of the machine in
+    //this press now, and a bare count would move whenever the other one did.
+    const homeAsks = asked.ran.filter((c) => /HOME/.test(c) && !/install-extension/.test(c));
+    assert.equal(homeAsks.length, 1, 'it asked ' + homeAsks.length + ' times: ' + homeAsks.join(' | '));
 });
 
 test('a machine that will not say falls back, opens anyway, and SAYS it assumed', async () => {
@@ -263,7 +285,8 @@ test('and a machine given a folder of its own is not asked at all', async () => 
     await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
 
     assert.equal(asked.opened[0].dir, '/srv/work');
-    assert.equal(asked.ran.length, 0, 'it asked about home for an absolute path');
+    assert.equal(asked.ran.filter((c) => /HOME/.test(c) && !/install-extension/.test(c)).length, 0,
+        'it asked about home for an absolute path');
 });
 
 //---- that the key is set up first ------------------------------------------
@@ -347,4 +370,106 @@ test('the ordinary answer does not warn about the key', async () => {
     assert.equal(answer.usesOurKey, true);
     assert.ok(!/default identity/.test(answer.note), answer.note);
     assert.ok(!said.some((l) => /warn:/.test(l)), said.join(' | '));
+});
+
+
+//---- AND CLAUDE INSIDE THE EDITOR -------------------------------------------
+//
+//AN EDITOR OPENED ON A MACHINE WITH NO CLAUDE IN IT is most of a press. The
+//extension runs in the REMOTE extension host, so the one installed on the
+//operator's desktop is not the one that window uses — and the window says so:
+//"This extension is disabled in this workspace because it is defined to run in
+//the Remote Extension Host."
+//
+//IT MATTERS MOST AFTER A CLEAR. Rolling a machine back to base takes the VS
+//Code server and every extension on it away with the disk — so an install done
+//by hand lasts exactly until the first time somebody uses the other button.
+
+const anEditor = (actions) => actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+
+test('opening installs claude on the machine, AFTER the editor is launched', async () => {
+    //AFTER, AND THAT IS THE WHOLE REASON IT IS ORDERED THIS WAY. There is no VS
+    //Code server on a machine that was just rolled back — the editor puts one
+    //there when it connects — so before the launch there is nothing to install
+    //with. Doing it first would work on a machine that had been opened before
+    //and on no other.
+    const actions = await anApp();
+
+    const out = await anEditor(actions);
+
+    assert.ok(asked.order.indexOf('editor.open') >= 0, 'it never opened the editor');
+    assert.ok(asked.order.indexOf('install') > asked.order.indexOf('editor.open'),
+        'it tried to install before VS Code had put a server there: ' + asked.order.join(' -> '));
+    assert.equal(out.claude, 'installed it on the machine');
+});
+
+test('and what it runs is the thing that installs claude, not something else', async () => {
+    const actions = await anApp();
+
+    await anEditor(actions);
+
+    const ran = asked.ran.filter((c) => /install-extension/.test(c));
+    assert.equal(ran.length, 1, asked.ran.join(' | '));
+    assert.match(ran[0], /anthropic\.claude-code/);
+});
+
+test('an extension already on the machine is not fetched again', async () => {
+    guestExtension = 'already-there';
+    const actions = await anApp();
+
+    const out = await anEditor(actions);
+
+    assert.equal(out.claude, 'already there');
+    //AND IT IS NOT SHOUTED ABOUT. The common case is silent; only a change or a
+    //failure is worth a line.
+    assert.ok(!said.some((l) => /claude in the editor/.test(l)), said.join(' | '));
+});
+
+test('and it NEVER fails the press, whatever the machine said', async () => {
+    //THE EDITOR IS OPEN EITHER WAY. Refusing to report a press that worked
+    //because a convenience did not is how somebody stops believing what this
+    //answers — and this press starts a virtual machine, so being believed is
+    //most of what it is for.
+    for (const answer of ['no-server', 'failed', 'nonsense', 'throw']) {
+        //RESET PER CASE. `beforeEach` runs once for the whole test, so without
+        //this the counts below are of every case so far rather than of this one.
+        asked = { opened: [], ssh: [], ran: [], order: [] };
+        said = [];
+        guestExtension = answer;
+        const actions = await anApp();
+
+        const out = await anEditor(actions);
+
+        assert.equal(out.opened, '/home/okc/workspace', answer);
+        assert.equal(out.claude, false, answer);
+        assert.match(out.note, /Claude may not be in it/, answer);
+        assert.equal(asked.opened.length, 1, answer);
+    }
+});
+
+test('and each of those is said out loud, rather than swallowed', async () => {
+    //AN EDITOR THAT QUIETLY HAS NO CLAUDE IN IT is the failure this whole step
+    //exists for, so the one thing it must not do is happen silently.
+    for (const answer of ['no-server', 'failed', 'throw']) {
+        asked = { opened: [], ssh: [], ran: [], order: [] };
+        said = [];
+        guestExtension = answer;
+        const actions = await anApp();
+        await anEditor(actions);
+
+        assert.ok(said.some((l) => /warn: claude may not be in the editor/.test(l)),
+            answer + ': ' + said.join(' | '));
+    }
+});
+
+test('a machine with no server yet is told what to do about it', async () => {
+    //"IT DID NOT WORK" IS NOT ACTIONABLE. This one fixes itself by pressing the
+    //same button again once the window is up, and that is worth saying rather
+    //than leaving somebody to guess whether the machine is broken.
+    guestExtension = 'no-server';
+    const actions = await anApp();
+
+    await anEditor(actions);
+
+    assert.ok(said.some((l) => /Opening it again once the window is up/.test(l)), said.join(' | '));
 });
