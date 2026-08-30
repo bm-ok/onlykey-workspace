@@ -336,8 +336,12 @@ module.exports = function store(deps) {
 
         var to = String(want || '').toLowerCase();
         if (!shape.isRole(to)) {
-            throw new Error('"' + want + '" is not a role. A sign-in is a worker, a judge or a supervisor '
-                + '— which decides the kind of machine it may be lent to.');
+            //THE LIST COMES FROM ./shape.js RATHER THAN BEING TYPED HERE. A
+            //sentence naming three roles beside a check that allows four is a
+            //refusal that argues with itself — and the reader believes the
+            //sentence, because that is the part they can see.
+            throw new Error('"' + want + '" is not a role. A sign-in is one of: ' + shape.ROLES.join(', ')
+                + ' — which decides the kind of machine it may be lent to.');
         }
 
         var was = shape.roleFrom(rows[i].role);

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const {
-    okName, fingerprint, usable, planOf, accountOf, roleFrom, isRole, paused, mayOverturn
+    okName, fingerprint, usable, planOf, accountOf, roleFrom, isRole, paused, mayOverturn, ROLES
 } = require('../../src/app/runners/guests/shape');
 
 //---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ test('a credential is not an account file, and answers nothing about who it is',
     assert.strictEqual(accountOf(CRED()), null);
 });
 
-//---- three roles, and the word that used to mean one of them -----------------
+//---- the roles, and the word that used to mean one of them -------------------
 
 test('the old word for a worker is read as one, rather than migrated', () => {
     //AN OLD RECORD NEEDS NO REWRITING TO BE READ. And "guest" was retired
@@ -159,10 +159,35 @@ test('the old word for a worker is read as one, rather than migrated', () => {
     assert.equal(roleFrom(undefined), 'worker');
 });
 
-test('and the three that exist are kept as themselves', () => {
+test('and the ones that exist are kept as themselves', () => {
     assert.equal(roleFrom('worker'), 'worker');
     assert.equal(roleFrom('judge'), 'judge');
     assert.equal(roleFrom('supervisor'), 'supervisor');
+    assert.equal(roleFrom('diy'), 'diy');
+});
+
+//---- EVERY ROLE, WITHOUT THIS FILE HOLDING A SECOND LIST OF THEM -------------
+//
+//THE FAILURE THIS IS FOR HAS HAPPENED TWICE. `claudeSignedIn` kept its own copy
+//of this mapping — `supervisor ? ... : judge ? ... : 'worker'` — so the Claude
+//Judge pane signed somebody in and filed them as a worker. That was repaired by
+//adding a branch, and when `diy` arrived the DIY pane did exactly the same
+//thing: a credential filed as a worker, which then cannot be lent to the machine
+//it was made for, because lending refuses a worker sign-in on a diy machine.
+//
+//A CREDENTIAL UNDER THE WRONG ROLE IS QUIET. Nothing fails at the moment it is
+//kept; it fails later, at a refusal that is correct about a record that is wrong.
+//
+//SO THIS LOOPS OVER `ROLES` RATHER THAN NAMING THEM. A test with its own list
+//goes stale beside the copy it was written to catch.
+test('every role this app has survives being read back', () => {
+    ROLES.forEach(function (role) {
+        assert.equal(roleFrom(role), role, role + ' does not survive roleFrom');
+        assert.ok(isRole(role), role + ' is not recognised as a role');
+    });
+
+    //INERTNESS: there are roles, and the loop above ran over them.
+    assert.ok(ROLES.length >= 4, String(ROLES.length));
 });
 
 test('anything unrecognised is a worker, which is the least it could be', () => {

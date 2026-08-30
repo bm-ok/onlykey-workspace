@@ -858,14 +858,24 @@ async function plugin(imports, register) {
             run: async function (args) {
                 var a = args || {};
 
-                //ALL THREE ROLES, because this is what the window's "+" calls.
-                //Mapping anything that is not a supervisor to a worker meant the
-                //Claude Judge pane would sign somebody in and quietly file them
-                //as a worker — a credential that then cannot be lent to the
-                //machine it was made for.
-                var kind = a.role === 'supervisor' ? 'supervisor'
-                    : a.role === 'judge' ? 'judge'
-                        : 'worker';
+                //EVERY ROLE, ASKED OF THE ONE PLACE THAT KNOWS THEM.
+                //
+                //THIS WAS A SECOND COPY OF `roleFrom` and it went stale the day a
+                //fourth role was added. It had already been wrong once — the note
+                //it carried said so, about the Claude Judge pane signing somebody
+                //in and quietly filing them as a worker — and the repair was to
+                //add a branch rather than to stop keeping a copy. So when `diy`
+                //arrived, the DIY pane signed a credential in and filed it as a
+                //worker, in exactly the same way, for exactly the same reason.
+                //
+                //A credential filed under the wrong role cannot be lent to the
+                //machine it was made for: ./lending.js refuses a worker sign-in
+                //on a machine tagged diy, which is the rule working correctly on
+                //a record that is wrong.
+                //
+                //./shape.js OWNS THE LIST. A branch here would be a third repair
+                //of the same shape, waiting for a fifth role.
+                var kind = shape.roleFrom(a.role);
 
                 var called = String(a.as || '').trim();
                 if (!called) {
