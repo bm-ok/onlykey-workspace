@@ -37,7 +37,7 @@ var bundle = require('./bundle');
 //rewriting a skill is refused there, so it would be done here instead.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'library', 'provision', 'archive'];
+plugin.consumes = ['app', 'log', 'library', 'provision', 'archive', 'state'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -60,6 +60,17 @@ async function plugin(imports, register) {
     //STAGES, and the one that went stale would be this one.
     var SKILLS = { supervisor: 'skill', worker: 'workerSkill', judge: 'judgeSkill' };
 
+    //THE FOLDERS A BUNDLE MAY UNPACK INTO, and nothing else. `bootstrapSeed`
+    //writes into a folder somebody named, from a tar somebody may have replaced,
+    //so what it is allowed to create is a list rather than whatever the archive
+    //happens to hold.
+    //
+    //`skills` IS ON IT because a bundle written before today has one — see
+    //./bundle.js's OLD_SKILLS. It is unpacked so nothing is lost, and the app
+    //reads the provision folder, so an old tar seeds a workspace whose skills
+    //are the shipped ones until it is imported properly.
+    var KEEP = { contracts: true, prompts: true, jobs: true, provision: true, skills: true };
+
     function skillText(stage) {
         try { return fs.readFileSync(imports.provision.fileFor(null, stage), 'utf8'); }
         catch (e) { return null; }
@@ -78,13 +89,36 @@ async function plugin(imports, register) {
         var code = {};
         for (var job of sets.job || []) code[job.id] = await lib.codeFor(job.id);
 
-        var skills = [];
-        Object.keys(SKILLS).forEach(function (which) {
-            var text = skillText(SKILLS[which]);
-            if (text) skills.push({ which: which, title: which, text: text });
+        //---- AND THE PROVISION FOLDER --------------------------------------
+        //
+        //TWO SOURCES, AND THE ORDER MATTERS. First this workspace's own folder —
+        //the scripts somebody put there and the skills they approved. Then the
+        //three skills for any that folder does not hold, resolved through the
+        //search path so they fall back to what the app ships.
+        //
+        //THE SECOND HALF IS WHY THE TAR NEVER LOSES A SKILL. A workspace that
+        //has never edited one has nothing in its own folder, and carrying only
+        //what it holds would ship a bundle with no skills in it at all — which
+        //is exactly the set a fresh workspace most needs.
+        //
+        //FIRST WINS, as everywhere else here: what this workspace has beats what
+        //the app shipped.
+        var scripts = [];
+        var seen = {};
+
+        (imports.provision.kept() || []).forEach(function (f) {
+            seen[f.name] = true;
+            scripts.push({ name: f.name, text: f.text });
         });
 
-        return { sets: sets, code: code, skills: skills };
+        Object.keys(SKILLS).forEach(function (which) {
+            var name = imports.provision.STAGES[SKILLS[which]];
+            if (!name || seen[name]) return;
+            var text = skillText(SKILLS[which]);
+            if (text) scripts.push({ name: name, text: text });
+        });
+
+        return { sets: sets, code: code, scripts: scripts };
     }
 
     //---- WHERE THE ONE THAT SHIPPED WITH THIS APP IS -----------------------
@@ -101,7 +135,10 @@ async function plugin(imports, register) {
     //copies of anything drift the moment one is edited. The tar is the one that
     //gets RESTORED FROM, so it is the one that is true — and a folder of the
     //same documents beside it was a second answer to the same question.
-    var shipped = path.join(__dirname, 'okc-bootstrap.tar');
+    //OVERRIDABLE, THE SAME WAY ../vms/provision's shipped folder is. A drill
+    //needs a set to seed a folder FROM, and the alternative is writing a tar into
+    //the source tree beside this file and remembering to delete it.
+    var shipped = process.env.OKC_BOOTSTRAP_TAR || path.join(__dirname, 'okc-bootstrap.tar');
 
     //---- PUTTING A SET BACK, WHEREVER IT WAS READ FROM ---------------------
     //
@@ -110,7 +147,7 @@ async function plugin(imports, register) {
     //must not depend on which one somebody used, and two copies of this is
     //exactly where that would start to be untrue.
     async function putItBack(had, over) {
-        var wrote = { contract: 0, prompt: 0, job: 0, skill: 0 };
+        var wrote = { contract: 0, prompt: 0, job: 0, provision: 0 };
         var skipped = [];
 
         //CONTRACTS, THEN PROMPTS, THEN JOBS — the order the links run in. A
@@ -141,20 +178,36 @@ async function plugin(imports, register) {
             }
         }
 
-        for (var sk of had.skills) {
-            var stage = SKILLS[sk.which];
-            if (!stage) { skipped.push('skill "' + sk.which + '"'); continue; }
+        //---- AND THE PROVISION FOLDER, FILE FOR FILE -----------------------
+        //
+        //BY NAME, WITH NO MAPPING. A bundle's `provision/` is a workspace's
+        //`.okc/provision/`, so a file goes in under the name it arrived with —
+        //`supervisor-skill.md` and `extra.sh` alike. The skills used to be
+        //translated here from a second spelling; there is only one now.
+        //
+        //THE NAME IS STILL CHECKED. It came out of a manifest in a folder
+        //somebody may have edited, so it is held to the same rule as everything
+        //else served from that directory — a plain filename, nothing that could
+        //climb out of it.
+        var into = await imports.provision.keptDir();
+        if (had.provision.length && !into) {
+            throw new Error('No workspace is open, so there is nowhere to put a provisioning file. They are '
+                + 'kept beside that workspace’s jobs, the same as everything else here.');
+        }
 
-            var mine = await imports.provision.keptFor(stage);
-            if (!mine) {
-                throw new Error('No workspace is open, so there is nowhere to keep a skill. They are kept '
-                    + 'beside that workspace’s jobs, the same as everything else here.');
+        for (var f of had.provision) {
+            var name = path.basename(String(f.name || ''));
+            if (!name || !imports.provision.SERVABLE.test(name)) {
+                skipped.push('"' + f.name + '", which is not a provisioning file');
+                continue;
             }
-            if (fs.existsSync(mine) && !over) { skipped.push('skill "' + sk.which + '"'); continue; }
 
-            fs.mkdirSync(path.dirname(mine), { recursive: true });
-            fs.writeFileSync(mine, sk.text);
-            wrote.skill++;
+            var mine = path.join(into, name);
+            if (fs.existsSync(mine) && !over) { skipped.push('provision "' + name + '"'); continue; }
+
+            fs.mkdirSync(into, { recursive: true });
+            fs.writeFileSync(mine, f.text);
+            wrote.provision++;
         }
 
         log.good('put a set back — ' + JSON.stringify(wrote)
@@ -195,7 +248,7 @@ async function plugin(imports, register) {
         //THE SAME SHAPE `bundle.read` HANDS BACK, so one importer serves
         //both doors and there is nowhere for the two to disagree about
         //what a bundle means.
-        var had = { kinds: {}, skills: [] };
+        var had = { kinds: {}, provision: [] };
 
         Object.keys(FOLDERS).forEach(function (kind) {
             had.kinds[kind] = ((manifest.kinds || {})[kind] || []).map(function (e) {
@@ -209,10 +262,27 @@ async function plugin(imports, register) {
             });
         });
 
+        (manifest.provision || []).forEach(function (f) {
+            var want = 'provision/' + safe(f.name);
+            var found = imports.archive.find(seen.entries, want);
+            if (!found) {
+                throw new Error('The manifest lists the provisioning file "' + f.name + '" and there is no '
+                    + want + ' in the file. Importing it would write an empty one.');
+            }
+            had.provision.push({ name: f.name, text: imports.archive.text(found) });
+        });
+
+        //AND A FILE WRITTEN BEFORE THE SKILLS MOVED, read under the name this
+        //app serves. See ./bundle.js: nothing writes `skills/` any more, but the
+        //tar this repo shipped until today is in that shape and importing one
+        //must not quietly drop its three documents.
         (manifest.skills || []).forEach(function (sk) {
             var found = imports.archive.find(seen.entries, 'skills/' + safe(sk.which) + '.md');
             if (!found) throw new Error('The manifest lists the skill "' + sk.which + '" and it is not in the file.');
-            had.skills.push({ which: sk.which, title: sk.title || sk.which, text: imports.archive.text(found) });
+
+            var as = bundle.OLD_SKILLS[sk.which];
+            if (!as) return;
+            had.provision.push({ name: as, text: imports.archive.text(found) });
         });
         return had;
     }
@@ -226,7 +296,7 @@ async function plugin(imports, register) {
                 var here = await whatThereIs();
                 var counts = {};
                 Object.keys(STORES).forEach(function (k) { counts[k] = (here.sets[k] || []).length; });
-                counts.skill = here.skills.length;
+                counts.provision = here.scripts.length;
 
                 var have = false;
                 try { have = fs.statSync(shipped).isFile(); }
@@ -242,6 +312,93 @@ async function plugin(imports, register) {
                 };
             }
         }));
+        //---- SETTING A WORKSPACE UP FROM THE SHIPPED SET -------------------
+        //
+        //A FOLDER WITH NO `.okc` HAS NEVER BEEN A WORKSPACE, and this is what it
+        //starts as: the contracts, prompts, jobs, skills and provisioning
+        //scripts the app was built with, written in as files.
+        //
+        //AN EXTRACTION AND NOT AN IMPORT, which is the whole reason it is three
+        //lines of writing rather than a second copy of `putItBack`. A drawer IS
+        //the bundle's layout — see ../library/layout.js — so the files go in as
+        //they are: nothing to translate, no store to write through, no approval
+        //to stamp.
+        //
+        //ONLY WHEN THERE IS NOTHING THERE. It cannot land on top of anything,
+        //which is what makes it safe to do without asking. A folder that already
+        //has a drawer is left exactly alone and says so.
+        //
+        //EVERYTHING ARRIVES UNAPPROVED, and that is the property this rests on. A
+        //bundle carries no approval — see ./bundle.js, which never writes one —
+        //so what lands is a set of documents waiting to be read. Approving is
+        //this host's act, and a folder becoming a workspace does not perform it.
+        undo.push(actions.define('bootstrapSeed', {
+            about: 'Give a folder that has no .okc the set this app shipped with, so it starts as a workspace',
+            takes: ['dir'],
+            run: async function (args) {
+                var a = args || {};
+                var dir = String(a.dir == null ? '' : a.dir).trim();
+                if (!dir) throw new Error('Say which folder to set up.');
+
+                var drawer = path.join(dir, imports.state.HERE);
+                if (fs.existsSync(drawer)) {
+                    return { dir: dir, seeded: false, why: 'it already has one', note: null };
+                }
+
+                var raw;
+                try { raw = fs.readFileSync(shipped); }
+                catch (e) {
+                    //NOT A FAILURE OF THE FOLDER. Nothing shipped, so there is
+                    //nothing to start it from — and a workspace with an empty
+                    //library is a workspace.
+                    return { dir: dir, seeded: false, why: 'no set shipped with this app', note: null };
+                }
+
+                var seen = imports.archive.inside(raw);
+                if (seen.unreadable) throw new Error('The set that shipped could not be read: ' + seen.unreadable);
+
+                var wrote = 0;
+                seen.entries.forEach(function (e) {
+                    if (e.type !== 'file') return;
+
+                    //---- A NAME OUT OF AN ARCHIVE, AND NEVER USED RAW -------
+                    //
+                    //One known folder and a plain filename, or the manifest at
+                    //the root. A tar is bytes that came from somewhere, and
+                    //`../../` in an entry name is how one writes outside the
+                    //folder it is being unpacked into.
+                    var parts = String(e.name || '').split('/');
+                    var into, name;
+
+                    if (parts.length === 1) {
+                        if (parts[0] !== 'library.json') return;
+                        into = drawer;
+                        name = 'library.json';
+                    } else if (parts.length === 2) {
+                        if (!KEEP[parts[0]]) return;
+                        if (safe(parts[1]) !== parts[1] || !parts[1]) return;
+                        into = path.join(drawer, parts[0]);
+                        name = parts[1];
+                    } else return;
+
+                    fs.mkdirSync(into, { recursive: true });
+                    fs.writeFileSync(path.join(into, name), imports.archive.text(e));
+                    wrote++;
+                });
+
+                log.good('set ' + dir + ' up from the shipped set — ' + wrote + ' file(s)');
+
+                return {
+                    dir: dir,
+                    seeded: true,
+                    files: wrote,
+                    note: 'This folder had no ' + imports.state.HERE + ', so it was given the set this app '
+                        + 'shipped with: ' + wrote + ' file(s). Everything in it is waiting to be read — '
+                        + 'nothing arrives approved.'
+                };
+            }
+        }));
+
         undo.push(actions.define('bootstrapExport', {
             about: 'Write every skill, job, prompt and contract to a folder, as files, so a set can be kept '
                 + 'or moved',
@@ -262,18 +419,18 @@ async function plugin(imports, register) {
                 //the expensive way.
                 var manifest = bundle.write(at, here.sets, function (kind, e) {
                     return kind === 'job' ? here.code[e.id] : e.text;
-                }, here.skills);
+                }, here.scripts);
 
                 var counted = Object.keys(manifest.kinds).map(function (k) {
                     return manifest.kinds[k].length + ' ' + k + '(s)';
                 });
 
                 log.good('wrote a bundle to ' + at + ' — ' + counted.join(', ')
-                    + ' and ' + manifest.skills.length + ' skill(s)');
+                    + ' and ' + manifest.provision.length + ' provisioning file(s)');
 
                 return {
                     to: at,
-                    kinds: manifest.kinds, skills: manifest.skills,
+                    kinds: manifest.kinds, provision: manifest.provision,
                     note: 'Written. Nothing about approvals is in it, deliberately: everything imported from '
                         + 'this arrives waiting to be read, because an approval is a person saying they read '
                         + 'that text here.'
@@ -302,7 +459,7 @@ async function plugin(imports, register) {
             var here = await whatThereIs();
 
             var files = [];
-            var manifest = { made: 'okc', kinds: {}, skills: [] };
+            var manifest = { made: 'okc', kinds: {}, provision: [] };
 
             Object.keys(FOLDERS).forEach(function (kind) {
                 manifest.kinds[kind] = (here.sets[kind] || []).map(function (e) {
@@ -315,9 +472,9 @@ async function plugin(imports, register) {
                 });
             });
 
-            here.skills.forEach(function (sk) {
-                files.push({ name: 'skills/' + safe(sk.which) + '.md', data: sk.text });
-                manifest.skills.push({ which: sk.which, title: sk.title });
+            here.scripts.forEach(function (f) {
+                files.push({ name: 'provision/' + safe(f.name), data: f.text });
+                manifest.provision.push({ name: f.name });
             });
 
             files.push({ name: 'library.json', data: JSON.stringify(manifest, null, 2) + '\n' });

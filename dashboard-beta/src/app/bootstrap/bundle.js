@@ -17,7 +17,26 @@ var path = require('path');
 //---- ONE READABLE FILE PER BODY, AND ONE MANIFEST FOR THE WIRING ----------
 //
 //    library.json      ids, names, what each is about, and what points at what
-//    contracts/<id>.md prompts/<id>.md  jobs/<id>.js  skills/<which>.md
+//    contracts/<id>.md prompts/<id>.md  jobs/<id>.js
+//    provision/        the scripts a machine is built with, and the three skills
+//
+//---- AND `provision/` IS A MIRROR OF A WORKSPACE'S OWN --------------------
+//
+//`<workspace>/.okc/provision/` is where a workspace keeps its provisioning
+//scripts and the skills somebody approved, and this folder is that folder. Not a
+//translation of it — the same names, byte for byte — so unpacking a bundle into
+//a `.okc` IS setting one up, and tarring a `.okc` is making a bundle.
+//
+//WHICH IS WHY THE SKILLS ARE IN HERE and not in a `skills/` folder of their own.
+//A skill is a provisioning file: `supervisor-skill.md`, served to a machine that
+//fetches it at the head of every turn. Carrying it under a second name meant a
+//skill had THREE possible spellings — the bundle's, the workspace's and the
+//app's — and a bundle unpacked into a workspace put its skills somewhere nothing
+//looked. They were carried and never read.
+//
+//AN OLD BUNDLE'S `skills/` IS STILL UNDERSTOOD, because tars written before this
+//exist and importing one must not silently drop the three documents that say
+//what a supervisor, a worker and a judge each believe they are.
 //
 //NOT ONE JSON DOCUMENT WITH THE BODIES INSIDE IT, which is the obvious other
 //shape and is the exact mistake ../library/starters.js already made: a contract
@@ -54,6 +73,23 @@ var CARRIES = {
 var FOLDER = { contract: 'contracts', prompt: 'prompts', job: 'jobs' };
 var SUFFIX = { contract: '.md', prompt: '.md', job: '.js' };
 
+//---- WHAT A SKILL WAS CALLED IN A BUNDLE WRITTEN BEFORE TODAY --------------
+//
+//`skills/supervisor.md` was the old spelling; the file this app actually serves
+//is `provision/supervisor-skill.md`. Nothing writes the old shape any more —
+//this is only how one is READ, so a tar made last week still imports its three
+//documents rather than dropping them.
+//
+//`worker` IS `runner-skill.md` AND NOT `worker-skill.md`, which is the pair
+//most likely to be got wrong by whoever touches this next. The same mapping
+//exists in ../vms/provision/scripts.js's STAGES, which is where the names are
+//decided; this is the reverse of it and is deliberately small.
+var OLD_SKILLS = {
+    supervisor: 'supervisor-skill.md',
+    worker: 'runner-skill.md',
+    judge: 'judge-skill.md'
+};
+
 //A FILE NAME, AND NEVER A CALLER'S STRING USED RAW. An id comes from a library
 //entry, and an id read back out of a manifest comes from a folder somebody may
 //have edited by hand — so it is checked on the way in as well as on the way out.
@@ -76,9 +112,9 @@ function only(entry, fields) {
 //    at        the folder to write into, made if it is not there
 //    sets      { contract: [...], prompt: [...], job: [...] } of full entries
 //    bodyOf    (kind, entry) => the text or the code
-//    skills    [{ which, title, text }]
-function write(at, sets, bodyOf, skills) {
-    var manifest = { made: 'okc', kinds: {}, skills: [] };
+//    scripts   [{ name, text }] — a workspace's provision folder, skills and all
+function write(at, sets, bodyOf, scripts) {
+    var manifest = { made: 'okc', kinds: {}, provision: [] };
 
     fs.mkdirSync(at, { recursive: true });
 
@@ -96,12 +132,26 @@ function write(at, sets, bodyOf, skills) {
         });
     });
 
-    (skills || []).forEach(function (s) {
-        if (!s || !s.text) return;
-        var dir = path.join(at, 'skills');
+    //---- THE PROVISION FOLDER, COPIED RATHER THAN TRANSLATED ---------------
+    //
+    //BY THE NAME THE FILE ALREADY HAS. A workspace's `.okc/provision/` holds
+    //`supervisor-skill.md` and `extra.sh` side by side, and this folder is that
+    //folder — so there is nothing to map on the way in or on the way out.
+    //
+    //AN EMPTY BODY IS SKIPPED, not written as an empty file. A skill nothing has
+    //ever set has no text, and shipping a zero-byte `supervisor-skill.md` would
+    //be a bundle that overwrites a good document with nothing.
+    (scripts || []).forEach(function (s) {
+        if (!s || !s.name || !s.text) return;
+
+        var dir = path.join(at, 'provision');
         fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, safe(s.which) + '.md'), String(s.text));
-        manifest.skills.push({ which: s.which, title: s.title || s.which });
+        fs.writeFileSync(path.join(dir, safe(s.name)), String(s.text));
+
+        //LISTED, BECAUSE THE MANIFEST DECIDES WHAT IS IN A BUNDLE. `read` below
+        //refuses to trust the folder, for the reason its own note gives: a file
+        //somebody dropped in is not part of the set.
+        manifest.provision.push({ name: s.name });
     });
 
     fs.writeFileSync(path.join(at, 'library.json'), JSON.stringify(manifest, null, 2) + '\n');
@@ -131,7 +181,7 @@ function read(at, readFile, exists) {
     try { manifest = JSON.parse(readIt(manifestAt)); }
     catch (e) { throw new Error('The manifest in "' + at + '" could not be read: ' + e.message); }
 
-    var out = { kinds: {}, skills: [] };
+    var out = { kinds: {}, provision: [] };
 
     Object.keys(FOLDER).forEach(function (kind) {
         var list = (manifest.kinds || {})[kind] || [];
@@ -145,13 +195,40 @@ function read(at, readFile, exists) {
         });
     });
 
+    //---- THE PROVISION FOLDER --------------------------------------------
+    //
+    //THE SAME REFUSAL THE KINDS GET. A manifest that lists a file with nothing
+    //behind it is a broken bundle, and importing it as an empty script is worse
+    //than not importing it: `extra.sh` reduced to nothing still RUNS, and a
+    //skill reduced to nothing is a machine told it is nobody.
+    (manifest.provision || []).forEach(function (s) {
+        var file = path.join(at, 'provision', safe(s.name));
+        if (!isThere(file)) {
+            throw new Error('The manifest lists the provisioning file "' + s.name + '" and there is no file '
+                + 'for it at ' + file + '. An import that quietly left it out would write an empty one.');
+        }
+        out.provision.push({ name: s.name, text: readIt(file) });
+    });
+
+    //---- AND A BUNDLE WRITTEN BEFORE THE SKILLS MOVED ---------------------
+    //
+    //`skills/<which>.md` was the old shape, and tars in that shape exist — the
+    //one the repo shipped until today among them. Read as provisioning files
+    //under the names this app actually serves, so an old bundle imports into the
+    //same place a new one does.
+    //
+    //NOT A SECOND WAY TO CARRY A SKILL, a way to READ one that was carried
+    //before. Nothing writes this folder any more.
     (manifest.skills || []).forEach(function (s) {
         var file = path.join(at, 'skills', safe(s.which) + '.md');
         if (!isThere(file)) {
             throw new Error('The manifest lists the skill "' + s.which + '" and there is no file for it at '
                 + file + '.');
         }
-        out.skills.push({ which: s.which, title: s.title || s.which, text: readIt(file) });
+
+        var as = OLD_SKILLS[s.which];
+        if (!as) return;   //a skill this app has no stage for; nothing to serve it as
+        out.provision.push({ name: as, text: readIt(file) });
     });
 
     return out;
@@ -193,7 +270,7 @@ function changes(was, now) {
 
 module.exports = {
     write: write, read: read, changes: changes,
-    CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX,
+    CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX, OLD_SKILLS: OLD_SKILLS,
     safe: safe,
     carried: function (kind, entry) { return only(entry, CARRIES[kind]); }
 };

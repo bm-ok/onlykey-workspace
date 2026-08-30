@@ -127,7 +127,7 @@ async function plugin(imports, register) {
 
     //A WORKSPACE'S DRAWER, INSIDE THE WORKSPACE. See the header for what that
     //buys and what it costs.
-    var HERE = '.okc';
+    var HERE = require('./drawer');
 
     //MADE ONCE PER RUN, NOT ONCE PER CALL. mkdir on a directory that already
     //exists is cheap and is still a syscall, and this sits on the read path of
@@ -318,7 +318,14 @@ async function plugin(imports, register) {
             at: at,
 
             slugFor: slugFor,
-            where: appDir
+            where: appDir,
+
+            //WHAT A WORKSPACE'S DRAWER IS CALLED, handed out so nothing else
+            //spells it. ../../bootstrap has to name the folder for a workspace
+            //that is not open yet — it is setting one up — and a second `.okc`
+            //written down somewhere else is the one that stays behind on the day
+            //this changes.
+            HERE: HERE
         }
     });
 }

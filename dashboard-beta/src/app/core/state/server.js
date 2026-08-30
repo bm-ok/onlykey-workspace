@@ -17,6 +17,8 @@
 //builds server halves against a bare host, so this has to be a real answer —
 //and "there is nowhere to keep this" is one.
 
+var HERE = require('./drawer');
+
 plugin.consumes = ['app'];
 plugin.provides = ['state'];
 async function plugin(imports, register) {
@@ -56,7 +58,15 @@ async function plugin(imports, register) {
                 //worth propagating into a workspace being opened.
                 at: function () { },
                 slugFor: function (d) { return String(d); },
-                where: null
+                where: null,
+
+                //THE NAME OF A WORKSPACE'S DRAWER, and a real value even here.
+                //It is a constant rather than a fact about this host, so a
+                //stand-in that answered null for it would be inventing a
+                //difference that does not exist — and ../../bootstrap builds a
+                //path out of it, so null becomes "the path argument must be of
+                //type string" a long way from the cause.
+                HERE: HERE
             }
         });
     }

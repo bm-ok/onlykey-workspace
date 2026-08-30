@@ -92,31 +92,19 @@ var STAGES = {
 //folders, so it grows with them rather than meaning "scripts only".
 var SERVABLE = /\.(sh|py|js|md)$/;
 
-//---- THE SAME THREE DOCUMENTS, UNDER THE NAME A BUNDLE GIVES THEM ----------
+//---- A SKILL HAS ONE NAME AGAIN, AND BRIEFLY HAD THREE --------------------
 //
-//A skill is a provisioning file here — `supervisor-skill.md`, served to a
-//machine that fetches it at the head of every turn — and it is `skills/
-//supervisor.md` in a bundle, which is what ../../bootstrap writes and what a
-//workspace's `.okc` holds after an exported tar is unpacked into it.
+//`supervisor-skill.md` is the file, in a provision folder, served to a machine
+//that fetches it at the head of every turn. A bundle used to carry the same
+//document as `skills/supervisor.md`, so unpacking one into a workspace put its
+//skills under a name nothing here looked for — carried, and never read.
 //
-//SO A DROPPED-IN BUNDLE'S SKILLS WERE INERT. Its contracts, prompts and jobs all
-//took effect, because ../../library reads the bundle layout directly; the skills
-//sat in `skills/` under names nothing looked for, and the app went on serving
-//the copy it ships. Nothing failed and nothing said anything — the pane reported
-//the shipped file as the answer, which is exactly what it would say if the
-//bundle had never been unpacked.
-//
-//LOOKED FOR FIRST, FOR THE REASON THE KEPT COPY IS LOOKED FOR FIRST: the more
-//specific answer wins, and a document somebody put in this workspace is more
-//specific than one the app was built with.
-//
-//THE SERVED NAME DOES NOT CHANGE. A machine still fetches
-//`provision/supervisor-skill.md`; this only decides which file answers.
-var AS_BUNDLED = {
-    'supervisor-skill.md': 'supervisor.md',
-    'runner-skill.md': 'worker.md',
-    'judge-skill.md': 'judge.md'
-};
+//THE FIX WAS A TABLE MAPPING ONE SPELLING TO THE OTHER, and it worked, and it
+//left a skill with three possible names: the bundle's, the workspace's and the
+//app's. ../../bootstrap/bundle.js carries them under their real names now, so
+//the table is gone and there is one spelling everywhere. An old bundle is still
+//importable — the translation lives in the READER over there, which is the one
+//place that has to know what a bundle used to look like.
 
 module.exports = function scripts(deps) {
     var d = deps || {};
@@ -169,14 +157,6 @@ module.exports = function scripts(deps) {
         return at || null;
     }
 
-    //THE BUNDLE'S `skills/` IN THE SAME DRAWER. A function for the same reason
-    //as the two above: which workspace is open settles at run time.
-    var skillsAsked = d.skillsDir || null;
-    function skillsDirNow() {
-        var at = typeof skillsAsked === 'function' ? skillsAsked() : skillsAsked;
-        return at || null;
-    }
-
     var there = d.there || function (p) {
         try { return fs.existsSync(p); } catch (e) { return false; }
     };
@@ -198,22 +178,6 @@ module.exports = function scripts(deps) {
 
         if (!SERVABLE.test(name)) {
             throw new Error('"' + wanted + '" is not a provisioning file.');
-        }
-
-        //---- THE BUNDLE'S NAME FOR IT, IN THIS WORKSPACE, FIRST -------------
-        //
-        //Ahead of the search path rather than inside it, because it is a
-        //different FILENAME in a different folder — `skills/supervisor.md`
-        //answering for `supervisor-skill.md`. See AS_BUNDLED above.
-        //
-        //THE SAME CONTAINMENT CHECK, and it is doing more here than the one
-        //below: `bundled` comes from a table in this file, but the directory
-        //comes from whichever workspace is open.
-        var bundled = AS_BUNDLED[name];
-        var skillsAt = bundled ? skillsDirNow() : null;
-        if (skillsAt) {
-            var mine = path.join(skillsAt, bundled);
-            if (mine.indexOf(skillsAt) === 0 && there(mine)) return mine;
         }
 
         var dirs = searchPath();
@@ -263,6 +227,31 @@ module.exports = function scripts(deps) {
         });
 
         return out;
+    }
+
+    //---- WHAT THIS WORKSPACE'S OWN FOLDER HOLDS ---------------------------
+    //
+    //ONLY THE KEPT ONE, AND DELIBERATELY NOT THE SEARCH PATH. `list` above
+    //answers "what would be served", which folds in the app's shipped copies —
+    //right for a pane, wrong for a bundle. A bundle carrying the app's own
+    //`first-boot.sh` would PIN it: every workspace made from that bundle would
+    //start with a copy that stops tracking the app the day either changes, and
+    //nothing would say so.
+    //
+    //So this is the workspace's half and nothing else: the scripts somebody put
+    //there, and the skills they approved. What the app ships travels with the
+    //app.
+    function kept() {
+        var at = keptDirNow();
+        if (!at) return [];
+
+        var names;
+        try { names = readDir(at); }
+        catch (e) { return []; }   //no folder yet is no files, not a failure
+
+        return names.filter(function (f) { return SERVABLE.test(f); }).sort().map(function (f) {
+            return { name: f, text: readFile(path.join(at, f)) };
+        });
     }
 
     //WHERE A SCRIPT CAME FROM, so the log can say whose copy ran.
@@ -339,7 +328,7 @@ module.exports = function scripts(deps) {
     }
 
     return {
-        resolve: resolve, fileFor: fileFor, has: has, list: list,
+        resolve: resolve, fileFor: fileFor, has: has, list: list, kept: kept,
         sourceOf: sourceOf, stageOfFile: stageOfFile, raw: raw, render: render,
         searchPath: searchPath,
         hostFile: hostFile, readFile: readFile,

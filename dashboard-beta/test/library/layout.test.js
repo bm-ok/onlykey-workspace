@@ -119,13 +119,17 @@ test('saving one kind does not lose the others', async () => {
     assert.deepEqual(m.kinds.job.map((e) => e.id), ['run-it']);
 });
 
-test('the skills a bundle brought are left alone by a save', async () => {
-    bundle.write(at, {}, () => '', [{ which: 'worker', title: 'the worker', text: '# be careful' }]);
+test('the provisioning files a bundle brought are left alone by a save', async () => {
+    bundle.write(at, {}, () => '', [{ name: 'runner-skill.md', text: '# be careful' }]);
 
     (await box('contract')).write([{ id: 'rules', name: 'rules', kind: 'task', text: 'a' }]);
 
-    assert.deepEqual(manifest().skills.map((s) => s.which), ['worker']);
-    assert.ok(fs.existsSync(path.join(at, 'skills', 'worker.md')));
+    //THE LIBRARY AND THE PROVISION FOLDER SHARE ONE MANIFEST. Saving a contract
+    //must not drop the scripts a bundle brought — which is the same read-modify-
+    //write this file already holds for the three kinds, and the half most likely
+    //to be forgotten because nothing in the library ever writes it.
+    assert.deepEqual(manifest().provision.map((f) => f.name), ['runner-skill.md']);
+    assert.ok(fs.existsSync(path.join(at, 'provision', 'runner-skill.md')));
 });
 
 //---- taking one away -------------------------------------------------------

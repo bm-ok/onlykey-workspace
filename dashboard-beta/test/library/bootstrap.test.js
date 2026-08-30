@@ -82,6 +82,7 @@ async function setUp() {
     //has to find it there, which is the half a single-folder fake cannot test.
     const provision = {
         STAGES: SKILLS,
+        SERVABLE: /\.(sh|py|js|md)$/,
         fileFor: (vm, stage) => {
             const name = SKILLS[stage];
             for (const where of [mineDir, appDir]) {
@@ -90,7 +91,23 @@ async function setUp() {
             }
             throw new Error('There is no provisioning script called "' + name + '".');
         },
-        keptFor: async (stage) => path.join(mineDir, SKILLS[stage])
+        keptFor: async (stage) => path.join(mineDir, SKILLS[stage]),
+
+        //---- AND THE FOLDER, WHICH IS WHAT A BUNDLE CARRIES NOW ------------
+        //
+        //`kept` IS THIS WORKSPACE'S HALF AND NOT THE SEARCH PATH, which is the
+        //distinction the real one is careful about: a bundle carrying the app's
+        //shipped `first-boot.sh` would pin it. So this reads `mineDir` only,
+        //exactly as ../../src/app/vms/provision/scripts.js does.
+        keptDir: async () => mineDir,
+        kept: () => {
+            let names = [];
+            try { names = fs.readdirSync(mineDir); }
+            catch (e) { return []; }
+            return names.filter((f) => /\.(sh|py|js|md)$/.test(f)).sort().map((f) => ({
+                name: f, text: fs.readFileSync(path.join(mineDir, f), 'utf8')
+            }));
+        }
     };
 
     //THE REAL TAR WRITER AND READER, not a fake: what has to hold is that
@@ -98,7 +115,10 @@ async function setUp() {
     //would agree with whatever the other half did.
     await archivePlugin({ state }, async (_e, s) => { archive = s.archive; });
 
-    await bootstrapPlugin({ app, log, library, provision, archive }, async () => {});
+    //THE REAL `state`, because the seed has to name a workspace's drawer for a
+    //folder that is not open — and what that folder is called is ../core/state's
+    //to say, not this test's.
+    await bootstrapPlugin({ app, log, library, provision, archive, state }, async () => {});
 }
 
 beforeEach(setUp);
@@ -122,7 +142,11 @@ test('a bundle is one readable file per document, and a manifest of the links', 
     assert.equal(fs.readFileSync(path.join(bundleAt, 'contracts', 'rules.md'), 'utf8'), 'do not push');
     assert.equal(fs.readFileSync(path.join(bundleAt, 'prompts', 'brief.md'), 'utf8'), 'read it');
     assert.match(fs.readFileSync(path.join(bundleAt, 'jobs', 'sweep.js'), 'utf8'), /module\.exports/);
-    assert.match(fs.readFileSync(path.join(bundleAt, 'skills', 'judge.md'), 'utf8'), /may not push/);
+
+    //A SKILL IS A PROVISIONING FILE, UNDER THE NAME THIS APP SERVES IT BY. It
+    //was `skills/judge.md` — a second spelling, which meant a bundle unpacked
+    //into a workspace put its skills where nothing looked for them.
+    assert.match(fs.readFileSync(path.join(bundleAt, 'provision', 'judge-skill.md'), 'utf8'), /may not push/);
 
     const manifest = JSON.parse(fs.readFileSync(path.join(bundleAt, 'library.json'), 'utf8'));
     //THE LINKS ARE THE HARD PART OF REBUILDING and are in one place: a job names
@@ -130,7 +154,38 @@ test('a bundle is one readable file per document, and a manifest of the links', 
     //folders tells you which.
     assert.equal(manifest.kinds.prompt[0].contractId, 'rules');
     assert.equal(manifest.kinds.job[0].promptId, 'brief');
-    assert.deepEqual(manifest.skills.map((s) => s.which), ['supervisor', 'worker', 'judge']);
+    assert.deepEqual(manifest.provision.map((f) => f.name).sort(),
+        ['judge-skill.md', 'runner-skill.md', 'supervisor-skill.md']);
+});
+
+//THE FOLDER A BUNDLE CARRIES IS THE FOLDER A WORKSPACE KEEPS. Not a translation
+//of it — the same names — which is what makes unpacking one INTO a workspace the
+//whole of setting it up.
+test('a project’s own scripts travel with it, beside the skills', async () => {
+    await aLibrary();
+    fs.writeFileSync(path.join(mineDir, 'extra.sh'), '#!/bin/bash\n# ours\n');
+
+    await call('bootstrapExport', { to: bundleAt });
+
+    assert.equal(fs.readFileSync(path.join(bundleAt, 'provision', 'extra.sh'), 'utf8'), '#!/bin/bash\n# ours\n');
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(bundleAt, 'library.json'), 'utf8'));
+    assert.ok(manifest.provision.some((f) => f.name === 'extra.sh'));
+});
+
+//AND WHAT THE APP SHIPS TRAVELS WITH THE APP. A bundle carrying `first-boot.sh`
+//would PIN it: every workspace made from that bundle would start with a copy
+//that stops tracking the app the day either changes, and nothing would say so.
+test('what the app ships is not carried, only what this workspace holds', async () => {
+    await aLibrary();
+    fs.writeFileSync(path.join(appDir, 'first-boot.sh'), '# the app’s\n');
+
+    await call('bootstrapExport', { to: bundleAt });
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(bundleAt, 'library.json'), 'utf8'));
+    assert.ok(!manifest.provision.some((f) => f.name === 'first-boot.sh'),
+        'the app’s own script was carried, which pins it');
+    assert.equal(fs.existsSync(path.join(bundleAt, 'provision', 'first-boot.sh')), false);
 });
 
 test('nothing about an approval is written into a bundle', async () => {
@@ -161,7 +216,7 @@ test('the data directory is gone and the bundle puts it all back', async () => {
     assert.equal((await call('contracts', {})).contracts.length, 0);
 
     const said = await call('bootstrapImport', { from: bundleAt });
-    assert.deepEqual(said.wrote, { contract: 1, prompt: 1, job: 1, skill: 3 });
+    assert.deepEqual(said.wrote, { contract: 1, prompt: 1, job: 1, provision: 3 });
 
     const back = await call('contract', { id: 'rules' });
     assert.equal(back.text, 'do not push');
@@ -198,7 +253,7 @@ test('everything imported is waiting to be read, however it was approved before'
 
 test('a skill is imported into the workspace drawer, where a rebuild cannot reach it', async () => {
     await call('bootstrapExport', { to: bundleAt });
-    fs.writeFileSync(path.join(bundleAt, 'skills', 'judge.md'), '# A judge\n\nRewritten.\n');
+    fs.writeFileSync(path.join(bundleAt, 'provision', SKILLS.judgeSkill), '# A judge\n\nRewritten.\n');
 
     await call('bootstrapImport', { from: bundleAt, over: true });
 
@@ -207,6 +262,113 @@ test('a skill is imported into the workspace drawer, where a rebuild cannot reac
     //edit at the window vanish before this.
     assert.match(fs.readFileSync(path.join(mineDir, SKILLS.judgeSkill), 'utf8'), /Rewritten/);
     assert.match(fs.readFileSync(path.join(appDir, SKILLS.judgeSkill), 'utf8'), /may not push/);
+});
+
+//---- a bundle written before the skills moved ------------------------------
+//
+//`skills/<which>.md` was the shape until today, and the tar this repo shipped is
+//in it. Importing one has to land the three documents where this app serves them
+//from — otherwise the upgrade quietly drops the one thing a bundle exists to
+//carry, and the pane goes on reporting the app's shipped copy, which is exactly
+//what it says when no bundle was imported at all.
+test('a bundle in the old shape still imports its skills', async () => {
+    fs.mkdirSync(path.join(bundleAt, 'skills'), { recursive: true });
+    fs.writeFileSync(path.join(bundleAt, 'skills', 'judge.md'), '# A judge\n\nFrom an old bundle.\n');
+    fs.writeFileSync(path.join(bundleAt, 'library.json'), JSON.stringify({
+        made: 'okc', kinds: {}, skills: [{ which: 'judge', title: 'judge' }]
+    }, null, 2));
+
+    const said = await call('bootstrapImport', { from: bundleAt, over: true });
+
+    //UNDER THE NAME THIS APP SERVES, not the one the bundle used.
+    assert.match(fs.readFileSync(path.join(mineDir, SKILLS.judgeSkill), 'utf8'), /From an old bundle/);
+    assert.equal(said.wrote.provision, 1);
+});
+
+test('and the same bundle as a single file', async () => {
+    const files = [
+        { name: 'skills/worker.md', data: '# A worker\n\nFrom an old tar.\n' },
+        { name: 'library.json', data: JSON.stringify({ made: 'okc', kinds: {}, skills: [{ which: 'worker' }] }) }
+    ];
+
+    await call('bootstrapFromFile', { bytes: archiveOf().make(files).toString('base64'), over: true });
+
+    assert.match(fs.readFileSync(path.join(mineDir, SKILLS.workerSkill), 'utf8'), /From an old tar/);
+});
+
+//---- a folder that has never been a workspace ------------------------------
+//
+//THE POINT OF THE WHOLE LAYOUT. A workspace keeps its state in itself, and a
+//drawer IS a bundle — so setting a folder up is unpacking one into it. No
+//import, no store to write through, no approval to stamp.
+
+test('a folder with no drawer is given the set that shipped, as files', async () => {
+    await aLibrary();
+
+    //A REAL TAR, MADE BY THIS APP, PUT WHERE THE SHIPPED ONE LIVES. The seed
+    //reads it through the same reader everything else does, so this cannot pass
+    //by agreeing with a stub of my own.
+    const made = await call('bootstrapFile', {});
+    const tar = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ship-')), 'okc-bootstrap.tar');
+    fs.writeFileSync(tar, Buffer.from(made.bytes, 'base64'));
+
+    process.env.OKC_BOOTSTRAP_TAR = tar;
+    await setUp();   //the path is read when the plugin comes up
+
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-fresh-'));
+    const said = await call('bootstrapSeed', { dir: fresh });
+    delete process.env.OKC_BOOTSTRAP_TAR;
+
+    assert.equal(said.seeded, true);
+
+    //THE DRAWER IS THE BUNDLE'S LAYOUT, so what lands is the bundle. Nothing was
+    //translated on the way in — which is the whole reason this is an extraction
+    //and not an import.
+    const at = path.join(fresh, '.okc');
+    assert.ok(fs.existsSync(path.join(at, 'library.json')));
+    assert.equal(fs.readFileSync(path.join(at, 'contracts', 'rules.md'), 'utf8'), 'do not push');
+    assert.match(fs.readFileSync(path.join(at, 'jobs', 'sweep.js'), 'utf8'), /module\.exports/);
+    assert.match(fs.readFileSync(path.join(at, 'provision', SKILLS.judgeSkill), 'utf8'), /may not push/);
+});
+
+test('and everything it is given is waiting to be read', async () => {
+    await aLibrary();
+    await call('contractApprove', { id: 'rules' });
+
+    const made = await call('bootstrapFile', {});
+    const tar = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ship-')), 'okc-bootstrap.tar');
+    fs.writeFileSync(tar, Buffer.from(made.bytes, 'base64'));
+
+    process.env.OKC_BOOTSTRAP_TAR = tar;
+    await setUp();
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-fresh-'));
+    await call('bootstrapSeed', { dir: fresh });
+    delete process.env.OKC_BOOTSTRAP_TAR;
+
+    //THIS IS THE PROPERTY THE WHOLE THING RESTS ON. A folder becoming a
+    //workspace must not approve anything on somebody's behalf — and it cannot,
+    //because a bundle never carried an approval to begin with. That is what
+    //makes doing this automatically, with nobody asked, the safe act.
+    const kept = JSON.parse(fs.readFileSync(path.join(fresh, '.okc', 'library.json'), 'utf8'));
+    kept.kinds.contract.forEach((e) => assert.equal(e.approval, undefined));
+});
+
+test('a folder that already has a drawer is left exactly alone', async () => {
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-fresh-'));
+    fs.mkdirSync(path.join(fresh, '.okc'), { recursive: true });
+    fs.writeFileSync(path.join(fresh, '.okc', 'library.json'), '{"mine":true}');
+
+    const said = await call('bootstrapSeed', { dir: fresh });
+
+    //IT CANNOT LAND ON TOP OF ANYTHING, which is what makes doing this without
+    //asking safe. A workspace somebody has been using is one this must not touch.
+    assert.equal(said.seeded, false);
+    assert.match(said.why, /already has one/);
+    assert.equal(fs.readFileSync(path.join(fresh, '.okc', 'library.json'), 'utf8'), '{"mine":true}');
+});
+
+test('a folder nobody named is refused', async () => {
+    await assert.rejects(() => call('bootstrapSeed', {}), /Say which folder/);
 });
 
 //---- what it refuses ------------------------------------------------------
@@ -300,7 +462,7 @@ test('the whole set comes back as one file that this app can read again', async 
     assert.ok(seen.entries.some((e) => e.name === 'library.json'));
     assert.ok(seen.entries.some((e) => e.name === 'contracts/rules.md'));
     assert.ok(seen.entries.some((e) => e.name === 'jobs/sweep.js'));
-    assert.ok(seen.entries.some((e) => e.name === 'skills/judge.md'));
+    assert.ok(seen.entries.some((e) => e.name === 'provision/judge-skill.md'));
 });
 
 test('a file holds no more about approvals than a folder does', async () => {
@@ -322,7 +484,7 @@ test('the data directory is gone and a saved file puts it all back', async () =>
     await library.jobs.write([]);
 
     const said = await call('bootstrapFromFile', { bytes: made.bytes });
-    assert.deepEqual(said.wrote, { contract: 1, prompt: 1, job: 1, skill: 3 });
+    assert.deepEqual(said.wrote, { contract: 1, prompt: 1, job: 1, provision: 3 });
 
     assert.equal((await call('contract', { id: 'rules' })).text, 'do not push');
     assert.equal((await library.prompts.get('brief')).contractId, 'rules');

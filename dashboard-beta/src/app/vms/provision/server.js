@@ -147,20 +147,16 @@ async function plugin(imports, register) {
     //somebody opens another, so ./scripts.js is handed a function.
     var keptDir = null;
 
-    //AND THE BUNDLE'S `skills/` IN THE SAME DRAWER. A workspace's `.okc` is laid
-    //out the way an exported bundle is, so the three skills arrive there under
-    //the names ../../bootstrap gives them — `skills/supervisor.md` rather than
-    //`provision/supervisor-skill.md`. ./scripts.js looks there first; without it
-    //an unpacked bundle's skills sat in a folder nothing read.
-    var skillsDir = null;
-
+    //AND A BUNDLE UNPACKED INTO A WORKSPACE LANDS IN IT. `.okc/provision/` is
+    //what a bundle's `provision/` folder is — the same names, byte for byte —
+    //so there is one folder and no second place to look. It briefly had one:
+    //bundles carried skills as `skills/<which>.md` and this had to look there
+    //too. ../../bootstrap/bundle.js carries them under their real names now.
     async function noteKeptDir() {
         try {
             var at = await imports.state.here.where();
             keptDir = at ? path.join(at, 'provision') : null;
-            skillsDir = at ? path.join(at, 'skills') : null;
         } catch (e) {
-            skillsDir = null;
             //NO WORKSPACE OPEN IS NOT A FAULT, exactly as above: `searchPath`
             //drops a folder that is not there, and the app's shipped copy
             //answers instead.
@@ -181,8 +177,7 @@ async function plugin(imports, register) {
     var scripts = makeScripts({
         appDir: appDir,
         workspaceDir: function () { return projectDir; },
-        keptDir: function () { return keptDir; },
-        skillsDir: function () { return skillsDir; }
+        keptDir: function () { return keptDir; }
     });
 
     //LEARNED NOW, NOT WHEN SOMETHING HAPPENS TO ASK. `keptDir` was null from
@@ -518,16 +513,32 @@ async function plugin(imports, register) {
                 if (!name) throw new Error('"' + stage + '" is not a provisioning stage.');
                 return path.join(keptDir, name);
             },
+            //THE FOLDER ITSELF, for a caller that writes a file this app has no
+            //STAGE for — a bundle carrying a project's own script. `keptFor`
+            //answers for a known stage; this answers for the directory, and the
+            //caller is held to a plain filename inside it.
+            keptDir: async function () {
+                await noteWhere();
+                return keptDir;
+            },
+
             freshen: noteWhere,
             has: scripts.has,
             list: scripts.list,
+
+            //WHAT THIS WORKSPACE OWN FOLDER HOLDS, which is what a bundle carries.
+            //Not the search path -- see ./scripts.js: a bundle carrying the app
+            //shipped copies would pin them.
+            kept: function () { return scripts.kept(); },
+
             resolve: scripts.resolve,
             sourceOf: scripts.sourceOf,
             stageOfFile: scripts.stageOfFile,
             searchPath: scripts.searchPath,
 
             header: header,
-            STAGES: scripts.STAGES
+            STAGES: scripts.STAGES,
+            SERVABLE: makeScripts.SERVABLE
         }
     });
 }

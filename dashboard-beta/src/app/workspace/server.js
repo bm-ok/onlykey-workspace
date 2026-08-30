@@ -448,6 +448,14 @@ async function plugin(imports, register) {
                 var before = null;
                 try { before = await dir(); } catch (e) { before = null; }
                 var open = use(a.dir);
+
+                //AND SET UP HERE TOO, for a folder remembered before this
+                //existed. Opening one is the moment somebody finds out whether
+                //it has a library, so it is the second place worth checking —
+                //and `bootstrapSeed` does nothing at all when there is already a
+                //drawer, which every existing workspace has.
+                await seed(open);
+
                 log.good('opened ' + open + (before && before !== open ? ' — was ' + before : '')
                     + '. What is armed follows the folder, so this one is set to whatever it was set to.');
                 return all();
@@ -455,16 +463,45 @@ async function plugin(imports, register) {
         }));
 
         //ADDING IS NOT OPENING, and the answer says which happened. See `add`.
+        //---- AND A FOLDER THAT HAS NEVER BEEN ONE IS SET UP ----------------
+        //
+        //A workspace keeps its state in itself, in `.okc`. A folder that has no
+        //drawer has never been a workspace, so it is given the set this app
+        //shipped with — the contracts, prompts, jobs, skills and provisioning
+        //scripts — and opens with a library rather than with nothing.
+        //
+        //THROUGH THE ACTION TABLE, NOT AS A DEPENDENCY. ../bootstrap consumes
+        //../vms/provision, which consumes this plugin; asking for it by name
+        //here would close that ring. The table is late-bound and is the way the
+        //rest of the app crosses this kind of line.
+        //
+        //A FAILURE HERE IS NOT A FAILURE TO REMEMBER. The folder is on the list
+        //either way — the seed is a convenience, and a workspace with an empty
+        //library is a workspace. So it is said and not thrown.
+        async function seed(dir) {
+            try { return await actions.call('bootstrapSeed', { dir: dir }); }
+            catch (e) {
+                log.warn('could not set "' + dir + '" up from the shipped set: ' + e.message
+                    + '. It is remembered, and its library is empty.');
+                return null;
+            }
+        }
+
         undo.push(actions.define('workspaceAdd', {
             about: 'Remember a folder of repositories, leaving the open one alone. workspaceUse opens it',
             takes: ['dir'],
             run: async function (args) {
                 var a = args || {};
                 var out = add(a.dir);
+
+                var given = await seed(out.added);
+
                 log.info('remembered "' + out.added + '"'
                     + (out.already ? ', which was already on the list' : '')
                     + '. The workspace that is open did not change.');
-                return Object.assign(out, await all());
+
+                return Object.assign(out, { seeded: !!(given && given.seeded) },
+                    given && given.seeded ? { setUp: given.note } : null, await all());
             }
         }));
 
