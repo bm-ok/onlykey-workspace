@@ -238,7 +238,7 @@ module.exports = function tasks(theme) {
                         <TitleRow>
                             My work<Grow />
                             <span className="muted">{seats.length}</span>
-                            <Plus title="Start a new piece of work of my own" onClick={notYet} />
+                            <Plus title="Start a new piece of work of my own" onClick={makeOne} />
                         </TitleRow>
                         <Stack>
                             {seats.map(function (x) {
