@@ -5,8 +5,20 @@ const path = require('node:path');
 
 const concluding = require('../../src/app/queue/concluding');
 
-const SKILL = path.join(__dirname, '..', '..', 'src', 'app', 'vms', 'provision', 'scripts', 'judge-skill.md');
-const text = fs.readFileSync(SKILL, 'utf8');
+//---- READ OUT OF THE BUNDLE, WHICH IS WHERE THE REPO KEEPS IT --------------
+//
+//It was a file beside the provisioning scripts until the repo was found to be
+//holding every skill twice — once there and once in `okc-bootstrap.tar` — with
+//the two drifted. The tar is the copy a workspace is set up from, so it is the
+//copy this has to be true of: a test asserting the wording of a document nobody
+//is served is a test that passes about the wrong file.
+const nanotar = require('../../src/app/core/archive/vendor/nanotar/nanotar.js');
+
+const TAR = path.join(__dirname, '..', '..', 'okc-bootstrap.tar');
+const inside = nanotar.parseTar(new Uint8Array(fs.readFileSync(TAR)));
+const found = inside.find((e) => e.name === 'provision/judge-skill.md');
+if (!found) throw new Error('the shipped bundle carries no judge skill, so there is nothing to check');
+const text = Buffer.from(found.data).toString('utf8');
 
 //---------------------------------------------------------------------------
 //WHAT A JUDGE IS TOLD TO WRITE, AGAINST WHAT THIS APP CAN READ.

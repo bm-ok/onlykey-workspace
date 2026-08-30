@@ -194,15 +194,36 @@ test('every stage the app owns has a file in the folder the app ships', () => {
 
     //`extra` AND `extraUser` ARE THE PROJECT'S, and their absence is normal —
     //that is the whole difference between the two folders.
-    const ours = Object.keys(STAGES).filter((s) => s !== 'extra' && s !== 'extraUser');
+    //
+    //AND THE THREE SKILLS ARE A WORKSPACE'S. The app shipped one of each until
+    //the repo was found to be holding every skill twice — once beside the source
+    //and once in `okc-bootstrap.tar` — with the two drifted ten thousand
+    //characters apart. The tar is the copy that is true, and a workspace is set
+    //up from it, so there is nothing here to ship.
+    //
+    //THEY ARE STILL IN THE REPO. If that ever stops being true this test is the
+    //wrong place to notice; ../library/bootstrap.test.js is where the bundle is
+    //held to carrying them.
+    const NOT_OURS = ['extra', 'extraUser', 'skill', 'workerSkill', 'judgeSkill'];
+    const ours = Object.keys(STAGES).filter((s) => !NOT_OURS.includes(s));
 
     for (const stage of ours) {
         assert.ok(app.has({ name: 'r1' }, stage),
             stage + ' names ' + STAGES[stage] + ', which the app does not ship');
     }
 
-    //INERTNESS: there are stages, and the loop above ran over them.
-    assert.ok(ours.length >= 12, String(ours.length));
+    //INERTNESS: there are stages, and the loop above ran over them. The floor
+    //moved from twelve to eleven when the three skills stopped being the app's
+    //to ship — a number that only ever goes down by somebody deciding it should.
+    assert.ok(ours.length >= 11, String(ours.length));
+
+    //AND THE THREE ARE REALLY EXCLUDED rather than quietly passing. A list that
+    //stopped matching the stage names would leave this test asserting nothing
+    //about them while still looking like it covered every stage.
+    ['skill', 'workerSkill', 'judgeSkill'].forEach(function (s) {
+        assert.ok(STAGES[s], s + ' is not a stage any more, so this exclusion is stale');
+        assert.ok(!ours.includes(s));
+    });
 });
 
 test('and they are sent byte for byte, with the line endings a guest needs', () => {

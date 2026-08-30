@@ -92,6 +92,24 @@ var STAGES = {
 //folders, so it grows with them rather than meaning "scripts only".
 var SERVABLE = /\.(sh|py|js|md)$/;
 
+//---- THE THREE THE APP DOES NOT SHIP -------------------------------------
+//
+//Every other stage above has a file beside this one that the app carries. These
+//three do not: a skill is a workspace's, kept in its provision folder and
+//carried in the bundle a new workspace is set up from.
+//
+//THE REPO HELD EACH OF THEM TWICE and that is why they went. A copy beside this
+//file and a copy in the tar are two documents with one name, and two copies
+//drift the moment one is edited — the app's supervisor skill was ten thousand
+//characters behind the one actually in use, so anybody reading the repo to learn
+//how a supervisor works was reading the stale one.
+//
+//THE REPO STILL HAS THEM. They are in `okc-bootstrap.tar`, which is checked in
+//and is what a fresh workspace is built from — one copy, and the one that is
+//true. See ../../bootstrap/bundle.js, which makes the same argument about the
+//library.
+var SKILL_FILES = { 'supervisor-skill.md': true, 'runner-skill.md': true, 'judge-skill.md': true };
+
 //---- A SKILL HAS ONE NAME AGAIN, AND BRIEFLY HAD THREE --------------------
 //
 //`supervisor-skill.md` is the file, in a provision folder, served to a machine
@@ -194,6 +212,25 @@ module.exports = function scripts(deps) {
             //look for, and because it is what would catch the basename above
             //being weakened by an edit that looked harmless.
             if (file.indexOf(dirs[i]) === 0 && there(file)) return file;
+        }
+
+        //---- AND A SKILL HAS NO SHIPPED COPY TO FALL BACK ON ---------------
+        //
+        //THE APP USED TO CARRY ONE OF EACH and no longer does: the three skills
+        //are a workspace's, kept in its own folder and carried in the bundle a
+        //new workspace is set up from. Keeping a second copy beside this file
+        //meant the repo held each of them twice, and two copies of a document
+        //drift the moment one is edited — which is exactly what happened, with
+        //the app's supervisor skill ten thousand characters behind the one being
+        //used.
+        //
+        //SO THE REFUSAL HAS TO SAY WHERE ONE COMES FROM. "There is no
+        //provisioning script called supervisor-skill.md" is true and unactionable
+        //for the one file a supervisor fetches at the head of every turn.
+        if (SKILL_FILES[name]) {
+            throw new Error('This workspace has no "' + name + '", and the app does not carry one to fall back '
+                + 'on — the three skills belong to a workspace and are set up from the bundle. Import one with '
+                + 'bootstrapImport, or copy the file into this workspace\'s provision folder.');
         }
 
         throw new Error('There is no provisioning script called "' + name + '".');
