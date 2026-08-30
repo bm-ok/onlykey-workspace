@@ -134,10 +134,25 @@ module.exports = function openEditor(deps) {
     //fails as an unreachable host rather than as anything that names the
     //mistake.
     //
-    //user@address RATHER THAN A NAME FROM ~/.ssh/config, because a config entry
-    //is a second place the machine's address would live and it goes stale the
-    //first time the address moves. This form needs nothing on the host but the
-    //key, which first-boot.sh already installed.
+    //AND ITS ONLY CALLER PASSES AN ALIAS, WHICH THIS NOTE USED TO ARGUE
+    //AGAINST. The argument was that a name from a config file is a second place
+    //the machine's address lives and goes stale the first time the address
+    //moves — true of a hand-written `~/.ssh/config`, and not true of the one
+    //../../core/ssh writes, which is rewritten WHOLE from the register every
+    //time a machine dials in or is deleted. It cannot be staler than the
+    //register is.
+    //
+    //AND user@address TURNS OUT TO BE THE BROKEN ONE HERE, for a reason this
+    //note missed: ssh matches its configuration on the host argument it is
+    //GIVEN. `okc@192.168.51.221` matches no `Host okc-<name>` block, so
+    //`IdentityFile` and `IdentitiesOnly` never apply and the connection falls
+    //back to whatever identity the operator happens to have — the one key
+    //../../core/ssh exists to stop using. It still opens. It opens with the
+    //wrong key and nothing on screen differs, which is why the check for it is
+    //in ../../../../test/diy/open-editor.test.js rather than left to a reader.
+    //
+    //Either form still needs nothing on the host but the key, which
+    //first-boot.sh already installed.
     function folderUri(remote, dir) {
         var where = String(dir == null ? '' : dir);
         return 'vscode-remote://ssh-remote+' + encodeURIComponent(String(remote == null ? '' : remote))
