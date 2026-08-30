@@ -215,7 +215,15 @@ async function plugin(imports, register) {
                     there: !!vm,
                     running: !!(vm && vm.running),
                     connected: !!(vm && vm.connected),
-                    holdsCredential: !!(vm && vm.holdsCredential)
+                    holdsCredential: !!(vm && vm.holdsCredential),
+
+                    //WHETHER ITS DISK STILL HAS THE WORK ON IT. The difference
+                    //between "asleep with my afternoon on it" and "back at
+                    //base" is the difference between waking a machine and
+                    //starting again, and it is the one thing a person coming
+                    //back tomorrow needs the pane to say.
+                    dirty: !!(vm && vm.dirty),
+                    canClear: !!(vm && vm.baseSnapshot)
                 }
                 : null,
 
@@ -287,6 +295,7 @@ async function plugin(imports, register) {
                             holdsCredential: !!v.holdsCredential,
                             branch: v.branch || null,
                             tags: v.tags || [],
+                            dirty: !!v.dirty,
                             roles: roles,
                             takesASignIn: roles.length > 0,
                             usedBy: whose
@@ -399,6 +408,164 @@ async function plugin(imports, register) {
                 var it = await store.change(a.id, patch);
                 log.on('diy').info('changed "' + it.title + '"');
                 return Object.assign({}, it, { note: 'Changed.' });
+            }
+        }));
+
+        //---- STOPPING FOR THE DAY, WHICH IS NOT THROWING IT AWAY -----------
+        //
+        //TWO ACTS, DELIBERATELY NOT ONE. The queue only has the one: a worker
+        //finishes and `putAway` takes the credential, stops the machine and
+        //rolls it back, because between tasks a machine should hold nothing. A
+        //person's seat is the opposite — the whole point of it is that what is
+        //on that disk is theirs and stays theirs until they say otherwise.
+        //
+        //SO SLEEPING RELEASES THE KEY AND STOPS THE MACHINE, and nothing else.
+        //The credential comes home because it is the one thing that is not the
+        //person's — it is lent, it is finite, and a machine sitting powered off
+        //for a week holding one is a week the queue cannot use it. Everything
+        //else stays exactly where it is.
+        //
+        //AND WAKING IT IS THE PRESS THAT ALREADY EXISTS. `diyOpen` skips every
+        //step that is already true, so a slept machine wakes, takes its sign-in
+        //back and opens — the workspace is already laid down and is not laid
+        //again.
+        undo.push(actions.define('diySleep', {
+            about: 'Stop for the day: take the sign-in back and power the machine down, keeping the work on it',
+            needs: 'workspace',
+            takes: ['id'],
+            run: async function (args) {
+                var a = args || {};
+                if (!a.id) throw new Error('Say which one: diySleep --id <id>. "diy" lists them.');
+
+                var it = await store.get(a.id);
+                if (!it) throw new Error('There is no piece of work called "' + a.id + '".');
+                if (!it.machine) throw new Error('"' + it.title + '" has no machine, so there is nothing to put down.');
+
+                var to = log.on('diy', it.id);
+                var did = [];
+
+                //THE KEY FIRST, WHILE THE MACHINE CAN STILL BE SPOKEN TO. Same
+                //order and the same reason as ../queue/putting.js: taking it
+                //back means it stops existing on that disk, not that the
+                //register stops saying it is there — and a machine that fails
+                //to shut down would otherwise sit powered on holding a live
+                //credential.
+                //
+                //`guestBack` KEEPS WHATEVER CLAUDE REFRESHED. A session in
+                //there rotates the token; `rm -f` would throw that away and
+                //this host would go on handing out one several rotations
+                //behind. That failure is already on record.
+                var live = (await liveByName())[it.machine];
+                if (live && live.holdsCredential) {
+                    to.info('taking the sign-in back off ' + it.machine);
+                    await actions.call('vmCredentialsForget', { name: it.machine });
+                    did.push('took the sign-in back, keeping whatever claude refreshed');
+                }
+
+                if (live && live.running) {
+                    to.info('shutting ' + it.machine + ' down');
+                    await actions.call('vmStop', { name: it.machine });
+                    did.push('shut it down');
+                }
+
+                //NOT ROLLED BACK, AND NOT RELEASED. The machine stays this
+                //seat's — see `freeIn` — because the work is still on it and
+                //handing it to another piece of work would be handing over
+                //somebody's afternoon.
+                return {
+                    id: it.id,
+                    machine: it.machine,
+                    did: did,
+                    note: did.length
+                        ? it.machine + ' is off with your work still on it. Opening this again wakes it and '
+                            + 'lends the sign-in back — everything else is already laid down.'
+                        : it.machine + ' was already off and holding nothing.'
+                };
+            }
+        }));
+
+        //---- AND THROWING THE DISK AWAY, WHICH IS THE OTHER ONE -------------
+        //
+        //A SEPARATE PRESS BECAUSE IT IS A SEPARATE DECISION, and the two were
+        //one act in the first sketch of this. Rolling back is how a machine
+        //becomes reusable and it is also how an afternoon disappears, and those
+        //should not share a button with "I am done for today".
+        //
+        //IT LEANS ON `vmSnapshotRestore`, which already clears the branch, the
+        //credential and the dirty mark, and stamps `cleanSince`. Nothing here
+        //reimplements any of that.
+        undo.push(actions.define('diyClear', {
+            about: 'Roll the machine back to its base snapshot, discarding everything on it, and release it',
+            needs: 'workspace',
+            takes: ['id'],
+            run: async function (args) {
+                var a = args || {};
+                if (!a.id) throw new Error('Say which one: diyClear --id <id>. "diy" lists them.');
+
+                var it = await store.get(a.id);
+                if (!it) throw new Error('There is no piece of work called "' + a.id + '".');
+                if (!it.machine) throw new Error('"' + it.title + '" has no machine, so there is nothing to clear.');
+
+                var live = (await liveByName())[it.machine];
+                if (!live) throw new Error('There is no machine called "' + it.machine + '" any more.');
+
+                //NOWHERE TO GO BACK TO IS A REFUSAL, NOT A POWER-OFF. A machine
+                //with no base snapshot would otherwise be shut down and left
+                //exactly as dirty as it was, having reported success at
+                //"clearing" it.
+                if (!live.baseSnapshot) {
+                    throw new Error(it.machine + ' has no base snapshot, so there is nowhere to roll it back to. '
+                        + 'Take one on Runners → Virtual machines first, or the work on it can only be deleted '
+                        + 'by rebuilding the machine.');
+                }
+
+                var to = log.on('diy', it.id);
+                var did = [];
+
+                //THE SAME ORDER AS SLEEPING, AND THEN ONE MORE STEP. The
+                //rollback would remove the credential file anyway; taking it
+                //back first is what brings the REFRESHED one home instead of
+                //discarding it with the disk.
+                if (live.holdsCredential) {
+                    to.info('taking the sign-in back off ' + it.machine);
+                    await actions.call('vmCredentialsForget', { name: it.machine });
+                    did.push('took the sign-in back, keeping whatever claude refreshed');
+                }
+
+                //ROLLED BACK AT REST. VirtualBox will not restore a snapshot
+                //under a running machine, and ../queue/putting.js learned the
+                //rest of this the hard way — a machine that never booted cannot
+                //answer a power button, so the plug follows the button.
+                if (live.running) {
+                    to.info('shutting ' + it.machine + ' down');
+                    try {
+                        await actions.call('vmStop', { name: it.machine });
+                    } catch (e) {
+                        to.warn('it did not answer the power button; pulling the plug');
+                        await actions.call('vmStop', { name: it.machine, force: true });
+                    }
+                    await actions.call('vmAwait', { name: it.machine, for: 'off', seconds: 120 });
+                    did.push('shut it down');
+                }
+
+                to.info('rolling ' + it.machine + ' back to "' + live.baseSnapshot + '"');
+                await actions.call('vmSnapshotRestore', { name: it.machine, title: live.baseSnapshot });
+                did.push('rolled it back to "' + live.baseSnapshot + '"');
+
+                //AND THE SEAT LETS GO OF IT. The machine is clean and holds
+                //nothing of this piece of work, so keeping its name here would
+                //hold it out of the pool for a seat that has no claim on it any
+                //more — see `freeIn`, which reads exactly this.
+                await store.change(it.id, { machine: null, signIn: null });
+                did.push('released it back into the diy pool');
+
+                return {
+                    id: it.id,
+                    machine: it.machine,
+                    did: did,
+                    note: it.machine + ' is off, back at "' + live.baseSnapshot + '", and free again. '
+                        + it.cut + ' and everything pushed to it are untouched — they are on this host.'
+                };
             }
         }));
 

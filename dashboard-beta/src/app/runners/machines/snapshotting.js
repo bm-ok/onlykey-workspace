@@ -138,6 +138,12 @@ module.exports.recordFor = function recordFor(vm, title, when) {
     return {
         baseSnapshot: was.baseSnapshot || title,
         snapshots: snapshots,
-        cleanSince: new Date(when).toISOString()
+        cleanSince: new Date(when).toISOString(),
+
+        //AND NOTHING IS OUTSTANDING ANY MORE. Whatever had been written onto
+        //this disk is now INSIDE a snapshot rather than beyond one, so the mark
+        //saying it was written since the last clean point is no longer about
+        //anything. See `dirty` in ../../vms/ours/records.js.
+        dirtySince: null
     };
 };

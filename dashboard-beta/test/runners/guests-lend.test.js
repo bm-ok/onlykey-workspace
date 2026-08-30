@@ -239,7 +239,18 @@ test('and a good one is recorded on both sides', async () => {
     const out = await lend().toMachine('a-worker', 'kit-1');
 
     assert.deepEqual(lent, [{ n: 'a-worker', m: 'kit-1', how: { kind: ['worker'] } }]);
-    assert.deepEqual(updated, [{ n: 'kit-1', patch: { holdsCredential: true, guest: 'a-worker' } }]);
+
+    //AND ITS DISK IS NO LONGER THE ONE IT WAS BUILT WITH. Writing a credential
+    //onto a machine is one of the two doors in this app that change a guest's
+    //disk — see `dirty` in ../../src/app/vms/ours/records.js — and a rollback is
+    //what makes it clean again. The stamp is a time, so it is checked for being
+    //one rather than compared against a clock this test does not own.
+    assert.equal(updated.length, 1);
+    assert.equal(updated[0].n, 'kit-1');
+    assert.equal(updated[0].patch.holdsCredential, true);
+    assert.equal(updated[0].patch.guest, 'a-worker');
+    assert.match(updated[0].patch.dirtySince, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+    assert.deepEqual(Object.keys(updated[0].patch).sort(), ['dirtySince', 'guest', 'holdsCredential']);
     assert.match(out.note, /Take it back with guestBack before the machine is snapshotted/);
 });
 

@@ -47,6 +47,23 @@ module.exports = function machines(theme, okc, remember) {
 
     //---- the middle column -------------------------------------------------
 
+    //---- AN INSTALL THAT FAILED IS NOT AN INSTALL ---------------------------
+    //
+    //`installing` IS A STAMP AND NOTHING CLEARS IT WHEN AN INSTALL FALLS OVER.
+    //The machine ends up powered off with the record still saying it is
+    //installing, for ever — and Rebuild and Remove were disabled on that flag
+    //alone. So the one machine somebody most wants rid of is the one the window
+    //will not let them touch, and the reason it gives is "it is installing"
+    //about a machine that is off.
+    //
+    //THE GUARD WAS ALWAYS ABOUT A LIVE INSTALLER — not destroying a disk out
+    //from under one. A powered-off machine has no installer to be under, so the
+    //question is whether it is ACTUALLY installing, which means running.
+    //
+    //THE OTHER TWO REFUSALS ARE UNTOUCHED. A held sign-in and a claimed branch
+    //are about losing something, and being switched off does not change either.
+    function reallyInstalling(v) { return !!v.installing && !!v.running; }
+
     function Acts({ v, again, setSaid, setPicked }) {
         if (!v) return <Panel><Empty>pick a machine on the left</Empty></Panel>;
 

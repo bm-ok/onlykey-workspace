@@ -40,7 +40,13 @@ test('and names every other field, rather than letting one appear later', () => 
         //stop. The register itself is per workspace now — see
         //../../src/app/vms/ours/server.js — so this is the record saying so
         //about itself rather than the only thing that decides.
-        workspace: null
+        workspace: null,
+
+        //AND WHETHER ITS DISK IS STILL THE ONE IT WAS BUILT WITH. `null` is the
+        //honest answer for a machine nothing has been done to yet, and it is
+        //also what every record written before this field carries — which is why
+        //`dirty` reads no stamps as CLEAN rather than as unknown.
+        dirtySince: null
     });
     assert.ok('branch' in vm && 'baseSnapshot' in vm && 'reported' in vm && 'workspace' in vm);
 });
@@ -162,4 +168,72 @@ test('every stage it can answer is one of the ones it lists', () => {
     for (const stage of seen) assert.ok(STAGES.includes(stage), stage + ' is not in STAGES');
     //INERTNESS: the sweep above reached more than one of them.
     assert.ok(seen.size >= 5, [...seen].join(','));
+});
+
+//---- whether its disk is still the one it was built with --------------------
+//
+//`cleanSince` WAS ALREADY STAMPED AND NOTHING READ IT. ../../src/app/runners/
+//machines/restoring.js writes it on a rollback and snapshotting.js writes it
+//when a snapshot is taken — the two moments a disk becomes a snapshot again —
+//and no line anywhere asked. Half a fact, kept honestly, for nobody.
+//
+//TWO STAMPS COMPARED, RATHER THAN A FLAG. A boolean has to be set right by every
+//path that changes a disk and cleared right by every path that restores one, and
+//the first place either is missed it lies quietly and for ever. Two timestamps
+//cannot get out of order: whichever happened last is the answer.
+//
+//WHY THE APP NEEDS THE WORD AT ALL. The queue always rolls a machine back when
+//it finishes, so a worker is never left in this state and nothing had to name
+//it. A person's seat is different — they stop for the night with an afternoon's
+//work on the disk — and "asleep with my work on it" against "back at base" is
+//the difference between waking a machine and starting again.
+
+const { dirty } = require('../../src/app/vms/ours/records');
+
+test('a machine nothing has been done to is clean', () => {
+    assert.equal(dirty({ name: 'r1' }), false);
+    assert.equal(dirty({ name: 'r1', dirtySince: null, cleanSince: null }), false);
+});
+
+test('and a record from before either stamp existed is clean, not unknown', () => {
+    //THE ALTERNATIVE IS EVERY MACHINE THIS HOST HAS EVER MADE suddenly reading
+    //dirty and offering somebody a rollback they did not ask for.
+    assert.equal(dirty({ name: 'r1', spec: {}, branch: 'some/branch' }), false);
+});
+
+test('changing its disk makes it dirty', () => {
+    assert.equal(dirty({ dirtySince: '2026-08-30T15:39:41Z' }), true);
+});
+
+test('and a rollback since then makes it clean again', () => {
+    assert.equal(dirty({ dirtySince: '2026-08-30T15:39:41Z', cleanSince: '2026-08-30T17:10:00Z' }), false);
+});
+
+test('but a rollback BEFORE it was dirtied does not', () => {
+    //THE ORDERING IS THE WHOLE MECHANISM. A machine rolled back this morning and
+    //worked on this afternoon is dirty, and a flag that was only ever cleared by
+    //the rollback would say otherwise.
+    assert.equal(dirty({ cleanSince: '2026-08-30T09:00:00Z', dirtySince: '2026-08-30T15:39:41Z' }), true);
+});
+
+test('dirtied with no clean point at all is dirty', () => {
+    //A MACHINE THAT HAS NEVER HAD A SNAPSHOT TAKEN. There is nowhere to go back
+    //to, and saying "clean" about it would be saying the disk matches something
+    //that does not exist.
+    assert.equal(dirty({ dirtySince: '2026-08-30T15:39:41Z', cleanSince: null }), true);
+});
+
+test('a machine being built is not dirty, it is being built', () => {
+    //ITS DISK IS NOT SUPPOSED TO MATCH A SNAPSHOT YET, and there is no snapshot
+    //to go back to — so offering to clean it is offering to throw away an
+    //install that is still running. ../../src/app/vms/ours/records.js `stageOf`
+    //makes the same distinction and had a guard go dead for missing it.
+    assert.equal(dirty({ installing: true, dirtySince: '2026-08-30T15:39:41Z' }), false);
+});
+
+test('and nothing here needs a machine, a disk, or VirtualBox to answer', () => {
+    //INERTNESS: it is two fields and a comparison. That is what lets every case
+    //above be asked without a guest.
+    assert.equal(dirty(null), false);
+    assert.equal(dirty(undefined), false);
 });

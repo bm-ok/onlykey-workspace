@@ -160,7 +160,15 @@ module.exports = function lend(deps) {
         }
 
         store.lentTo(name, machine, { kind: kinds });
-        ours.update(machine, { holdsCredential: true, guest: name });
+
+        //AND ITS DISK IS NO LONGER THE ONE IT WAS BUILT WITH. A credential was
+        //just written onto it — the second of the two doors in this app that
+        //change a guest's disk, the other being a workspace being laid down.
+        //See `dirty` in ../../vms/ours/records.js: a rollback is what makes it
+        //clean again, and nothing else does.
+        ours.update(machine, {
+            holdsCredential: true, guest: name, dirtySince: new Date().toISOString()
+        });
 
         say('vm', machine).warn(machine + ' is holding the Claude guest "' + name + '" — it cannot be '
             + 'snapshotted until that is taken back');

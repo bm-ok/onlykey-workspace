@@ -66,8 +66,16 @@ module.exports = function tasks(theme, okc, remember) {
         var anyMachine = ((pool && pool.machines) || []).length;
         var anySignIn = ((pool && pool.signIns) || []).length;
 
+        //---- THREE WORDS FOR A MACHINE, NOT TWO -------------------------
+        //
+        //"OFF" WAS TWO DIFFERENT MACHINES WEARING ONE WORD. One is asleep with
+        //an afternoon's work on its disk and wakes in seconds; the other is back
+        //at its base snapshot and would have to be set up from nothing. Those
+        //are the two states a person coming back tomorrow is actually choosing
+        //between, and the pane said the same thing about both.
         function state(v) {
-            return <Badge kind={v.running ? 'ok' : ''}>{v.running ? (v.connected ? 'running' : 'running, not dialled in') : 'off'}</Badge>;
+            if (v.running) return <Badge kind="ok">{v.connected ? 'running' : 'running, not dialled in'}</Badge>;
+            return <Badge kind={v.dirty ? 'warn' : ''}>{v.dirty ? 'asleep' : 'off'}</Badge>;
         }
 
         return [
@@ -83,7 +91,11 @@ module.exports = function tasks(theme, okc, remember) {
                             ? <span><Mono>{lost.name}</Mono>{' '}<Badge kind="bad">gone</Badge></span>
                             : <Badge kind={anyMachine ? 'warn' : 'bad'}>{anyMachine ? 'all taken' : 'none tagged diy'}</Badge>,
                 why: m
-                    ? 'Out of the pool and yours. The queue will not take it and nothing rolls it back while you are in it.'
+                    ? m.running
+                        ? 'Out of the pool and yours. The queue will not take it and nothing rolls it back while you are in it.'
+                        : m.dirty
+                            ? 'Asleep with your work still on its disk. Opening wakes it and lends your sign-in back — everything else is already laid down, so it is the quick press.'
+                            : 'Off and back at its base snapshot, so there is nothing of yours on it. Opening sets the whole thing up again from nothing.'
                     : take
                         ? 'Tagged diy and nothing else has it, so it is yours. Opening takes it out of the pool and starts it.'
                         : lost
@@ -199,6 +211,46 @@ module.exports = function tasks(theme, okc, remember) {
 
         function notYet() {
             setSaid({ text: 'Not wired up yet — this one is still to come.' });
+        }
+
+        //---- STOPPING FOR THE DAY -------------------------------------------
+        //
+        //NO GATE ON THIS ONE. It takes the sign-in back and powers the machine
+        //down, and every part of that is undone by pressing Open again — so a
+        //confirmation would be asking somebody to agree to something reversible,
+        //which is how a gate stops meaning anything by the time it guards
+        //something that is not.
+        function sleep(x) {
+            setSaid({ text: 'Taking your sign-in back off ' + x.machine.name + ' and shutting it down.' });
+            return run('diySleep', { id: x.id });
+        }
+
+        //---- AND THE ONE THAT DISCARDS A DISK -------------------------------
+        //
+        //IT SAYS WHAT GOES AND WHAT DOES NOT, in that order, because "everything
+        //on it" is frightening in a way that is only half right: the cut and
+        //everything pushed to it live on this host and are not touched. Somebody
+        //who does not know that will not press it, and somebody who thinks it
+        //takes the branch too will not press it either.
+        function clear(x) {
+            ask({
+                title: 'Clear ' + x.machine.name + ' back to base?',
+                plain: [
+                    'Everything on that machine goes — every file, every change, anything not pushed.',
+                    '"' + x.cut + '" and everything you have pushed to it are NOT touched. They are on this '
+                        + 'host, not on the machine.',
+                    x.signIn || x.machine.holdsCredential
+                        ? 'Your sign-in comes back here first, keeping whatever claude refreshed on it.'
+                        : null,
+                    x.machine.name + ' goes back into the diy pool, and opening this again sets it up from '
+                        + 'nothing.'
+                ].filter(Boolean),
+                confirm: 'Clear it',
+                onYes: function () {
+                    setSaid({ text: 'Clearing ' + x.machine.name + ' back to base. It says what it is doing in Live.' });
+                    return run('diyClear', { id: x.id });
+                }
+            });
         }
 
         //---- THE ONE PRESS --------------------------------------------------
@@ -517,6 +569,24 @@ module.exports = function tasks(theme, okc, remember) {
                                         {ready ? 'Open it in VS Code' : 'Set it up and open it'}
                                     </Button>
                                     <Button disabled={!s.machine || !s.machine.there} onClick={notYet}>Watch the session</Button>
+
+                                    {/*---- AND THE OTHER END OF THAT PRESS ----
+
+                                        STOPPING FOR THE DAY IS NOT THROWING IT
+                                        AWAY, and the first sketch of this had
+                                        them as one button. Sleeping releases the
+                                        sign-in and powers the machine down; the
+                                        work stays, and opening wakes it. Only
+                                        `Clear the machine` discards a disk, and
+                                        it is a row down, purple, behind a gate.
+
+                                        SHOWN ONLY WITH A MACHINE THAT IS UP.
+                                        There is nothing to put down otherwise,
+                                        and a disabled button somebody has to
+                                        reason about is worse than no button. */}
+                                    {s.machine && s.machine.there && s.machine.running
+                                        ? <Button onClick={function () { sleep(s); }}>Put it to sleep</Button>
+                                        : null}
                                 </div>
                                 {/* WHAT IT IS ABOUT TO DO, WITH THE NAMES IN IT.
                                     "Takes a machine, lays the cut on it, lends
@@ -563,6 +633,26 @@ module.exports = function tasks(theme, okc, remember) {
                                             }
                                         });
                                     }}>Forget it</Button>
+
+                                    {/*---- THE ONE THAT DISCARDS A DISK -------
+
+                                        PURPLE AND GATED, beside Forget it,
+                                        because both of them end something. It
+                                        is not beside "Open it in VS Code": that
+                                        row is the day's work, and a button that
+                                        throws an afternoon away does not belong
+                                        in the row somebody presses without
+                                        looking.
+
+                                        ONLY WHEN THERE IS DIRT. A machine
+                                        already at its base has nothing to clear,
+                                        and offering it invites somebody to press
+                                        it to find out what it does. */}
+                                    {s.machine && s.machine.there && s.machine.dirty
+                                        ? <Button kind="danger" protect onClick={function () { clear(s); }}>
+                                            Clear the machine
+                                        </Button>
+                                        : null}
                                 </div>
                             </Panel>
                         )}

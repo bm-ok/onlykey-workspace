@@ -224,6 +224,13 @@ module.exports = function ours(deps) {
                 stage: records.stageOf(vm, { live: live, connected: talking }),
                 connected: talking,
 
+                //AND WHETHER ITS DISK IS STILL THE ONE IT WAS BUILT WITH.
+                //Answered off the record's own two stamps, so unlike the three
+                //above it costs nothing — it is here rather than left to each
+                //caller because `dirtySince` and `cleanSince` are a PAIR, and a
+                //pane comparing them itself is a second reading of one fact.
+                dirty: records.dirty(vm),
+
                 //AND A THIRD QUESTION AGAIN: whether anybody has a DESKTOP on it.
                 //
                 //The agent starts as soon as the network works, a minute or two

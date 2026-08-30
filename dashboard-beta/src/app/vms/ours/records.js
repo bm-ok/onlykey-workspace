@@ -55,6 +55,27 @@ function newRecord(spec, now) {
         reported: null,
         branch: null,
 
+        //---- WHETHER ITS DISK IS STILL THE ONE IT WAS BUILT WITH -----------
+        //
+        //`cleanSince` WAS ALREADY STAMPED HERE AND NOTHING READ IT. ../../
+        //runners/machines/restoring.js writes it on a rollback and
+        //snapshotting.js writes it when a snapshot is taken — the two moments a
+        //disk becomes a snapshot again — and no line anywhere asked. Half a
+        //fact, kept honestly, for nobody.
+        //
+        //THIS IS THE OTHER HALF. Stamped the moment this app CHANGES a disk, so
+        //the pair answers "is what is on there still just what we built" without
+        //anybody having to remember. See ./roles.js's neighbour `dirty` below
+        //for what counts.
+        //
+        //IT MATTERS BECAUSE OF THE LANE THAT LEAVES A MACHINE DIRTY ON PURPOSE.
+        //The queue always rolls a machine back when it finishes, so a worker is
+        //never left in this state and nothing needed to name it. A person's seat
+        //is different: they stop for the night with an afternoon's work on the
+        //disk, and the difference between "asleep with my work on it" and "back
+        //at base" is the difference between waking it and starting again.
+        dirtySince: null,
+
         //---- WHOSE WORKSPACE MADE IT ---------------------------------------
         //
         //THE REGISTER IS THE HOST'S AND THE MEMBERSHIP IS A WORKSPACE'S, and
@@ -115,9 +136,32 @@ function stageOf(vm, seen) {
     return 'created';                     //exists, never heard from
 }
 
+//---- and whether its disk is still the one it was built with ---------------
+//
+//TWO STAMPS COMPARED, RATHER THAN A FLAG. A boolean has to be set right by every
+//path that changes a disk and cleared right by every path that restores one, and
+//the first place either is missed it lies quietly and for ever. Two timestamps
+//cannot get out of order: whichever happened last is the answer.
+//
+//AND IT SURVIVES A RECORD THAT PREDATES BOTH. No stamps at all means a machine
+//nobody has told us about either way, and the honest answer there is CLEAN —
+//because the alternative is every machine this host has ever made suddenly
+//reading dirty and offering somebody a rollback they did not ask for.
+//
+//A MACHINE MID-INSTALL IS NOT DIRTY. It is being built; its disk is not
+//supposed to match a snapshot yet, and there is no snapshot to go back to.
+function dirty(vm) {
+    var v = vm || {};
+    if (v.installing) return false;
+    if (!v.dirtySince) return false;
+    if (!v.cleanSince) return true;
+    return String(v.dirtySince) > String(v.cleanSince);
+}
+
 module.exports = {
     asRecorded: asRecorded,
     newRecord: newRecord,
+    dirty: dirty,
     stageOf: stageOf,
     STAGES: STAGES
 };

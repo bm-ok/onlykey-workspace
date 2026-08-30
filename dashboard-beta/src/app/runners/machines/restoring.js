@@ -105,7 +105,12 @@ module.exports = function restoring(deps) {
             var keep = serving(o.keepBorrow);
             var gaveBack = keep ? null : (vm.borrowed || null);
 
-            var patch = { branch: branch, holdsCredential: false, cleanSince: now() };
+            //`dirtySince` CLEARED AS WELL AS `cleanSince` STAMPED. Comparing the
+            //two would answer correctly with only the stamp — the newer one
+            //wins — but leaving the old mark on a machine that is back at a
+            //snapshot means the record still says WHEN it was dirtied, about a
+            //disk that no longer exists. See `dirty` in ../../vms/ours/records.js.
+            var patch = { branch: branch, holdsCredential: false, cleanSince: now(), dirtySince: null };
             if (!keep) patch.borrowed = null;
             ours.update(name, patch);
 

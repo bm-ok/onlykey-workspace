@@ -1159,6 +1159,16 @@ async function plugin(imports, register) {
                 }
 
                 //---- 3. AND ONLY THEN IS THE BRANCH RECORDED ----------------
+                //
+                //AND THE DISK IS NO LONGER THE ONE IT WAS BUILT WITH. Checkouts
+                //were just written onto it, which is one of the two doors in
+                //this app that changes a guest's disk — see `dirty` in
+                //../../vms/ours/records.js. Stamped whether or not a branch is
+                //CLAIMED: a machine set up to read still had a workspace laid on
+                //it, and "it claims nothing" is about pushing, not about what is
+                //on the disk.
+                ours.update(a.name, { dirtySince: new Date().toISOString() });
+
                 if (plan.claims) {
                     ours.update(a.name, { branch: plan.claims });
                     to.good(a.name + ' may now push ' + plan.claims + ', and nothing else');
