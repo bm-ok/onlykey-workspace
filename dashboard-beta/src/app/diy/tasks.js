@@ -173,16 +173,19 @@ module.exports = function tasks(theme) {
 
         //---- STARTING ONE -------------------------------------------------
         //
-        //TWO FIELDS AND NO MORE. Describing it and saying where it pushes are
-        //the whole of what a person knows at the moment they start — the
-        //machine and the sign-in are not decisions, they are setup, and the one
-        //press works them out later. A form that asked for them here would be
-        //asking somebody to configure a runner before they have written down
-        //what they are doing.
+        //WHAT IT IS CALLED, WHAT IT IS, AND WHERE IT PUSHES. The machine and the
+        //sign-in are still not asked for: they are not decisions a person makes
+        //at the moment they start, they are setup, and the one press works them
+        //out afterwards. A form that asked for them here would be asking
+        //somebody to configure a runner before they have written down what they
+        //are doing.
         //
-        //THE DESCRIPTION IS THE NAME. Its first line titles the card, so there
-        //is no second box asking for a label that would only ever repeat the
-        //first few words of the box above it.
+        //THE TITLE IS ITS OWN FIELD, AND WAS NOT AT FIRST. The first line of the
+        //description was being taken as the name, which reads as a saving until
+        //you look at the list: what titles a card well is three or four words,
+        //and the first line somebody writes when asked what they are doing is a
+        //sentence. So the list filled with truncated sentences and the one place
+        //a name is actually READ was the one place it was derived.
         function makeOne() {
             ask({
                 title: 'Start a piece of work',
@@ -192,8 +195,13 @@ module.exports = function tasks(theme) {
                 ],
                 fields: [
                     {
-                        name: 'what', label: 'What are you doing?', multiline: true, rows: 6, needed: true,
-                        placeholder: 'In your own words. The first line names it in the list.',
+                        name: 'title', label: 'Title', needed: true,
+                        placeholder: 'a few words — this is what the list shows',
+                        hint: 'Short enough to pick out of a list of a dozen a fortnight from now.'
+                    },
+                    {
+                        name: 'what', label: 'What are you doing?', multiline: true, rows: 6,
+                        placeholder: 'In your own words.',
                         hint: 'This is for you to read when you come back to it — not a brief, and nothing is sent anywhere.'
                     },
                     {
@@ -203,10 +211,13 @@ module.exports = function tasks(theme) {
                 ],
                 confirm: 'Start it',
                 onYes: function (f) {
-                    var text = String(f.what || '').trim();
-                    if (!text) throw new Error('Say what you are doing.');
+                    //THE TITLE IS THE ONE THAT IS REFUSED WITHOUT. A piece of
+                    //work with no description is a note to self somebody has not
+                    //written yet; one with no name is a blank row in the list.
+                    var name = String(f.title || '').trim();
+                    if (!name) throw new Error('Give it a title — it is what the list shows.');
 
-                    var first = text.split('\n')[0].trim();
+                    var text = String(f.what || '').trim();
                     var id = 'n' + Date.now().toString(36);
                     var cut = f.cut
                         ? { branch: f.cut, repos: 9, commits: 0 }
@@ -215,7 +226,7 @@ module.exports = function tasks(theme) {
                     setSeats(function (was) {
                         return [{
                             id: id,
-                            name: first.length > 60 ? first.slice(0, 57) + '...' : first,
+                            name: name,
                             notes: text,
                             state: 'open',
                             cut: cut,
@@ -266,7 +277,12 @@ module.exports = function tasks(theme) {
                                     {s.name}{' '}
                                     {s.state === 'done' ? <Badge>done</Badge> : ready ? <Badge kind="ok">ready</Badge> : null}
                                 </CardTitle>
-                                <p>{s.notes}</p>
+                                {/* THE DESCRIPTION IS OPTIONAL, so its absence is
+                                    drawn rather than left as an empty paragraph
+                                    that reads as a rendering fault. */}
+                                {s.notes
+                                    ? <p>{s.notes}</p>
+                                    : <p><Muted>Nothing written down about this one.</Muted></p>}
 
                                 {/*---- THE SEAT, AS FOUR ROWS ----------------
 
