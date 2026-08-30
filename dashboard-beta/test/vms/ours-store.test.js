@@ -27,7 +27,17 @@ beforeEach(async () => {
 
     let state = null;
     await statePlugin({ dataDir: { at: (...p) => path.join(dataDir, ...p) } }, async (_e, s) => { state = s.state; });
-    doc = state.app.doc('machines');
+    //A FUNCTION, THE WAY THE REAL ONE IS. ../../src/app/vms/ours/server.js hands
+    //`function () { return state.here.now('machines'); }` — asked per call,
+    //because which file the register IS depends on which workspace is open and
+    //that changes while the app runs. A stand-in that handed a fixed document
+    //would pass while the app read the wrong folder.
+    //
+    //THE APP'S OWN DRAWER IS USED HERE rather than a workspace, because what this
+    //file is about is the register's behaviour and not where it lives; the
+    //where is ../core/state.test.js's.
+    const box = state.app.doc('machines');
+    doc = () => box;
 
     said = [];
     vboxCalls = [];
@@ -136,7 +146,7 @@ test('what was written survives being read by a second registry', () => {
 
 test('an unreadable register is said out loud, not answered as an empty one', () => {
     ours.add({ name: 'runner1' });
-    fs.writeFileSync(doc.path, '{ this is not json');
+    fs.writeFileSync(doc().path, '{ this is not json');
 
     //THE QUIET ANSWER IS AN EMPTY REGISTRY, and an empty registry means every
     //machine on this host has silently become untouchable.
@@ -146,7 +156,7 @@ test('an unreadable register is said out loud, not answered as an empty one', ()
 });
 
 test('a lone object where a list was expected is one machine, not none', () => {
-    fs.writeFileSync(doc.path, JSON.stringify({ name: 'runner1', tags: ['worker'] }));
+    fs.writeFileSync(doc().path, JSON.stringify({ name: 'runner1', tags: ['worker'] }));
 
     //SOMEBODY EDITED THE FILE BY HAND. Reading it as "there are none" is the
     //worst of the available answers.
@@ -155,7 +165,7 @@ test('a lone object where a list was expected is one machine, not none', () => {
 });
 
 test('a byte-order mark in front of the brace is not corruption', () => {
-    fs.writeFileSync(doc.path, '﻿' + JSON.stringify([{ name: 'runner1' }]));
+    fs.writeFileSync(doc().path, '﻿' + JSON.stringify([{ name: 'runner1' }]));
     assert.deepEqual(ours.read().map((v) => v.name), ['runner1']);
 });
 

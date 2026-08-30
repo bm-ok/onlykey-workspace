@@ -18,11 +18,57 @@ var path = require('path');
 //ported from learned this the hard way and its own comment names it — "the
 //contamination this whole file exists to prevent, arriving on the first switch".
 //
-//BOTH LIVE UNDER THE APP'S OWN DIRECTORY. Workspace state is NOT kept inside the
-//workspace, and that is deliberate: a workspace is a folder of repositories
-//somebody else may own, may clone, may `git clean -xdf`. A registry in there is
-//one command from gone, with the machines it describes still running. Same
-//argument that moved this out of the repository in the first place.
+//THE HOST'S DRAWER IS UNDER THE APP'S DIRECTORY; A WORKSPACE'S IS INSIDE THE
+//WORKSPACE, at `<the folder>/.okc/`.
+//
+//IT USED TO BE BOTH UNDER THE APP, and the reason was good: a workspace is a
+//folder somebody else may own, may clone, may `git clean -xdf`, and state in
+//there is one command from gone. That argument is not wrong and it is written
+//down here rather than deleted, because what replaced it was a different failure
+//that turned out to be worse in practice.
+//
+//WHAT WENT WRONG WITH KEEPING IT OUTSIDE. The drawer was `state/workspaces/
+//<name>-<hash>/`, so a workspace had two names — the folder, and a slug you got
+//by recomputing a hash of its path. Nothing looking at a workspace could find its
+//state, nothing looking at the state could tell you which folder it was for, and
+//the two drifted: switching folders still showed the machines the other one made,
+//because the register was never asked which workspace it belonged to.
+//
+//THE FOLDER IS THE IDENTITY. Inside it there is one name for a workspace and
+//nothing to keep in step: copy the folder and its state comes with it, delete it
+//and nothing is orphaned in appdata, and "whose is this" is answered by where the
+//file is.
+//
+//---- AND WHAT THAT COSTS, SAID PLAINLY -------------------------------------
+//
+//DELETING A WORKSPACE FOLDER DELETES ITS STATE, and that is now true of ALL of
+//it — including the machine register and the artifacts a task delivered. For
+//tasks, cuts and notes that is the point. For those two it is a real cost and it
+//was argued about rather than overlooked:
+//
+//  * A MACHINE OUTLIVES THE FOLDER. Membership comes from the register, so a
+//    machine missing from it is one this app will not touch — while it goes on
+//    running in VirtualBox. Losing the file strands it: still up, still holding
+//    whatever it was lent, and no longer shut down by anything here.
+//  * AN ARTIFACT IS THE ONLY COPY of what a run produced.
+//
+//THE TRADE WAS TAKEN DELIBERATELY, for one property: a workspace has ONE name and
+//it is the folder. There is no slug to recompute, nothing to keep in step, and
+//nothing left behind in appdata when a folder goes. The failure this replaced was
+//not hypothetical — the register sat in the host's drawer and every workspace saw
+//every other workspace's machines, because nothing had ever asked which folder a
+//machine belonged to.
+//
+//IF A STRANDED MACHINE EVER HAPPENS, the way back is VirtualBox itself: the
+//machines are still there under their own names, and a new register can be
+//written by making the workspace again. That is a bad afternoon, not a lost one —
+//which is the sentence the decision rests on, so it is written down here rather
+//than discovered later.
+//
+//A WORKSPACE ROOT IS NOT A REPOSITORY. It is the folder the repositories sit in as
+//siblings, so `.okc` lands beside them and inside none of them, and nothing here
+//is committed by accident. If that ever stops being true this has to be revisited:
+//a dotfolder inside a checkout is one somebody commits.
 //
 //`here` IS NOTHING WHEN NOTHING IS OPEN, rather than a default drawer. A window
 //about nowhere must not be answered with the tasks of the last place — and a
@@ -78,7 +124,10 @@ async function plugin(imports, register) {
     //where ../events and ../../supervisor already keep theirs, so this is the
     //same place with one way in rather than a new place.
     var appDir = dataDir.at('state');
-    var whereWorkspaces = dataDir.at('state', 'workspaces');
+
+    //A WORKSPACE'S DRAWER, INSIDE THE WORKSPACE. See the header for what that
+    //buys and what it costs.
+    var HERE = '.okc';
 
     //MADE ONCE PER RUN, NOT ONCE PER CALL. mkdir on a directory that already
     //exists is cheap and is still a syscall, and this sits on the read path of
@@ -204,7 +253,7 @@ async function plugin(imports, register) {
                             'No workspace is open, so there is nowhere to keep "' + name + '". '
                             + 'This is about a workspace rather than about this host — see state.app for what is not.');
                     }
-                    return docIn(ready(path.join(whereWorkspaces, slugFor(open))), name);
+                    return docIn(ready(path.join(open, HERE)), name);
                 },
 
                 //THE SAME DRAWER, WITHOUT WAITING. For a caller that cannot —
@@ -222,7 +271,7 @@ async function plugin(imports, register) {
                             'No workspace is open, so there is nowhere to keep "' + name + '". '
                             + 'This is about a workspace rather than about this host — see state.app for what is not.');
                     }
-                    return docIn(ready(path.join(whereWorkspaces, slugFor(atNow))), name);
+                    return docIn(ready(path.join(atNow, HERE)), name);
                 },
 
                 //WHETHER THERE IS ONE AT ALL, so a caller can ask before it
@@ -230,7 +279,7 @@ async function plugin(imports, register) {
                 open: async function () { return !!(await openDir()); },
                 where: async function () {
                     var open = await openDir();
-                    return open ? path.join(whereWorkspaces, slugFor(open)) : null;
+                    return open ? path.join(open, HERE) : null;
                 }
             },
 
@@ -239,6 +288,26 @@ async function plugin(imports, register) {
             //this whole file is about.
             follow: function (fn) {
                 asking = fn;
+
+                //---- AND RESOLVED ONCE, STRAIGHT AWAY ----------------------
+                //
+                //`here.now` refuses while `atNow` is `undefined` — "not worked
+                //out yet", which is a moment rather than a state. Nothing used
+                //to shorten that moment: it ended when either ../../workspace
+                //pushed `at()` or somebody happened to make an async call.
+                //
+                //THAT LEFT A WINDOW IN WHICH THE SYNCHRONOUS DOOR REFUSED for a
+                //workspace that was perfectly well known. The register reads
+                //through it — see ../../vms/ours/store.js — so the window was
+                //"no machines" on a host that has three, and a write inside it
+                //threw about a workspace nobody had asked for yet.
+                //
+                //ASKING IMMEDIATELY CLOSES IT ON THE NEXT TICK. It cannot be
+                //closed synchronously, because the only thing that knows is
+                //async — which is the whole reason `at()` exists as well.
+                try { Promise.resolve(openDir()).catch(function () {}); }
+                catch (e) { /* a follow that throws is answered by openDir itself */ }
+
                 return function () { if (asking === fn) asking = null; };
             },
 

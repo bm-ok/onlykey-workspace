@@ -54,7 +54,16 @@ async function plugin(imports, register) {
     var state = imports.state;
 
     var ours = makeOurs({
-        doc: state.app.doc('machines'),
+        //THE OPEN WORKSPACE'S, AND ASKED FOR PER CALL. Switching folders used to
+        //show the machines the other one made, because this said
+        //`state.app.doc('machines')` — one register for the host, from before
+        //workspaces could be switched at all. A machine belongs to the work it
+        //was built for, so the register belongs to the workspace.
+        //
+        //`now` RATHER THAN `doc`, because ./store.js reads synchronously from
+        //about twenty places, several on the path a machine takes to
+        //authenticate as it dials in. See the note there.
+        doc: function () { return state.here.now('machines'); },
         say: imports.log.on,
 
         //ASKED FOR LIVE STATE AND NEVER FOR MEMBERSHIP. A host where VirtualBox

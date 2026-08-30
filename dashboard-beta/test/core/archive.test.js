@@ -61,9 +61,14 @@ test('a file is kept in the workspace’s drawer, under its own kind', async () 
     assert.ok(kept.path.startsWith(path.join(here, 'artifacts', 'task-uid-1')),
         'kept at ' + kept.path + ', expected under ' + here);
 
-    //NOT INSIDE THE WORKSPACE ITSELF: that folder is one `git clean -xdf` from
-    //gone, with nothing to say what was there.
-    assert.ok(!kept.path.startsWith(work), 'it was written into the workspace folder');
+    //INSIDE THE WORKSPACE, IN `.okc`, AND THIS ASSERTED THE OPPOSITE. The old
+    //line held artifacts out of the folder because it is one `git clean -xdf`
+    //from gone. That is still true and is now an accepted cost — see
+    //../../src/app/core/state/main.js for the trade. What is asserted instead is
+    //that they land in the drawer rather than loose among the repositories,
+    //which is the part that would otherwise be a mess in somebody's project.
+    assert.ok(kept.path.startsWith(path.join(work, '.okc')),
+        'kept outside the workspace drawer: ' + kept.path);
 });
 
 test('a second workspace does not see the first one’s files', async () => {

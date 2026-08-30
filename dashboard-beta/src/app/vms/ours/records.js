@@ -53,7 +53,26 @@ function newRecord(spec, now) {
         created: now,
         baseSnapshot: null,
         reported: null,
-        branch: null
+        branch: null,
+
+        //---- WHOSE WORKSPACE MADE IT ---------------------------------------
+        //
+        //THE REGISTER IS THE HOST'S AND THE MEMBERSHIP IS A WORKSPACE'S, and
+        //those are two different facts that used to be one. This app keeps one
+        //register because a machine dialling in has to be authenticated whichever
+        //folder happens to be open — the channel looks it up BY NAME and must
+        //find it. But which machines you SEE, and which the queue may spend, is a
+        //question about the work, and the work is per workspace.
+        //
+        //Switching folders showed the other workspace's machines, because the
+        //register predates workspaces being switchable and nothing had asked the
+        //question since.
+        //
+        //NULL MEANS NOBODY'S YET, which is a real state rather than a default:
+        //every machine made before this field existed has it, and guessing which
+        //workspace those belong to is exactly the mistake this field exists to
+        //stop. ../ours/store.js says what is done with them.
+        workspace: s.workspace || null
     };
 }
 

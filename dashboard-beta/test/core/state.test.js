@@ -179,10 +179,19 @@ test('with no workspace open, the workspace drawer refuses rather than falling b
     await assert.rejects(() => state.here.doc('tasks'), /No workspace is open/);
 });
 
-//WORKSPACE STATE LIVES UNDER THE APP, NEVER INSIDE THE WORKSPACE. That folder
-//belongs to somebody else and is one `git clean -xdf` from gone, with the
-//machines it describes still running.
-test('nothing is written inside the workspace itself', async () => {
+//WORKSPACE STATE LIVES INSIDE THE WORKSPACE, at `<the folder>/.okc/`, AND THIS
+//TEST USED TO ASSERT THE OPPOSITE.
+//
+//It held the drawer under the app directory, for a good reason that is written
+//out in ../../src/app/core/state/main.js: a workspace folder can be deleted or
+//`git clean -xdf`'d, and state in there goes with it. That cost is now accepted
+//in exchange for a workspace having ONE name — the folder — with no slug to
+//recompute and nothing left in appdata when the folder goes.
+//
+//THE FAILURE IT WAS TRADED AGAINST is the one that actually happened: the drawer
+//was keyed by a hash of the path, the machine register was not in it at all, and
+//every workspace showed every other workspace's machines.
+test('a workspace keeps its state inside itself, in .okc', async () => {
     const { state, dir } = aStore();
     const ws = path.join(dir, 'a-workspace');
     fs.mkdirSync(ws, { recursive: true });
@@ -191,7 +200,14 @@ test('nothing is written inside the workspace itself', async () => {
     const doc = await state.here.doc('tasks');
     doc.write({ kept: true });
 
-    assert.deepEqual(fs.readdirSync(ws), [], 'it wrote into the workspace folder');
-    assert.ok(doc.path.startsWith(path.join(dir, 'state', 'workspaces')),
-        'the workspace drawer is not under the app directory: ' + doc.path);
+    assert.equal(doc.path, path.join(ws, '.okc', 'tasks.json'));
+    assert.deepEqual(fs.readdirSync(ws), ['.okc']);
+    assert.deepEqual(fs.readdirSync(path.join(ws, '.okc')), ['tasks.json']);
+
+    //AND THE HOST'S DRAWER IS STILL THE HOST'S. Only what is ABOUT a folder
+    //moved; the guards, the settings and the approval library have no folder to
+    //live in and did not.
+    const mine = state.app.doc('settings');
+    assert.ok(mine.path.startsWith(path.join(dir, 'state')),
+        'the host drawer moved and should not have: ' + mine.path);
 });

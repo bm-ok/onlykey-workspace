@@ -38,8 +38,16 @@ beforeEach(async () => {
     pending = null;
 
     let state = null;
+
+    //A WORKSPACE, WHICH THIS DID NOT USED TO NEED. The machine register was the
+    //host's; it belongs to the open workspace now, so there has to be one.
+    //`at()` as well as `follow()` because the register reads through the
+    //synchronous door -- see ../../src/app/vms/ours/store.js.
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-prov-ws-'));
     await statePlugin({ dataDir: { at: (...p) => path.join(dataDir, ...p) } },
         async (_e, s) => { state = s.state; });
+    state.follow(async () => work);
+    state.at(work);
 
     const log = {
         on: function () {

@@ -21,7 +21,20 @@ var roles = require('./roles');
 
 module.exports = function ours(deps) {
     var d = deps || {};
-    var doc = d.doc;                                   //state.app.doc('machines')
+    //---- ASKED FOR PER CALL, NOT HELD -------------------------------------
+    //
+    //A FUNCTION, BECAUSE THE ANSWER MOVES. The register is the open workspace's
+    //now — `<the folder>/.okc/machines.json` — so which file this is depends on
+    //which folder is open, and that changes while the app runs. Holding the
+    //document would pin the register to whichever workspace happened to be open
+    //when the plugin came up, and every switch afterwards would read and WRITE
+    //the wrong one.
+    //
+    //IT IS THE SYNCHRONOUS DOOR. `read()` is called from about twenty places,
+    //several of them on the path a machine takes to authenticate when it dials
+    //in, and making it async would be a different change to a third of the app.
+    //../../core/state's `here.now` exists for exactly this caller.
+    var doc = d.doc;                                   //function () -> state.here.now('machines')
     var say = d.say || function () { return { bad: function () {}, info: function () {} }; };
     var vbox = d.vbox || null;
     //WHETHER ITS AGENT IS TALKING TO US, which is a different question from
@@ -33,8 +46,33 @@ module.exports = function ours(deps) {
 
     //---- what is written down ---------------------------------------------
 
+    //---- NO WORKSPACE OPEN IS NO MACHINES, AND IT IS NOT A FAULT ------------
+    //
+    //The register belongs to the open workspace, so with none open there is no
+    //register to read — not an empty one, none. `[]` is the honest answer and it
+    //is the same answer the pane wants: nothing to show.
+    //
+    //THIS IS ALSO A MOMENT AT STARTUP. ../../core/state cannot say which folder
+    //is open until ../../workspace has pushed it, so the first reads of a run
+    //land here. Saying it every time would put a line in the log for every poll
+    //of every pane; saying it never would hide a workspace that failed to open.
+    //So it is said ONCE per distinct reason.
+    var moaned = {};
+    function saidOnce(why, line) {
+        if (moaned[why]) return;
+        moaned[why] = true;
+        say('vm').info(line);
+    }
+
     function read() {
-        var kept = doc.read(null);
+        var box;
+        try { box = doc(); }
+        catch (e) {
+            saidOnce(e.message, 'no machines are listed: ' + e.message);
+            return [];
+        }
+
+        var kept = box.read(null);
 
         //A DOCUMENT THAT IS THERE AND UNREADABLE IS NOT "no machines yet", and
         //the difference matters more here than anywhere else in the app: the
@@ -42,9 +80,9 @@ module.exports = function ours(deps) {
         //machine on this host has become untouchable. Said out loud, once.
         if (kept === null) {
             var there = false;
-            try { there = fs.existsSync(doc.path); } catch (e) { there = false; }
+            try { there = fs.existsSync(box.path); } catch (e) { there = false; }
             if (there) {
-                say('vm').bad(doc.path + ' could not be read. Fix or delete it; '
+                say('vm').bad(box.path + ' could not be read. Fix or delete it; '
                     + 'no machine is listed until then.');
             }
             return [];
@@ -60,7 +98,11 @@ module.exports = function ours(deps) {
         return list.map(records.asRecorded);
     }
 
-    function write(list) { return doc.write(list); }
+    //AND A WRITE WITH NOWHERE TO GO IS REFUSED, NOT DROPPED. `read` answering
+    //`[]` with no workspace open is honest; a write swallowing a machine that
+    //was just built is not, and the refusal ../../core/state raises already says
+    //why in a sentence.
+    function write(list) { return doc().write(list); }
 
     function get(name) {
         var vm = read().filter(function (v) { return v.name === name; })[0];

@@ -87,10 +87,24 @@ async function plugin(imports, register) {
     //one answer nobody would question.
     var SCOPED = { job: true, prompt: false, contract: false };
 
+    //THE WORKSPACE'S OWN NAME FOR ITSELF, NOT ITS DRAWER'S. This read the
+    //basename of `here.where()`, which used to BE the slug — the drawer was
+    //`state/workspaces/<slug>/`. The drawer is now `<the folder>/.okc`, so the
+    //basename is `.okc` for every workspace on the host, and every one of them
+    //would have filed its job history under the same prefix.
+    //
+    //WHICH IS THE FAILURE THE COMMENT ABOVE DESCRIBES, arriving by a route it
+    //did not anticipate: not two jobs of the same name in two workspaces, but
+    //two workspaces that had stopped having different names.
+    //
+    //`slugFor` ON THE FOLDER GIVES BACK EXACTLY THE OLD VALUE, which is why it
+    //is used rather than the folder's plain name — version ids already written
+    //carry the slug, and anything else here would orphan every history kept
+    //before today while looking like it worked.
     async function versionId(kind, id) {
         var where = '';
         if (SCOPED[kind]) {
-            try { where = path.basename(await state.here.where()) + '--'; }
+            try { where = state.slugFor(path.dirname(await state.here.where())) + '--'; }
             catch (e) { where = ''; }
         }
         return where + String(id);

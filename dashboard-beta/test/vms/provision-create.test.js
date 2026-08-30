@@ -33,8 +33,16 @@ beforeEach(async () => {
     said = [];
 
     let state = null;
+
+    //A WORKSPACE, WHICH THIS DID NOT USED TO NEED. The machine register was the
+    //host's; it belongs to the open workspace now, so there has to be one.
+    //`at()` as well as `follow()` because the register reads through the
+    //synchronous door -- see ../../src/app/vms/ours/store.js.
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-prov-ws-'));
     await statePlugin({ dataDir: { at: (...p) => path.join(dataDir, ...p) } },
         async (_e, s) => { state = s.state; });
+    state.follow(async () => work);
+    state.at(work);
 
     const log = {
         on: function () {
@@ -114,8 +122,16 @@ test('a name that is not a name is refused before VirtualBox is asked anything',
 test('no VirtualBox at all is refused, rather than half-writing a record', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-create-'));
     let state = null;
+
+    //A WORKSPACE, WHICH THIS DID NOT USED TO NEED. The machine register was the
+    //host's; it belongs to the open workspace now, so there has to be one.
+    //`at()` as well as `follow()` because the register reads through the
+    //synchronous door -- see ../../src/app/vms/ours/store.js.
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-prov-ws-'));
     await statePlugin({ dataDir: { at: (...p) => path.join(dataDir, ...p) } },
         async (_e, s) => { state = s.state; });
+    state.follow(async () => work);
+    state.at(work);
 
     const log = { on: function () { const to = { good() {}, warn() {}, bad() {}, info() {}, on: () => to }; return to; } };
     const gone = Object.assign({}, { available: () => false, listAll: async () => [], runningAll: async () => [] });

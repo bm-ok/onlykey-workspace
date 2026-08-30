@@ -113,7 +113,18 @@ function aGitHub(answers, budget) {
     };
 }
 
+
+//A CLEAN DRAWER PER TEST, WHICH USED TO COME FOR FREE. The workspace folder is
+//made once for this whole file, and a workspace keeps its state INSIDE itself
+//now -- so what one test writes is what the next one reads unless it is cleared.
+//It used to be a fresh dataDir per fixture, and the drawer lived under that.
+function freshDrawer(at) {
+    try { fs.rmSync(path.join(at, '.okc'), { recursive: true, force: true }); }
+    catch (e) { /* nothing kept there yet */ }
+}
+
 async function anApp(answers, open, budget, extra) {
+    freshDrawer(work);
     let actions = null;
     await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
 

@@ -10,6 +10,27 @@ const prPlugin = require('../../src/app/repositories/pr/server');
 const { refsFor } = require('../../tools/test-parts');
 const Many = require('../../src/app/github/many');
 
+//---- TWO WORKSPACES, AND THEY HAVE TO BE REAL FOLDERS ----------------------
+//
+//These were two fixed made-up paths, which was fine while a workspace drawer
+//lived under the app data directory: the path was only ever a KEY, hashed into a
+//slug, and a fresh dataDir per fixture meant a fresh drawer.
+//
+//A WORKSPACE KEEPS ITS STATE INSIDE ITSELF NOW, so the path is a place. Made-up
+//ones made every test in this file share one directory on the machine running
+//the suite, and CREATE it, so nothing was isolated.
+const ALPHA = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-alpha-'));
+const BETA = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-beta-'));
+
+//AND A CLEAN DRAWER PER TEST, WHICH USED TO COME FOR FREE.
+function fresh() {
+    [ALPHA, BETA].forEach(function (w) {
+        try { fs.rmSync(path.join(w, '.okc'), { recursive: true, force: true }); }
+        catch (e) { /* nothing kept there yet */ }
+    });
+}
+
+
 //---------------------------------------------------------------------------
 //a PR cut: one act, one pull request per repository, held together.
 //
@@ -47,6 +68,7 @@ function aGitHub(answers) {
 }
 
 async function anApp(opts) {
+    fresh();
     const o = opts || {};
     let actions = null;
     await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
@@ -54,7 +76,7 @@ async function anApp(opts) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-pr-'));
     let state = null;
     await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
-    state.follow(async () => (o.open === null ? null : (o.open || 'C:\\work\\alpha')));
+    state.follow(async () => (o.open === null ? null : (o.open || ALPHA)));
 
     if (o.landings) (await state.here.doc('landings')).write(o.landings);
     if (o.template) (await state.here.doc('pr-template')).write(o.template);
@@ -92,7 +114,7 @@ async function anApp(opts) {
         log: { on: () => logger },
         git, github: gh.github,
         keys: { github: { envForPush: () => ({ OKC_GIT_TOKEN: 'ghp_notReal' }), credentialHelper: 'C:\\helper.js' } },
-        workspace: { dir: async () => 'C:\\work\\alpha', repos: async () => [{ name: 'one' }] },
+        workspace: { dir: async () => ALPHA, repos: async () => [{ name: 'one' }] },
         state,
         settings: { allowed: async () => o.testing || { allowed: false, why: 'The drills are switched off.' } },
         refs,

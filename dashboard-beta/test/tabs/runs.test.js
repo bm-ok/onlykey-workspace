@@ -19,9 +19,33 @@ const makeRuns = require('../../src/app/tests/runs');
 //A fake state would pass every one of these with the drawer ignored entirely.
 //---------------------------------------------------------------------------
 
+//---- TWO WORKSPACES, AND THEY HAVE TO BE REAL FOLDERS ----------------------
+//
+//These were two fixed made-up paths, which was fine while a workspace's drawer
+//lived under the app's data directory: the path was only ever a KEY, hashed into
+//a slug, and a fresh dataDir per fixture meant a fresh drawer.
+//
+//A WORKSPACE KEEPS ITS STATE INSIDE ITSELF NOW, so the path is a place. Made-up
+//ones made every test in this file share one directory on the machine running
+//the suite — and CREATE it — so nothing was isolated and the board arrived
+//holding what the run before it had written.
+const ALPHA = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-alpha-'));
+const BETA = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-beta-'));
+
+//AND A CLEAN DRAWER PER TEST, WHICH USED TO COME FOR FREE. These two folders are
+//shared by every test in the file, so what one keeps has to be cleared or the
+//next one starts holding it.
+function fresh() {
+    [ALPHA, BETA].forEach(function (w) {
+        try { fs.rmSync(path.join(w, '.okc'), { recursive: true, force: true }); }
+        catch (e) { /* nothing kept there yet */ }
+    });
+}
+
 function aStore() {
+    fresh();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-runs-'));
-    let open = 'C:\\work\\alpha';
+    let open = ALPHA;
 
     let state = null;
     statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
@@ -101,12 +125,12 @@ test('the board follows the workspace, and nothing is destroyed by switching', a
     await runs.remember('machines', 'from an ISO', 'it comes up', passed({ ms: 1800000 }));
     assert.equal((await runs.recall('machines', 'from an ISO', 'it comes up')).state, 'passed');
 
-    go('C:\\work\\beta');
+    go(BETA);
     assert.equal(await runs.recall('machines', 'from an ISO', 'it comes up'), null,
         "another folder was shown alpha's evidence");
     await runs.remember('machines', 'from an ISO', 'it comes up', { state: 'failed', why: 'not here' });
 
-    go('C:\\work\\alpha');
+    go(ALPHA);
     const back = await runs.recall('machines', 'from an ISO', 'it comes up');
     assert.equal(back.state, 'passed', 'coming back found beta\'s result, or none at all');
     assert.equal(back.ms, 1800000, 'the half hour of evidence did not survive a glance elsewhere');
@@ -297,11 +321,11 @@ test('a clean board here leaves the other workspace alone', async () => {
     const { runs, go } = aStore();
     await runs.remember('machines', 'a series', 'a step', passed());
 
-    go('C:\\work\\beta');
+    go(BETA);
     await runs.remember('machines', 'a series', 'a step', { state: 'failed' });
     await runs.forget();
 
-    go('C:\\work\\alpha');
+    go(ALPHA);
     assert.equal((await runs.recall('machines', 'a series', 'a step')).state, 'passed',
         'clearing one workspace\'s board reached into another\'s');
 });

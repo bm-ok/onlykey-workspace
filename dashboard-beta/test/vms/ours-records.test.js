@@ -33,9 +33,16 @@ test('and names every other field, rather than letting one appear later', () => 
     //compare reads an absent field as the null that means "may push nothing".
     assert.deepStrictEqual(vm, {
         name: 'r1', spec: { name: 'r1' }, tags: [], serial: null,
-        created: 'when', baseSnapshot: null, reported: null, branch: null
+        created: 'when', baseSnapshot: null, reported: null, branch: null,
+        //WHICH WORKSPACE MADE IT. `null` is a real state and not a default: it
+        //is what every machine written down before this field existed carries,
+        //and guessing a workspace for those is the mistake the field exists to
+        //stop. The register itself is per workspace now — see
+        //../../src/app/vms/ours/server.js — so this is the record saying so
+        //about itself rather than the only thing that decides.
+        workspace: null
     });
-    assert.ok('branch' in vm && 'baseSnapshot' in vm && 'reported' in vm);
+    assert.ok('branch' in vm && 'baseSnapshot' in vm && 'reported' in vm && 'workspace' in vm);
 });
 
 //---- what an older record never wrote down ---------------------------------

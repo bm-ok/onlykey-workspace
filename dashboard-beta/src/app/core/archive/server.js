@@ -31,10 +31,18 @@ var nanotar = require('./vendor/nanotar/nanotar.js');
 //exists to prevent, which applies to what a task PRODUCED exactly as much as to
 //the note about it.
 //
-//NOT INSIDE THE WORKSPACE ITSELF, for the reason that header also gives: a
-//workspace is a folder of repositories somebody else may own, may clone, may
-//`git clean -xdf`. What a run handed back is one command from gone if it lives
-//there, with nothing to say it ever existed.
+//INSIDE THE WORKSPACE, AT `<the folder>/.okc/`, AND THIS USED TO SAY THE
+//OPPOSITE. The old note argued that a workspace is a folder somebody may clone or
+//`git clean -xdf`, so what a run handed back would be one command from gone if it
+//lived there. That risk is real and is now accepted rather than avoided — see
+//../state's header for the trade and why it was taken.
+//
+//WHAT IT MEANS HERE SPECIFICALLY: an artifact is the ONLY copy of what a run
+//produced. Deleting a workspace folder deletes them, and unlike the machines
+//there is no VirtualBox to recover them from. Anything that has to survive the
+//folder has to be sent somewhere else first — a pull request, a branch, a file
+//somebody saved — and that was always true; it is just no longer softened by the
+//artifacts happening to sit somewhere the folder's deletion would miss.
 //
 //---- what "viewed" means here ---------------------------------------------
 //

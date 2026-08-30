@@ -8,6 +8,27 @@ const statePlugin = require('../../src/app/core/state/main');
 const actionsPlugin = require('../../src/app/core/actions/main');
 const settingsPlugin = require('../../src/app/settings/server');
 
+//---- TWO WORKSPACES, AND THEY HAVE TO BE REAL FOLDERS ----------------------
+//
+//These were two fixed made-up paths, which was fine while a workspace drawer
+//lived under the app data directory: the path was only ever a KEY, hashed into a
+//slug, and a fresh dataDir per fixture meant a fresh drawer.
+//
+//A WORKSPACE KEEPS ITS STATE INSIDE ITSELF NOW, so the path is a place. Made-up
+//ones made every test in this file share one directory on the machine running
+//the suite, and CREATE it, so nothing was isolated.
+const ALPHA = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-alpha-'));
+const BETA = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-beta-'));
+
+//AND A CLEAN DRAWER PER TEST, WHICH USED TO COME FOR FREE.
+function fresh() {
+    [ALPHA, BETA].forEach(function (w) {
+        try { fs.rmSync(path.join(w, '.okc'), { recursive: true, force: true }); }
+        catch (e) { /* nothing kept there yet */ }
+    });
+}
+
+
 //---------------------------------------------------------------------------
 //what this app is set to.
 //
@@ -26,6 +47,7 @@ const settingsPlugin = require('../../src/app/settings/server');
 const somewhere = () => fs.mkdtempSync(path.join(os.tmpdir(), 'okc-settings-'));
 
 async function anApp() {
+    fresh();
     let actions = null;
     await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
 
@@ -34,7 +56,7 @@ async function anApp() {
     await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
 
     //MOVED BY THE TEST, read by the plugin on every call.
-    let open = 'C:\\work\\alpha';
+    let open = ALPHA;
     const said = [];
     const logger = { warn: (t) => said.push(t), info: (t) => said.push(t), good: () => {}, bad: () => {} };
 
@@ -119,25 +141,25 @@ test('both halves are required, and the third state is the interesting one', asy
 
     assert.equal((await settings.allowed()).allowed, false, 'off is not allowed');
 
-    await settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    await settings.write({ testsEnabled: true, testsFor: ALPHA });
     assert.equal((await settings.allowed()).allowed, true);
 
     //ON, FOR SOMEWHERE THAT IS NOT HERE. This is the state the whole design
     //exists to make visible, and every shorter phrasing of it reads as ON.
-    go('C:\\work\\beta');
+    go(BETA);
     const elsewhere = await settings.allowed();
     assert.equal(elsewhere.allowed, false, 'enabled for another folder read as enabled here');
     assert.match(elsewhere.why, /alpha/, 'the refusal did not say which folder it was on for');
     assert.match(elsewhere.why, /beta/, 'the refusal did not say which folder is open now');
 
     //and back again — nothing was cleared, it was compared
-    go('C:\\work\\alpha');
+    go(ALPHA);
     assert.equal((await settings.allowed()).allowed, true, 'coming back did not restore it');
 });
 
 test('no workspace open is not allowed, whatever is set', async () => {
     const { settings, go } = await anApp();
-    await settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    await settings.write({ testsEnabled: true, testsFor: ALPHA });
     go(null);
     assert.equal((await settings.allowed()).allowed, false);
 });
@@ -237,7 +259,7 @@ test('a yes does not follow you to a different workspace', async () => {
     //AND IT IS STILL THERE WHERE IT WAS ASKED, waiting for somebody standing in
     //front of the folder it is about. Refusing it and clearing it would be two
     //different things, and only one of them was wanted.
-    go('C:\\work\\alpha');
+    go(ALPHA);
     assert.ok((await settings.read()).testsAsked, 'answering it from the wrong folder threw the request away');
 });
 
@@ -274,7 +296,7 @@ test('the pane is not offered a request about another folder', async () => {
 
     assert.ok((await actions.call('settings')).askedToTest, 'the request was not offered where it was raised');
 
-    go('C:\\work\\beta');
+    go(BETA);
     assert.equal((await actions.call('settings')).askedToTest, null,
         'a request about another folder was put in front of somebody who cannot answer it');
 });
@@ -283,16 +305,16 @@ test('the answer carries the derived state, not just the two fields', async () =
     const { actions, go } = await anApp();
     await actions.call('settingSet', { name: 'testsEnabled', value: true });
 
-    go('C:\\work\\beta');
+    go(BETA);
     const said = await actions.call('settings');
     //`enabled` IS THIS FOLDER'S ANSWER. It was alpha's switch that was pressed,
     //and beta never had one pressed — which is the whole change.
     assert.equal(said.tests.enabled, false, 'a switch pressed in another folder read as pressed here');
     assert.equal(said.tests.allowed, false, 'the pane would have to recompute this and could disagree');
-    assert.equal(said.tests.openDir, 'C:\\work\\beta');
+    assert.equal(said.tests.openDir, BETA);
     //AND WHERE IT IS ON, so a pane can say "not here, but there" rather than a
     //bare off that reads like a switch that did not work.
-    assert.deepEqual(said.tests.elsewhere, ['C:\\work\\alpha']);
+    assert.deepEqual(said.tests.elsewhere, [ALPHA]);
     assert.match(said.tests.why, /alpha/);
     assert.match(said.tests.why, /beta/);
 });
@@ -429,7 +451,7 @@ function withRepos(app, rows) {
 
 test('with nothing on the sandbox list the switch alone decides', async () => {
     const app = await anApp();
-    await app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    await app.settings.write({ testsEnabled: true, testsFor: ALPHA });
     withRepos(app, [{ repo: 'one', remote: { owner: 'real-project' }, parent: 'upstream/thing' }]);
     const said = await app.actions.call('settings', {});
     assert.equal(said.tests.allowed, true);
@@ -438,7 +460,7 @@ test('with nothing on the sandbox list the switch alone decides', async () => {
 
 test('a remote whose owner is not on the list refuses, and the refusal names it', async () => {
     const app = await anApp();
-    await app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a', 'bm-sandbox-b'] });
+    await app.settings.write({ testsEnabled: true, testsFor: ALPHA, testsSandbox: ['bm-sandbox-a', 'bm-sandbox-b'] });
     withRepos(app, [
         { repo: 'one', remote: { owner: 'bm-sandbox-a' } },
         { repo: 'two', remote: { owner: 'real-project' } }
@@ -450,7 +472,7 @@ test('a remote whose owner is not on the list refuses, and the refusal names it'
 
 test('an owner in the chain work goes through must be on the list too', async () => {
     const app = await anApp();
-    await app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a'] });
+    await app.settings.write({ testsEnabled: true, testsFor: ALPHA, testsSandbox: ['bm-sandbox-a'] });
     withRepos(app, [{ repo: 'one', remote: { owner: 'bm-sandbox-a' }, parent: 'the-project/thing', target: { on: 'the-project/thing' } }]);
     const said = await app.actions.call('settings', {});
     assert.equal(said.tests.allowed, false);
@@ -504,7 +526,7 @@ test('a switch armed in one folder is off in the next, and comes back on returni
 
     //NOTHING WAS CLEARED, IT WAS KEPT SOMEWHERE ELSE. Switching back is not
     //re-arming: the first folder's answers are still its own.
-    go('C:\\work\\alpha');
+    go(ALPHA);
     const back = await settings.read();
     assert.equal(back.watchGitHub, true, 'coming back did not restore what was set here');
     assert.deepEqual(back.githubTrusted, ['bmatusiak']);
@@ -543,6 +565,7 @@ test('arming something with no workspace open is refused rather than applied to 
 //switched off; somebody opening a second folder should not find it switched on.
 
 test('what was already set carries over to the folder open at the time, and no further', async () => {
+    fresh();
     const dir = somewhere();
     const legacy = {
         watchGitHub: true, supervisorWakes: true, githubMarker: 'okc',
@@ -555,7 +578,7 @@ test('what was already set carries over to the folder open at the time, and no f
     await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
     state.app.doc('settings').write(legacy);
 
-    let open = 'C:\\work\\alpha';
+    let open = ALPHA;
     let settings = null;
     let actions = null;
     await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
@@ -582,7 +605,7 @@ test('what was already set carries over to the folder open at the time, and no f
     const raw = state.app.doc('settings').read({});
     assert.equal('watchGitHub' in raw, false, 'the value that no longer decides anything was left in place');
     assert.equal(raw.supervisorKey, 'bench');
-    assert.ok(raw.forFolder['C:\\work\\alpha']);
+    assert.ok(raw.forFolder[ALPHA]);
 });
 
 test('a host with nothing set up inherits nothing, and says so by being empty', async () => {

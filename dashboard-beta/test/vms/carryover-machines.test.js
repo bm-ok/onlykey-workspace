@@ -58,9 +58,22 @@ beforeEach(async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-carry-'));
     asked = [];
 
+    //A WORKSPACE, WHICH THIS DID NOT USED TO NEED. The register was the host's,
+    //so machines could be carried across with no folder open at all. It belongs
+    //to the open workspace now — a machine is made FOR some work — so there has
+    //to be one to carry them into.
+    //
+    //`at()` AS WELL AS `follow()`, which is what ../../src/app/workspace does.
+    //`follow` is the async answer and `at` is the synchronous one; the register
+    //reads through the synchronous door, and a carry that runs before the async
+    //answer has landed would be told the workspace is not worked out yet.
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-carry-ws-'));
+
     let state = null;
     await statePlugin({ dataDir: { at: (...p) => path.join(dataDir, ...p) } },
         async (_e, s) => { state = s.state; });
+    state.follow(async () => work);
+    state.at(work);
 
     const log = { on: function () { const to = { good() {}, warn() {}, bad() {}, info() {}, on: () => to }; return to; } };
     const vbox = { available: () => true, listAll: async () => [], runningAll: async () => [], state: async () => 'poweroff' };
