@@ -169,6 +169,53 @@ module.exports = function machines(theme, okc, remember) {
                     <Button disabled={!v.running}
                         title={v.running ? 'what it has on screen right now' : 'it is not running'}
                         onClick={function () { run('vmScreenshot'); }}>Screenshot</Button>
+
+                    {/*---- WHAT KIND OF MACHINE THIS IS ---------------------
+
+                        `vmTags` HAS BEEN HERE ALL ALONG WITH NO BUTTON, which
+                        is a quiet gap because the tag is not decoration: the
+                        queue picks by kind, and ../guests refuses to lend a
+                        worker sign-in to a machine that is not tagged worker.
+                        So a machine made without one cannot be given work OR
+                        signed in, and the only thing that said so was a refusal
+                        at the far end of the act somebody was trying to do.
+
+                        Found by somebody building a machine for themselves and
+                        looking for where to tag it.
+
+                        THE SUPERVISOR TAG IS NOT ON OFFER. It decides what gets
+                        INSTALLED at first boot, so it is chosen when the machine
+                        is made; the action refuses to add or drop it, and a
+                        field that submits a refusal is a field that teaches the
+                        rule by wasting the press. */}
+                    <Button disabled={(v.tags || []).indexOf('supervisor') >= 0}
+                        title={(v.tags || []).indexOf('supervisor') >= 0
+                            ? 'a supervisor machine is what it was built as — that one is not a label'
+                            : 'say what kind of machine this is'}
+                        onClick={function () {
+                            ask({
+                                title: 'What kind of machine is ' + v.name + '?',
+                                plain: [
+                                    'The queue picks machines by kind rather than by name, and a sign-in is only lent '
+                                        + 'to a machine tagged for its role — a worker sign-in needs "worker".',
+                                    'A machine with no role tag is left alone by the queue entirely.'
+                                ],
+                                fields: [{
+                                    name: 'tags', label: 'Tags', value: (v.tags || []).join(', '),
+                                    placeholder: 'worker, judge',
+                                    hint: 'Comma separated. "worker" and "judge" are the roles work is handed out by; '
+                                        + 'anything else is yours to name. Empty takes them all off.'
+                                }],
+                                confirm: 'Set them',
+                                //EMPTY IS A REAL ANSWER — taking every tag off is
+                                //how a machine is put out of the queue's reach by
+                                //kind rather than by the keep-back switch. So the
+                                //field is sent as given rather than skipped when
+                                //blank, which is what `f.tags || undefined` would
+                                //do and would make clearing them impossible.
+                                onYes: function (f) { return run('vmTags', { name: v.name, tags: String(f.tags == null ? '' : f.tags) }); }
+                            });
+                        }}>Tags</Button>
                 </div>
 
                 <div className="row" style={{ marginTop: '8px' }}>
