@@ -132,3 +132,97 @@ test('and it says what to do rather than only failing', () => {
     try { asTheGuest('mumble'); } catch (e) { said = String(e.stderr || '') + String(e.stdout || ''); }
     assert.match(said, /begin.*finish/s);
 });
+
+//---- REMOTE CONTROL, OFF, IN WRITING -----------------------------------------
+//
+//A GUEST IS NOT SOMEBODY'S DESK. These machines run claude unattended, against a
+//branch cut, on a host that hands them a credential and takes it back — and a
+//session on one registering itself with a remote surface at startup is a door
+//this app did not open and cannot see.
+//
+//WRITTEN AT THE HANDOVER, not at provisioning, and this file is why that works:
+//the guest half is SENT per handover rather than installed, so the machines
+//already built get it on their next lend. That is the same property this file
+//exists to protect, used deliberately rather than worked around.
+//
+//EXPLICIT `false` RATHER THAN AN ABSENT KEY, because absent-means-off is a
+//default a later version is free to reinterpret.
+
+const settingsOf = () => JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
+
+function handOver(cred) {
+    const pub = (asTheGuest('begin').match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/) || [])[0];
+    return asTheGuest('finish', JSON.stringify(sealFor(pub, cred === undefined ? CRED : cred)));
+}
+
+test('taking a sign-in turns remote control off, and says so', () => {
+    const done = handOver();
+
+    assert.match(done, /okc-remote-control off/);
+    assert.equal(settingsOf().remoteControlAtStartup, false);
+});
+
+test('and it says so on a line the host can read without reading the rest', () => {
+    //THE HOST MATCHES THIS — see ../../src/app/vms/sealed/deliver.js. A guest
+    //shell prints things nobody asked for, so the answer is matched rather than
+    //sliced, and this is the shape it is matched by.
+    assert.match(handOver(), /^okc-remote-control .+$/m);
+});
+
+test('it MERGES, because anything else in that file is somebody else\'s', () => {
+    //THE FAILURE THIS IS FOR is a person setting something inside their own DIY
+    //machine and the next credential handover quietly reverting it.
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'),
+        JSON.stringify({ theirs: 'kept', model: 'opus' }, null, 2));
+
+    handOver();
+
+    const now = settingsOf();
+    assert.equal(now.remoteControlAtStartup, false);
+    assert.equal(now.theirs, 'kept');
+    assert.equal(now.model, 'opus');
+});
+
+test('and a file that already says false is left exactly as it is', () => {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const before = JSON.stringify({ remoteControlAtStartup: false, theirs: 'kept' }, null, 2);
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), before);
+
+    assert.match(handOver(), /okc-remote-control already off/);
+    assert.equal(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'), before,
+        'it rewrote a file it had nothing to change');
+});
+
+test('a settings file that will not parse is kept, and the door is still shut', () => {
+    //TWO THINGS THAT ARE BOTH TRUE AT ONCE. Unreadable is not a reason to leave
+    //remote control on; it is also not a reason to lose what somebody had in
+    //there. So the old bytes are kept beside it and the answer SAYS that
+    //happened rather than this quietly discarding them.
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{ this is not json,,, }');
+
+    const done = handOver();
+
+    assert.match(done, /okc-remote-control off \(.*would not parse/);
+    assert.equal(settingsOf().remoteControlAtStartup, false);
+    assert.equal(fs.readFileSync(path.join(home, '.claude', 'settings.json.okc-backup'), 'utf8'),
+        '{ this is not json,,, }');
+});
+
+test('and a settings file that is not an object at all does not become one', () => {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '["a list, somehow"]');
+
+    handOver();
+    assert.equal(settingsOf().remoteControlAtStartup, false);
+});
+
+test('the credential still lands, which is the thing this file is actually for', () => {
+    //SAID AGAIN HERE ON PURPOSE. A policy write that throws would take the
+    //handover down with it, and the handover is the point.
+    const done = handOver();
+
+    assert.match(done, /okc-credential-placed/);
+    assert.equal(fs.readFileSync(path.join(home, '.claude', '.credentials.json'), 'utf8'), CRED);
+});

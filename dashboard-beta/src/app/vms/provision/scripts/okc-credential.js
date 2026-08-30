@@ -41,6 +41,7 @@ const HOME = process.env.HOME || os.homedir()
 const DIR = path.join(HOME, '.okc-handover')
 const KEY = path.join(DIR, 'private.pem')
 const WHERE = path.join(HOME, '.claude', '.credentials.json')
+const SETTINGS = path.join(HOME, '.claude', 'settings.json')
 
 const keyFrom = (shared, salt) =>
   Buffer.from(crypto.hkdfSync('sha256', shared, salt, Buffer.from(VERSION, 'utf8'), 32))
@@ -93,10 +94,65 @@ function finish (raw) {
   fs.mkdirSync(path.dirname(WHERE), { recursive: true })
   fs.writeFileSync(WHERE, text, { mode: 0o600 })
 
+  // AND THE POLICY THAT GOES WITH IT. See settle() — a machine that has just
+  // been handed a sign-in is about to run claude, and this is the last moment
+  // before it does.
+  process.stdout.write(`okc-remote-control ${settle()}\n`)
+
   // A fingerprint, never the value — the same sixteen hex characters the host
   // compares by, so both sides can say "the same one" without either printing it.
   const print = crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)
   process.stdout.write(`okc-credential-placed ${print}\n`)
+}
+
+// ---- REMOTE CONTROL, OFF, IN WRITING ---------------------------------------
+//
+// A GUEST IS NOT SOMEBODY'S DESK. These machines run claude unattended, against
+// a branch cut, on a host that hands them a credential and takes it back — and a
+// session on one registering itself with a remote surface at startup is a door
+// this app did not open and cannot see.
+//
+// EXPLICIT `false`, NOT AN ABSENT KEY. Relying on absent-meaning-off is relying
+// on a default that a later version is free to reinterpret, and the toggle in
+// the UI has been reported desyncing from the file in both directions. Written
+// down, it is not an opinion about the current default.
+//
+// WHY IT IS IN THE CREDENTIAL HANDOVER. Not because it is about credentials —
+// because of WHEN this runs. This file is sent from the host per handover and is
+// not installed (see ../../sealed/payload.js), so a change here reaches every
+// machine on its next lend rather than only machines built afterwards; and a
+// machine being handed a sign-in is a machine about to run claude, which is the
+// one moment this has to be true by.
+//
+// IT MERGES. Anything else in that file is somebody's, and this has an opinion
+// about exactly one key.
+function settle () {
+  let was = {}
+  let had = null
+
+  try { had = fs.readFileSync(SETTINGS, 'utf8') } catch { /* there is none yet */ }
+
+  if (had !== null) {
+    try {
+      was = JSON.parse(had)
+    } catch {
+      // UNREADABLE IS NOT A REASON TO LEAVE THE DOOR OPEN, and it is not a
+      // reason to lose what was in there either. The old bytes are kept beside
+      // it and the answer says so, rather than this quietly discarding them.
+      try { fs.writeFileSync(SETTINGS + '.okc-backup', had, { mode: 0o600 }) } catch { /* best effort */ }
+      was = {}
+      fs.writeFileSync(SETTINGS, JSON.stringify({ remoteControlAtStartup: false }, null, 2) + '\n', { mode: 0o600 })
+      return 'off (the settings file would not parse; the old one is kept as settings.json.okc-backup)'
+    }
+    if (!was || typeof was !== 'object' || Array.isArray(was)) was = {}
+  }
+
+  if (was.remoteControlAtStartup === false) return 'already off'
+
+  was.remoteControlAtStartup = false
+  fs.mkdirSync(path.dirname(SETTINGS), { recursive: true })
+  fs.writeFileSync(SETTINGS, JSON.stringify(was, null, 2) + '\n', { mode: 0o600 })
+  return 'off'
 }
 
 const forget = () => { try { fs.rmSync(DIR, { recursive: true, force: true }) } catch { /* already gone */ } }

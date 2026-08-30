@@ -165,9 +165,28 @@ module.exports = function lend(deps) {
         say('vm', machine).warn(machine + ' is holding the Claude guest "' + name + '" — it cannot be '
             + 'snapshotted until that is taken back');
 
+        //---- AND WHAT IT SETTLED ABOUT REMOTE CONTROL ---------------------
+        //
+        //SAID OUT LOUD, EVERY TIME, because it is a door rather than a
+        //preference. The guest half writes `remoteControlAtStartup: false` into
+        //the machine's own claude settings at the moment it takes a sign-in —
+        //see ../../vms/provision/scripts/okc-credential.js — and a policy
+        //nobody can see applied is one nobody can tell has stopped being.
+        //
+        //`null` IS A MACHINE RUNNING AN OLDER GUEST HALF, which cannot happen
+        //while the host sends it per handover, and is worth a line rather than
+        //a silence if it ever does.
+        if (done.remoteControl === null) {
+            say('vm', machine).warn(machine + ' said nothing about remote control — it is running a guest '
+                + 'half from before that was written down, so claude on it may register at startup');
+        } else if (done.remoteControl !== 'already off') {
+            say('vm', machine).info('remote control at startup on ' + machine + ': ' + done.remoteControl);
+        }
+
         return {
             name: name,
             machine: machine,
+            remoteControl: done.remoteControl,
             note: machine + ' is signed in as "' + name + '". Take it back with guestBack before the '
                 + 'machine is snapshotted or put away.'
         };

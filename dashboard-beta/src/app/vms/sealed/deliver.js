@@ -31,6 +31,12 @@ var PUT_THE_HALF = 'mkdir -p "$HOME/.okc" && printf %s \'<b64>\' | base64 -d > "
 var A_KEY = /-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/;
 var PLACED = /okc-credential-placed ([0-9a-f]{16})/;
 
+//AND WHAT IT DID ABOUT REMOTE CONTROL, which the guest half writes down at the
+//same moment for the reason its own note gives. MATCHED RATHER THAN ASSUMED: a
+//machine whose settings file could not be read says so on this line, and an
+//answer nobody reads is a policy nobody can check.
+var CONTROL = /okc-remote-control (.+)/;
+
 module.exports = function deliver(deps) {
     var d = deps || {};
 
@@ -81,6 +87,13 @@ module.exports = function deliver(deps) {
             //the one this host sealed. Sixteen hex characters of sha256 — it
             //says "the same one" without either side printing the thing itself.
             fingerprint: placed[1],
+
+            //WHAT IT SETTLED ABOUT REMOTE CONTROL — 'off', 'already off', or a
+            //sentence about a settings file it could not read. `null` means a
+            //machine running a guest half from before this existed, which is a
+            //third thing again and not the same as "it did not do it".
+            remoteControl: (said.match(CONTROL) || [])[1] || null,
+
             output: said,
             //AND WHAT THE COMMAND EXITED WITH, carried through rather than
             //dropped. The caller writes down what a machine found out about a
