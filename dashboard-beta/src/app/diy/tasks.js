@@ -239,8 +239,10 @@ module.exports = function tasks(theme, okc, remember) {
                     'Everything on that machine goes — every file, every change, anything not pushed.',
                     '"' + x.cut + '" and everything you have pushed to it are NOT touched. They are on this '
                         + 'host, not on the machine.',
-                    x.signIn || x.machine.holdsCredential
-                        ? 'Your sign-in comes back here first, keeping whatever claude refreshed on it.'
+                    x.machine.holdsCredential
+                        ? 'It is still holding your sign-in. That comes back here first, but the machine is '
+                            + 'off — so anything claude refreshed on it after it stopped being reachable is gone '
+                            + 'with the disk.'
                         : null,
                     x.machine.name + ' goes back into the diy pool, and opening this again sets it up from '
                         + 'nothing.'
@@ -628,6 +630,30 @@ module.exports = function tasks(theme, okc, remember) {
                                     {s.machine && s.machine.there && s.machine.running
                                         ? <Button onClick={function () { sleep(s); }}>Put it to sleep</Button>
                                         : null}
+
+                                    {/*---- AND ONLY ON A MACHINE THAT IS DOWN --
+
+                                        THE THREE OF THEM ARE ONE ROW because
+                                        they are one subject: the machine. Open
+                                        it, put it down, throw it away. Clearing
+                                        sat with Edit and Forget it, which are
+                                        about the SEAT — a different thing that
+                                        happens to be nearby.
+
+                                        OFF, BECAUSE THE ORDER IS THE POINT.
+                                        Sleeping takes the sign-in back while the
+                                        machine can still be spoken to, which is
+                                        what brings the REFRESHED token home;
+                                        rolling back a running machine would
+                                        discard whatever claude rotated along
+                                        with the disk. So the two presses are the
+                                        sequence, and this one is not offered
+                                        until the first has happened. */}
+                                    {s.machine && s.machine.there && s.machine.dirty && !s.machine.running
+                                        ? <Button kind="danger" protect onClick={function () { clear(s); }}>
+                                            Clear the machine
+                                        </Button>
+                                        : null}
                                 </div>
                                 {/* WHAT IT IS ABOUT TO DO, WITH THE NAMES IN IT.
                                     "Takes a machine, lays the cut on it, lends
@@ -660,7 +686,26 @@ module.exports = function tasks(theme, okc, remember) {
                                         return run('diyChange', { id: s.id, state: s.state === 'done' ? 'open' : 'done' },
                                             s.state === 'done' ? 'Open again.' : 'Called done. Nothing else changes — the machine and the branch are as they were.');
                                     }}>{s.state === 'done' ? 'Open it again' : 'Mark it done'}</Button>
-                                    <Button kind="danger" protect onClick={function () {
+                                    {/*---- AND NOT WHILE IT HOLDS A MACHINE ---
+
+                                        THE SEAT IS THE ONLY THING THAT REMEMBERS
+                                        WHICH MACHINE THIS IS. Forget it while
+                                        one is taken and the machine keeps
+                                        running with an afternoon of work on it,
+                                        out of the pool, held by nothing — and
+                                        the pane that would have said so is the
+                                        one just deleted.
+
+                                        THE WAY PAST IS THE TWO PRESSES ABOVE.
+                                        Sleep it, clear it, then it is a seat
+                                        with nothing attached and forgetting is
+                                        the small act it sounds like. */}
+                                    <Button kind="danger" protect
+                                        disabled={!!(s.machine && s.machine.there && (s.machine.running || s.machine.dirty))}
+                                        title={s.machine && s.machine.there && (s.machine.running || s.machine.dirty)
+                                            ? 'it is still holding ' + s.machine.name + ' — sleep it and clear it first'
+                                            : 'take it off the list'}
+                                        onClick={function () {
                                         ask({
                                             title: 'Take "' + s.title + '" off the list?',
                                             plain: [
@@ -674,26 +719,6 @@ module.exports = function tasks(theme, okc, remember) {
                                             }
                                         });
                                     }}>Forget it</Button>
-
-                                    {/*---- THE ONE THAT DISCARDS A DISK -------
-
-                                        PURPLE AND GATED, beside Forget it,
-                                        because both of them end something. It
-                                        is not beside "Open it in VS Code": that
-                                        row is the day's work, and a button that
-                                        throws an afternoon away does not belong
-                                        in the row somebody presses without
-                                        looking.
-
-                                        ONLY WHEN THERE IS DIRT. A machine
-                                        already at its base has nothing to clear,
-                                        and offering it invites somebody to press
-                                        it to find out what it does. */}
-                                    {s.machine && s.machine.there && s.machine.dirty
-                                        ? <Button kind="danger" protect onClick={function () { clear(s); }}>
-                                            Clear the machine
-                                        </Button>
-                                        : null}
                                 </div>
                             </Panel>
                         )}

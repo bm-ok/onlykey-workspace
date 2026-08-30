@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const actionsPlugin = require('../../src/app/core/actions/main');
 const diyPlugin = require('../../src/app/diy/server');
 const roles = require('../../src/app/vms/ours/roles');
+const records = require('../../src/app/vms/ours/records');
 
 //---------------------------------------------------------------------------
 //THE ONE PRESS.
@@ -85,8 +86,20 @@ async function anApp() {
     stub('vmForTasks', (a) => { vms[a.name].forTasks = false; return { name: a.name }; });
     stub('vmStart', (a) => { vms[a.name].running = true; return { name: a.name }; });
     stub('vmAwait', (a) => { vms[a.name].connected = true; return { name: a.name }; });
-    stub('vmWorkspace', (a) => { vms[a.name].branch = a.branch; return { name: a.name }; });
-    stub('guestLend', (a) => { vms[a.machine].holdsCredential = true; return { name: a.name }; });
+    //THE TWO DOORS THAT CHANGE A GUEST'S DISK BOTH STAMP IT, exactly as the
+    //real ones do — see `dirty` in ../../src/app/vms/ours/records.js. A
+    //stand-in that skips the stamp is one where nothing is ever dirty, and
+    //every guard that turns on it passes by never being reached.
+    stub('vmWorkspace', (a) => {
+        vms[a.name].branch = a.branch;
+        vms[a.name].dirtySince = '2026-06-01T00:00:00.000Z';
+        return { name: a.name };
+    });
+    stub('guestLend', (a) => {
+        vms[a.machine].holdsCredential = true;
+        vms[a.machine].dirtySince = '2026-06-01T00:00:00.000Z';
+        return { name: a.name };
+    });
     //---- AND THE OTHER END OF THE PRESS ---------------------------------
     //
     //EACH MOVES THE WORLD THE WAY THE REAL ONE WOULD, same as the four above.
@@ -104,8 +117,8 @@ async function anApp() {
         //../../src/app/runners/machines/restoring.js. The branch goes, the
         //credential goes, and the machine is clean again.
         Object.assign(vms[a.name], {
-            branch: null, holdsCredential: false, dirty: false,
-            dirtySince: null, cleanSince: '2026-01-01T00:00:00.000Z'
+            branch: null, holdsCredential: false,
+            dirtySince: null, cleanSince: '2026-07-01T00:00:00.000Z'
         });
         return { name: a.name };
     });
@@ -146,7 +159,12 @@ async function anApp() {
             read: () => Object.keys(vms).map((k) => asRecord(vms[k])),
             all: async () => ({
                 available: true,
-                vms: Object.keys(vms).map((k) => Object.assign({}, vms[k], { live: true }))
+                //`dirty` COMPUTED BY THE REGISTER'S OWN READER, not decided
+                //here. A stand-in with its own idea of what dirty means is a
+                //stand-in that passes while the app disagrees with it.
+                vms: Object.keys(vms).map((k) => Object.assign({}, vms[k], {
+                    live: true, dirty: records.dirty(vms[k])
+                }))
             }),
             canBe: roles.canBe,
             kindsOf: roles.kindsOf
@@ -555,35 +573,53 @@ test('sleeping a seat with no machine is refused rather than reported done', asy
 
 //---- and the one that discards a disk --------------------------------------
 
-test('clearing rolls it back, and takes the key back BEFORE it does', async () => {
-    //THE ROLLBACK WOULD DISCARD THE CREDENTIAL FILE WITH THE DISK. Taking it
-    //back first is what brings the REFRESHED one home — a session in there
-    //rotates the token, and this host handing out one several rotations behind
-    //is a failure already on record.
+test('clearing REFUSES a machine that is still running', async () => {
+    //NOT BECAUSE VirtualBox MINDS — it does — but because of what stopping it
+    //properly does on the way. `diySleep` takes the sign-in back while the
+    //machine can still be spoken to, and that is what brings the REFRESHED
+    //token home: a session in there rotates it, and rolling a running machine
+    //back would discard whatever claude rotated along with the disk.
+    //
+    //AN EARLIER VERSION STOPPED THE MACHINE ITSELF, which worked and skipped
+    //the one step that makes stopping worth doing.
     const actions = await anApp();
     const it = await start(actions);
     await actions.call('diyOpen', { id: it.id, _fromTest: true });
     called = [];
 
-    await actions.call('diyClear', { id: it.id });
+    await assert.rejects(() => actions.call('diyClear', { id: it.id }), /still running/);
 
-    const key = called.indexOf('vmCredentialsForget');
-    const rolled = called.indexOf('vmSnapshotRestore');
-    assert.ok(key >= 0, 'it discarded the credential with the disk');
-    assert.ok(rolled >= 0, 'it did not roll the machine back');
-    assert.ok(key < rolled, 'it rolled back before taking the credential home');
+    assert.equal(called.indexOf('vmSnapshotRestore'), -1, 'it rolled back a running machine');
+    //AND IT DID NOT DO HALF OF THE OTHER PRESS EITHER.
+    assert.equal(called.indexOf('vmStop'), -1, 'it stopped the machine instead of refusing');
+    assert.equal(called.indexOf('vmCredentialsForget'), -1);
 });
 
-test('and it is rolled back AT REST, because VirtualBox will not do it running', async () => {
+test('and the refusal says which press comes first, and why', async () => {
+    //"IT IS RUNNING" IS NOT ACTIONABLE ON ITS OWN. The two presses are a
+    //sequence and the refusal is where somebody learns that.
     const actions = await anApp();
     const it = await start(actions);
     await actions.call('diyOpen', { id: it.id, _fromTest: true });
+
+    await assert.rejects(() => actions.call('diyClear', { id: it.id }), (e) => {
+        assert.match(e.message, /Put it to sleep first/);
+        assert.match(e.message, /refreshed/);
+        return true;
+    });
+});
+
+test('an asleep machine is rolled back, and the seat let go of', async () => {
+    //THE SEQUENCE AS IT IS ACTUALLY PRESSED: sleep, then clear.
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, _fromTest: true });
+    await actions.call('diySleep', { id: it.id });
     called = [];
 
     await actions.call('diyClear', { id: it.id });
 
-    assert.ok(called.indexOf('vmStop') < called.indexOf('vmSnapshotRestore'),
-        'it tried to restore a snapshot under a running machine');
+    assert.ok(called.indexOf('vmSnapshotRestore') >= 0, 'it did not roll the machine back');
 });
 
 test('the seat LETS GO of a machine it cleared, so the pool has it back', async () => {
@@ -592,6 +628,7 @@ test('the seat LETS GO of a machine it cleared, so the pool has it back', async 
     const actions = await anApp();
     const it = await start(actions);
     await actions.call('diyOpen', { id: it.id, _fromTest: true });
+    await actions.call('diySleep', { id: it.id });
 
     await actions.call('diyClear', { id: it.id });
 
@@ -608,11 +645,11 @@ test('a machine with nowhere to roll back to is REFUSED, not quietly powered off
     const actions = await anApp();
     const it = await start(actions);
     await actions.call('diyOpen', { id: it.id, _fromTest: true });
+    await actions.call('diySleep', { id: it.id });
     called = [];
 
     await assert.rejects(() => actions.call('diyClear', { id: it.id }), /no base snapshot/);
     assert.equal(called.indexOf('vmSnapshotRestore'), -1);
-    assert.equal(called.indexOf('vmStop'), -1, 'it powered a machine off it could not clear');
 });
 
 test('and the cut is never touched by either of them', async () => {
@@ -622,9 +659,90 @@ test('and the cut is never touched by either of them', async () => {
     const actions = await anApp();
     const it = await start(actions);
     await actions.call('diyOpen', { id: it.id, _fromTest: true });
+    await actions.call('diySleep', { id: it.id });
 
     await actions.call('diyClear', { id: it.id });
 
     const said = await actions.call('diy', {});
     assert.equal(said.items[0].cut, 'diy/flat', 'clearing the machine took the cut with it');
+});
+
+//---- AND FORGETTING, WHICH IS NOT THE SMALL ACT IT SOUNDS LIKE --------------
+//
+//THE SEAT IS THE ONLY THING THAT REMEMBERS WHICH MACHINE THIS IS. `freeIn`
+//reads it, and nothing else does. So forgetting a seat that still holds one
+//leaves the machine running with an afternoon of work on it, out of the pool,
+//held by nothing — and the pane that would have said so is the one just
+//deleted.
+//
+//IT USED TO SAY SO INSTEAD OF STOPPING IT: "<machine> is still yours — give it
+//back on Runners if you are done with it", on the way out, in the answer to the
+//press that had already happened.
+
+test('forgetting a seat that is still using a running machine is refused', async () => {
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, _fromTest: true });
+
+    await assert.rejects(() => actions.call('diyForget', { id: it.id }), /still using beta-diy1/);
+
+    //AND IT IS STILL THERE, which is the point — a refusal that half-happened
+    //would be worse than no refusal.
+    const said = await actions.call('diy', {});
+    assert.equal(said.items.length, 1);
+});
+
+test('and one holding a machine with work on its disk is refused too', async () => {
+    //ASLEEP IS NOT DONE. The machine is off, so the first refusal does not
+    //apply, and the disk still has the work on it.
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, _fromTest: true });
+    await actions.call('diySleep', { id: it.id });
+
+    await assert.rejects(() => actions.call('diyForget', { id: it.id }), (e) => {
+        assert.match(e.message, /work on its disk/);
+        assert.match(e.message, /Clear the machine first/);
+        return true;
+    });
+});
+
+test('but once it is cleared, forgetting is the small act it sounds like', async () => {
+    //THE WAY PAST IS THE TWO PRESSES THAT EXIST, and this is them.
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, _fromTest: true });
+    await actions.call('diySleep', { id: it.id });
+    await actions.call('diyClear', { id: it.id });
+
+    await actions.call('diyForget', { id: it.id });
+
+    const said = await actions.call('diy', {});
+    assert.equal(said.items.length, 0);
+});
+
+test('and a seat that never took a machine is forgotten with no ceremony', async () => {
+    //NOTHING IS HELD, so there is nothing to be left behind.
+    const actions = await anApp();
+    const it = await start(actions);
+
+    await actions.call('diyForget', { id: it.id });
+
+    assert.equal((await actions.call('diy', {})).items.length, 0);
+});
+
+test('a machine deleted out from under a seat does not trap it on the list', async () => {
+    //THE REFUSAL IS ABOUT A MACHINE THAT IS THERE. One that has been deleted
+    //somewhere else holds nothing and can protect nothing, and refusing on it
+    //would leave a seat that can never be removed — the shape ../../src/app/
+    //queue/server.js's `vmReturn` note warns about, where the guard for a stuck
+    //machine is the thing that refuses because the machine is stuck.
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, _fromTest: true });
+
+    delete vms['beta-diy1'];
+
+    await actions.call('diyForget', { id: it.id });
+    assert.equal((await actions.call('diy', {})).items.length, 0);
 });

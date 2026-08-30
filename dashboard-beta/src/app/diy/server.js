@@ -529,30 +529,41 @@ async function plugin(imports, register) {
                 var to = log.on('diy', it.id);
                 var did = [];
 
-                //THE SAME ORDER AS SLEEPING, AND THEN ONE MORE STEP. The
-                //rollback would remove the credential file anyway; taking it
-                //back first is what brings the REFRESHED one home instead of
-                //discarding it with the disk.
-                if (live.holdsCredential) {
-                    to.info('taking the sign-in back off ' + it.machine);
-                    await actions.call('vmCredentialsForget', { name: it.machine });
-                    did.push('took the sign-in back, keeping whatever claude refreshed');
+                //---- IT MUST ALREADY BE DOWN ------------------------------
+                //
+                //NOT BECAUSE VirtualBox MINDS — it does, a snapshot will not
+                //restore under a running machine — but because of what stopping
+                //it PROPERLY does on the way. `diySleep` takes the sign-in back
+                //while the machine can still be spoken to, and that is what
+                //brings the REFRESHED token home: a session in there rotates it,
+                //and rolling a running machine back would discard whatever
+                //claude rotated along with the disk. That failure is on record.
+                //
+                //SO THE TWO PRESSES ARE A SEQUENCE, and this refuses rather than
+                //quietly doing half of the other one. An earlier version stopped
+                //the machine itself, which worked and skipped the one step that
+                //makes stopping worth doing.
+                if (live.running) {
+                    throw new Error('"' + it.machine + '" is still running. Put it to sleep first — that takes '
+                        + 'your sign-in back while the machine can still be spoken to, which is what brings '
+                        + 'home whatever claude refreshed on it. Rolling it back now would discard that with '
+                        + 'the disk.');
                 }
 
-                //ROLLED BACK AT REST. VirtualBox will not restore a snapshot
-                //under a running machine, and ../queue/putting.js learned the
-                //rest of this the hard way — a machine that never booted cannot
-                //answer a power button, so the plug follows the button.
-                if (live.running) {
-                    to.info('shutting ' + it.machine + ' down');
+                //AND IF IT IS DOWN STILL HOLDING ONE, that is a machine that was
+                //stopped some other way. The credential is recorded as lent, so
+                //it is taken back on the register before the disk goes — the
+                //file itself is about to stop existing either way, and a sign-in
+                //this host thinks is out on a machine that has been wiped is one
+                //nothing will ever lend again.
+                if (live.holdsCredential) {
+                    to.info('taking the sign-in back off ' + it.machine);
                     try {
-                        await actions.call('vmStop', { name: it.machine });
+                        await actions.call('vmCredentialsForget', { name: it.machine });
+                        did.push('took the sign-in back');
                     } catch (e) {
-                        to.warn('it did not answer the power button; pulling the plug');
-                        await actions.call('vmStop', { name: it.machine, force: true });
+                        to.warn('could not take the sign-in back off it: ' + e.message);
                     }
-                    await actions.call('vmAwait', { name: it.machine, for: 'off', seconds: 120 });
-                    did.push('shut it down');
                 }
 
                 to.info('rolling ' + it.machine + ' back to "' + live.baseSnapshot + '"');
@@ -584,6 +595,34 @@ async function plugin(imports, register) {
                 var a = args || {};
                 var it = await store.get(a.id);
                 if (!it) throw new Error('There is no piece of work called "' + a.id + '".');
+
+                //---- NOT WHILE IT IS STILL HOLDING A MACHINE ---------------
+                //
+                //THE NOTE BELOW USED TO BE THE WHOLE ANSWER TO THIS: forget the
+                //seat, and say that the machine stays taken. It reads as
+                //careful and it is not, because the seat is the ONLY thing that
+                //remembers which machine that was — `freeIn` reads it. Forget
+                //the seat and the machine keeps running with an afternoon of
+                //somebody's work on it, out of the pool, held by nothing, and
+                //the pane that would have said so is the pane just deleted.
+                //
+                //A RUNNING MACHINE AND A DIRTY ONE ARE BOTH THAT, differently.
+                //One is a machine still being used; the other is a disk with
+                //work on it that nothing points at any more. The way past is
+                //the two presses that exist: put it to sleep, then clear it.
+                if (it.machine) {
+                    var vm = (await liveByName())[it.machine];
+                    if (vm && vm.running) {
+                        throw new Error('"' + it.title + '" is still using ' + it.machine + ', which is running. '
+                            + 'Put it to sleep first — forgetting this now would leave the machine out of the '
+                            + 'pool with nothing pointing at it.');
+                    }
+                    if (vm && vm.dirty) {
+                        throw new Error('"' + it.title + '" is still holding ' + it.machine + ', and there is '
+                            + 'work on its disk. Clear the machine first, or that work is left on a machine '
+                            + 'nothing points at any more.');
+                    }
+                }
 
                 await store.forget(a.id);
                 log.on('diy').warn('forgot "' + it.title + '"');
