@@ -131,6 +131,61 @@ async function plugin(imports, register) {
         return by;
     }
 
+    //---- A PATH A URI CAN CARRY, WHICH IS NOT THE SAME AS A PATH A SHELL CAN --
+    //
+    //`repoWorkspaces.folderFor` ANSWERS `$HOME/workspace`, and it is right to.
+    //Every other caller of it — ../runners/runs, ../runners/machines — puts that
+    //string into a shell command running ON the machine, where `$HOME` is the
+    //machine's own answer to a question this app cannot answer for it.
+    //
+    //THIS IS THE ONE CALLER THAT IS NOT A SHELL. It goes into
+    //`vscode-remote://ssh-remote+<alias><path>`, and nothing anywhere expands a
+    //shell variable in a URI — so VS Code opened a folder literally called
+    //`$HOME` and said the workspace does not exist. The press reported success:
+    //the editor started, which is all `open` ever claimed.
+    //
+    //ASKED, NOT ASSUMED. `/home/<user>` is right for these machines and wrong
+    //for root, and wrong again for any machine somebody built differently — and
+    //this is the app that must not guess where somebody's work is. The machine
+    //is already up and already dialled in by the time this runs.
+    var homes = {};
+    async function homeOf(name, vm) {
+        if (homes[name]) return homes[name];
+
+        var said = null;
+        try {
+            said = await actions.call('vmRun', {
+                name: name, what: 'asking where home is', timeout: 20000,
+                command: 'printf %s "$HOME"'
+            });
+        } catch (e) { /* the fallback below is still better than a literal $HOME */ }
+
+        var out = String((said && said.output) || '');
+        //THE LAST LINE, because the answer carries the echoed `$ what` line in
+        //front of it, and `printf` adds nothing of its own after.
+        var home = out.split('\n').map(function (l) { return l.trim(); })
+            .filter(Boolean).pop() || '';
+
+        if (!/^\//.test(home)) {
+            //NOT AN ABSOLUTE PATH IS NOT AN ANSWER. Falling back is a guess and
+            //it says so, because the alternative is a URI that cannot work.
+            var user = (vm && vm.spec && vm.spec.user) || 'okc';
+            home = user === 'root' ? '/root' : '/home/' + user;
+            log.on('editor', name).warn(name + ' did not say where home is, so ' + home + ' was assumed');
+        }
+
+        homes[name] = home;
+        return home;
+    }
+
+    async function absoluteOn(name, vm) {
+        var folder = repoWorkspaces.folderFor(vm && vm.spec);
+        if (!/\$HOME|^~/.test(folder)) return folder;
+
+        var home = await homeOf(name, vm);
+        return folder.replace(/^~/, home).split('$HOME').join(home);
+    }
+
     function seatOf(it, held, live) {
         //`live[name]`, NOT `ours.get(name)`. `get` THROWS for a machine that is
         //not in the register — so a seat whose machine was deleted somewhere
@@ -671,7 +726,7 @@ async function plugin(imports, register) {
                 //the file is rewritten whole from the register whenever a machine
                 //dials in or is deleted, so the alias cannot be staler than the
                 //register is.
-                var folder = a.dir ? String(a.dir) : repoWorkspaces.folderFor(vm.spec);
+                var folder = a.dir ? String(a.dir) : await absoluteOn(name, vm);
 
                 var said = await editor.open({ dir: folder, remote: m.alias, tags: [name] });
 

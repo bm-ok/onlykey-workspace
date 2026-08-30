@@ -30,13 +30,20 @@ const diyPlugin = require('../../src/app/diy/server');
 //   the Keys pane earlier is a press that works on the machine it was written on.
 //---------------------------------------------------------------------------
 
-let asked, said, register, machines;
+let asked, said, register, machines, homeSays;
+
+//BUILT RATHER THAN TYPED. A backslash-n written into this file through a shell
+//heredoc arrives as a REAL newline — see ../../CLAUDE.md, which has the same
+//warning and was itself mangled by it. This is the one shape that cannot be.
+const EOL = String.fromCharCode(10);
 
 //THE MACHINE THE PANE WAS BUILT AGAINST, spelt the way the register spells it.
 const VM = (over) => Object.assign({
     name: 'beta-worker1',
     running: true,
-    spec: { folder: '/home/okc/workspace' }
+    //NO `folder` OF ITS OWN, which is the ordinary case: `folderFor` falls
+    //back to its default, and the default is a SHELL string.
+    spec: { user: 'okc' }
 }, over || {});
 
 //WHAT ../core/ssh HANDS BACK, and the shape matters as much as the values —
@@ -51,8 +58,9 @@ const READING = (over) => Object.assign({
 }, over || {});
 
 beforeEach(() => {
-    asked = { opened: [], ssh: [] };
+    asked = { opened: [], ssh: [], ran: [] };
     said = [];
+    homeSays = '/home/okc';
     machines = { 'beta-worker1': VM() };
     register = READING();
 });
@@ -65,6 +73,19 @@ async function anApp(over) {
         n[k] = (t) => said.push(k + ': ' + t);
         return n;
     }, {});
+
+    //THE MACHINE ANSWERING WHERE ITS HOME IS. `folderFor` gives a SHELL string,
+    //and a URI does not expand shell variables — so this is asked before the
+    //editor is opened. It answers the way the real `vmRun` does: the echoed
+    //`$ what` line, then the output.
+    actions.define('vmRun', {
+        about: 'vmRun',
+        run: async (a) => {
+            asked.ran.push(a.command);
+            if (homeSays === null) throw new Error('the machine said nothing');
+            return { code: 0, output: '$ ' + a.what + EOL + homeSays };
+        }
+    });
 
     await diyPlugin(Object.assign({
         app: { host: { actions } },
@@ -94,7 +115,12 @@ async function anApp(over) {
             read: () => Object.keys(machines).map((k) => machines[k])
         },
 
-        repoWorkspaces: { folderFor: (spec) => (spec && spec.folder) || '/home/okc/workspace' }
+        //THE REAL DEFAULT, WHICH IS `$HOME/workspace`. This said
+        //`/home/okc/workspace` — an absolute path the real one never
+        //answers unless a machine was given a folder of its own — so every
+        //test here passed against a string the app does not actually get,
+        //and VS Code was asked to open a folder called `$HOME`.
+        repoWorkspaces: { folderFor: (spec) => (spec && spec.folder) || '$HOME/workspace' }
     }, over || {}), async () => {});
 
     return actions;
@@ -157,6 +183,87 @@ test('the folder is the machine\'s workspace, and --dir overrides it', async () 
 
     await actions.call('openEditor', { name: 'beta-worker1', dir: '/tmp/somewhere', _fromTest: true });
     assert.equal(asked.opened[1].dir, '/tmp/somewhere');
+});
+
+//---- A PATH A URI CAN CARRY, WHICH IS NOT A PATH A SHELL CAN ----------------
+//
+//`repoWorkspaces.folderFor` ANSWERS `$HOME/workspace` AND IS RIGHT TO. Every
+//other caller of it puts that string into a shell command running ON the
+//machine, where `$HOME` is the machine's own answer to a question this app
+//cannot answer for it.
+//
+//THIS IS THE ONE CALLER THAT IS NOT A SHELL. It goes into
+//`vscode-remote://ssh-remote+<alias><path>` and nothing expands a shell
+//variable in a URI, so VS Code was handed
+//`vscode-remote://ssh-remote+okc-ok-diy1/$HOME/workspace` and said "Unable to
+//resolve nonexistent file".
+//
+//AND THE PRESS REPORTED SUCCESS. The editor started, which is all `open` ever
+//claimed — so the log said "VS Code was asked to open it", three times over
+//three days, while the window said the workspace does not exist.
+//
+//THIS FILE'S OWN STAND-IN WAS WHY NOTHING CAUGHT IT: `folderFor` here answered
+//`/home/okc/workspace`, an absolute path the real one gives only for a machine
+//that was configured with a folder of its own.
+
+test('a shell variable never reaches the editor, because a URI cannot expand one', async () => {
+    const actions = await anApp();
+
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+
+    const dir = asked.opened[0].dir;
+    assert.equal(dir, '/home/okc/workspace');
+    assert.ok(dir.indexOf('$') < 0, 'a shell variable went into the URI: ' + dir);
+    assert.ok(dir.indexOf('~') < 0, 'a tilde went into the URI: ' + dir);
+});
+
+test('and the machine is ASKED where home is, rather than it being assumed', async () => {
+    //`/home/<user>` IS RIGHT FOR THESE MACHINES AND WRONG FOR root, and wrong
+    //again for anything built differently. This is the app that must not guess
+    //where somebody's work is.
+    homeSays = '/var/lib/somewhere-else';
+    const actions = await anApp();
+
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+    assert.equal(asked.opened[0].dir, '/var/lib/somewhere-else/workspace');
+});
+
+test('and it is asked ONCE, however many times the editor is opened', async () => {
+    //HOME DOES NOT MOVE WHILE A MACHINE IS UP, and the second press of the day
+    //is meant to be the fast one — see "the second press does nothing but open
+    //it" in ./open.test.js.
+    const actions = await anApp();
+
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+
+    assert.equal(asked.ran.length, 1, 'it asked ' + asked.ran.length + ' times: ' + asked.ran.join(' | '));
+});
+
+test('a machine that will not say falls back, opens anyway, and SAYS it assumed', async () => {
+    //A PRESS THAT REFUSES BECAUSE IT COULD NOT ASK is worse than one that opens
+    //the folder that is almost certainly right. But an assumption nobody is told
+    //about is how somebody spends an afternoon on the wrong checkout.
+    homeSays = null;
+    const actions = await anApp();
+
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+
+    assert.equal(asked.opened[0].dir, '/home/okc/workspace');
+    assert.ok(said.some((l) => /warn.*did not say where home is/.test(l)), said.join(' | '));
+});
+
+test('and a machine given a folder of its own is not asked at all', async () => {
+    //AN ABSOLUTE PATH NEEDS NOTHING EXPANDING, so the round trip is skipped —
+    //`spec.folder` is the override that exists for exactly this.
+    machines['beta-worker1'] = VM({ spec: { user: 'okc', folder: '/srv/work' } });
+    const actions = await anApp();
+
+    await actions.call('openEditor', { name: 'beta-worker1', _fromTest: true });
+
+    assert.equal(asked.opened[0].dir, '/srv/work');
+    assert.equal(asked.ran.length, 0, 'it asked about home for an absolute path');
 });
 
 //---- that the key is set up first ------------------------------------------
