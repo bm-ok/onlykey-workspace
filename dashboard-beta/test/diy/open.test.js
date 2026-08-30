@@ -42,6 +42,17 @@ function doc() {
 //TAGGED `diy`, WHICH IS THE POOL. A person's seat has to be a machine the queue
 //will never pick up, and that tag is what says so — see ../../src/app/vms/ours/
 //roles.js, which keeps `diy` out of `takesQueuedWork` for exactly that reason.
+//AND THE RECORD OF IT, WHICH IS A SMALLER THING. `running` and `connected` are
+//not written down anywhere — the register holds what a machine IS, and those two
+//are facts about right now, answered by asking VirtualBox and the channel. A
+//stand-in that puts them on a record is a stand-in that agrees with a bug.
+const asRecord = (vm) => {
+    const rec = Object.assign({}, vm);
+    delete rec.running;
+    delete rec.connected;
+    return rec;
+};
+
 const VM = (over) => Object.assign({
     name: 'beta-diy1', running: false, connected: false,
     forTasks: undefined, branch: null, holdsCredential: false, tags: ['diy']
@@ -89,8 +100,27 @@ async function anApp() {
         //passes while the app disagrees with it — so the register's own reader
         //is used, which is the one thing here that must not be faked.
         ours: {
-            get: (n) => vms[n],
-            read: () => Object.keys(vms).map((k) => vms[k]),
+            //`get` THROWS FOR A MACHINE THAT IS NOT THERE, exactly as the real
+            //one does. The stand-in used to answer `undefined`, which is how a
+            //seat pointing at a deleted machine passed here and took the whole
+            //action down in the app.
+            get: (n) => {
+                if (!vms[n]) throw new Error('"' + n + '" is not a virtual machine this app made, so it will not touch it.');
+                //AND IT ANSWERS A RECORD, which is what the real one answers.
+                //Handing back the live object made the sabotage survive: put
+                //`ours.get` back into the press and every test still passed,
+                //because this said the machine was running and the app it was
+                //testing believed it.
+                return asRecord(vms[n]);
+            },
+            //AND `read` IS THE RECORD, `all` IS THE RECORD PLUS RIGHT NOW —
+            //which is the whole distinction the pane got wrong. A stand-in that
+            //put `running` on both would have let the bug pass.
+            read: () => Object.keys(vms).map((k) => asRecord(vms[k])),
+            all: async () => ({
+                available: true,
+                vms: Object.keys(vms).map((k) => Object.assign({}, vms[k], { live: true }))
+            }),
             canBe: roles.canBe,
             kindsOf: roles.kindsOf
         },
@@ -163,6 +193,54 @@ test('the second press does nothing but open it', async () => {
     //machine; re-lending a credential that is already there is a second
     //credential movement nobody asked for. Both are quiet when they happen.
     assert.deepEqual(called.filter((c) => c !== 'credentialsHeld' && c !== 'branchBoard'), ['editor.open']);
+});
+
+//---- AND THE TWO FACTS THAT ARE NOT WRITTEN DOWN ---------------------------
+//
+//`running` AND `connected` ARE NOT ON A RECORD. The register holds what a
+//machine IS — its name, its tags, its branch, whether it is holding a
+//credential — and asking a record whether it is running answers `undefined`,
+//which is falsy, which reads as "no".
+//
+//SO THE PRESS STARTED A MACHINE THAT WAS ALREADY UP, and then waited for it to
+//dial in a second time. Closing VS Code and pressing again took four minutes
+//and moved a running machine, instead of opening an editor.
+//
+//THE OTHER THREE STEPS SKIPPED CORRECTLY, which is what hid it: the workspace
+//was not re-laid and the credential was not re-lent, so the press looked like
+//it was skipping what it had already done.
+//
+//IT IS A STAND-IN BUG AS MUCH AS AN APP ONE. This file's `ours` used to answer
+//`read()` with objects carrying `running`, so every test here agreed with an
+//app that was wrong. `read()` now strips the two live facts and `all()` is the
+//only place they exist — the same split the real register has.
+
+test('a machine that is already up is not started again', async () => {
+    //ALREADY RUNNING AND DIALLED IN before anybody presses anything, which is
+    //what a machine looks like on the second morning.
+    vms['beta-diy1'] = VM({ running: true, connected: true });
+    const actions = await anApp();
+    const it = await start(actions);
+
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+
+    assert.equal(called.indexOf('vmStart'), -1, 'it started a machine that was already running');
+    assert.equal(called.indexOf('vmAwait'), -1, 'it waited for a machine that had already dialled in');
+    assert.equal(called.filter((c) => c === 'editor.open').length, 1, 'it never reached the editor');
+});
+
+test('and the pane is told what it is doing, not what was written down', async () => {
+    //THE CLAIM UNDER THE ONE ABOVE, stated where a stand-in cannot satisfy it
+    //by accident: `read()` here strips the live facts, so this passes only if
+    //the action asked `all()`.
+    const actions = await anApp();
+    vms['beta-diy1'] = VM({ running: true, connected: true });
+
+    const said = await actions.call('diy', {});
+
+    assert.ok(said.machines.length, 'no machines in the pool at all');
+    assert.equal(said.machines[0].running, true,
+        'the pool drew a running machine as off — it is reading the record, not asking');
 });
 
 test('it remembers the machine and the sign-in, so it only asks once', async () => {

@@ -102,8 +102,42 @@ async function plugin(imports, register) {
         } catch (e) { return []; }
     }
 
-    function seatOf(it, held) {
-        var vm = it.machine ? ours.get(it.machine) : null;
+    //---- WHAT THE MACHINES ARE ACTUALLY DOING -------------------------------
+    //
+    //`ours.all()`, NOT `ours.read()`. The register's records are what was
+    //WRITTEN DOWN — name, tags, branch, whether it is holding a credential —
+    //and `running` and `connected` are not among them, because they are not
+    //facts about a machine, they are facts about right now. Only `all()` asks
+    //VirtualBox and the channel.
+    //
+    //SO THIS PANE HAS DRAWN "off" AGAINST EVERY MACHINE SINCE IT WAS WRITTEN,
+    //taken or free, whatever the machine was doing — including the one somebody
+    //was working inside. `holdsCredential` looked right beside it and made it
+    //convincing, because that one IS written down.
+    //
+    //AND IT IS THE SAME PRICE. `../vbox` caches, so the second read costs what
+    //the record read cost: 216ms against 220ms, measured, with the machine up.
+    async function liveByName() {
+        var by = {};
+        try {
+            var said = await ours.all();
+            ((said && said.vms) || []).forEach(function (v) { by[v.name] = v; });
+        } catch (e) {
+            //A HOST WITHOUT VirtualBox STILL HAS SEATS. Answering nothing here
+            //draws every machine as gone, which is a much larger claim than
+            //"this could not be asked".
+            (ours.read() || []).forEach(function (v) { by[v.name] = v; });
+        }
+        return by;
+    }
+
+    function seatOf(it, held, live) {
+        //`live[name]`, NOT `ours.get(name)`. `get` THROWS for a machine that is
+        //not in the register — so a seat whose machine was deleted somewhere
+        //else took the whole action down and the pane drew nothing at all,
+        //while the branch below that says `there: false` sat unreachable
+        //underneath it, describing an answer this could never give.
+        var vm = it.machine ? (live[it.machine] || null) : null;
         var sign = it.machine ? (held[it.machine] || null) : null;
 
         return {
@@ -148,6 +182,7 @@ async function plugin(imports, register) {
             run: async function () {
                 var items = await store.all();
                 var held = await whoHolds();
+                var live = await liveByName();
 
 
                 //---- AND WHAT A SEAT COULD BE MADE FROM --------------------
@@ -175,7 +210,10 @@ async function plugin(imports, register) {
                 //offering a worker here would hand somebody a machine the tick
                 //can roll back underneath them.
                 var machines = pool()
-                    .map(function (v) {
+                    .map(function (rec) {
+                        //THE LIVE ONE IF THERE IS ONE. Same reason as `seatOf`:
+                        //`running` is not on the record.
+                        var v = live[rec.name] || rec;
                         var whose = null;
                         items.forEach(function (x) { if (x.machine === v.name) whose = x.title; });
 
@@ -220,7 +258,7 @@ async function plugin(imports, register) {
                 } catch (e) { /* no sign-ins kept here; the rest of the answer stands */ }
 
                 return {
-                    items: items.map(function (it) { return seatOf(it, held); }),
+                    items: items.map(function (it) { return seatOf(it, held, live); }),
                     machines: machines,
                     signIns: signIns,
                     note: items.length
@@ -422,7 +460,24 @@ async function plugin(imports, register) {
                     }
                 }
 
-                var vm = ours.get(name);
+                //THE LIVE READING, NOT THE RECORD. Every "skip it if it is
+                //already true" below turns on this object, and two of the five
+                //facts it is asked for — `running` and `connected` — are not
+                //written down anywhere. Off a record they are `undefined`, so
+                //those two steps were never skipped: closing VS Code and
+                //pressing again START THE MACHINE THAT WAS ALREADY UP and then
+                //waited four minutes for it to dial in a second time.
+                //
+                //THE OTHER THREE ARE RECORDED, so they skipped correctly, and
+                //that is what made it look like the press worked. `forTasks`,
+                //`branch` and `holdsCredential` are facts about a machine;
+                //`running` and `connected` are facts about right now.
+                //
+                //AND `ours.get` THROWS FOR A MACHINE THAT IS NOT THERE, so the
+                //line under it never ran and the friendly refusal below was
+                //dead. A map lookup answers `undefined`, which is what it was
+                //written for.
+                var vm = (await liveByName())[name];
                 if (!vm) throw new Error('There is no machine called "' + name + '".');
 
                 //---- 3. OUT OF THE POOL -------------------------------------
@@ -559,7 +614,12 @@ async function plugin(imports, register) {
                 var name = String(a.name || '').trim();
                 if (!name) throw new Error('Say which machine to open: openEditor --name <machine>.');
 
-                var vm = ours.get(name);
+                //LIVE AGAIN, for the same reason and a smaller cost: the only
+                //thing read off it here is `running`, and only to decorate a
+                //refusal — so off a record that refusal told somebody a machine
+                //that was up was not running, which is a diagnosis pointing at
+                //the wrong thing at the moment they most need it right.
+                var vm = (await liveByName())[name];
                 if (!vm) throw new Error('There is no machine called "' + name + '".');
 
                 var to = log.on('diy', name);
