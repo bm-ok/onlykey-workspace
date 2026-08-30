@@ -164,6 +164,12 @@ module.exports = function makeStore(doc) {
         //mentioning it — giving one back has to be able to say so.
         if (a.machine !== undefined) next.machine = clean(a.machine) || null;
 
+        //WHICH SIGN-IN THIS PIECE OF WORK USES, remembered so the press only has
+        //to ask once. It is a NAME and never the credential: what is kept here
+        //is which of the sign-ins on this host to lend, not anything that could
+        //authenticate. ../runners/guests holds the sealed thing.
+        if (a.signIn !== undefined) next.signIn = clean(a.signIn) || null;
+
         next.changedAt = new Date().toISOString();
 
         await write(now, now.items.map(function (x) { return x.id === id ? next : x; }));

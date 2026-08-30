@@ -136,9 +136,46 @@ async function plugin(imports, register) {
                         });
                 } catch (e) { /* branches unreadable; the seats are still worth answering */ }
 
+                //---- AND WHAT A SEAT COULD BE MADE FROM --------------------
+                //
+                //ON THE SAME ANSWER, because the pane asks for these at the
+                //moment somebody presses the button and a second round trip
+                //there is a dialog that opens empty and fills in.
+                //
+                //A SUPERVISOR MACHINE IS NOT OFFERED, and neither is a
+                //supervisor sign-in. Both are refused downstream — giving a
+                //supervisor task work would roll it back mid-thought — and
+                //offering something whose only outcome is a refusal is how a
+                //person learns a rule by walking into it.
+                var machines = (ours.read() || [])
+                    .filter(function (v) { return (v.tags || []).indexOf('supervisor') < 0; })
+                    .map(function (v) {
+                        var whose = null;
+                        items.forEach(function (x) { if (x.machine === v.name) whose = x.title; });
+                        return {
+                            name: v.name,
+                            running: !!v.running,
+                            keptBack: v.forTasks === false,
+                            holdsCredential: !!v.holdsCredential,
+                            branch: v.branch || null,
+                            tags: v.tags || [],
+                            usedBy: whose
+                        };
+                    });
+
+                var signIns = [];
+                try {
+                    var all = await actions.call('guests', {});
+                    signIns = ((all && all.guests) || [])
+                        .filter(function (g) { return g.has && g.role !== 'supervisor'; })
+                        .map(function (g) { return { name: g.name, role: g.role, holder: g.holder || null }; });
+                } catch (e) { /* no sign-ins kept here; the rest of the answer stands */ }
+
                 return {
                     items: items.map(function (it) { return seatOf(it, held); }),
                     cuts: cuts,
+                    machines: machines,
+                    signIns: signIns,
                     note: items.length
                         ? null
                         : 'Nothing of your own yet. This is the lane nothing else touches: not the queue, not the '
@@ -208,6 +245,172 @@ async function plugin(imports, register) {
                     forgotten: true,
                     note: 'Off the list. ' + (it.cut ? '"' + it.cut + '" and anything pushed to it are untouched. ' : '')
                         + (it.machine ? it.machine + ' is still yours — give it back on Runners if you are done with it.' : '')
+                };
+            }
+        }));
+
+        //---- THE ONE PRESS -------------------------------------------------
+        //
+        //FOUR ACTS TO THE APP AND ONE ACT TO THE PERSON: let me get back to
+        //work. Take the machine out of the pool, bring it up, lay the cut on it,
+        //lend it the sign-in, open it. Making somebody do those in order, from
+        //four different tabs, is what this whole plugin exists to stop — it is
+        //how a session ended with "VS Code, Remote-SSH, okc-beta-worker1, open
+        ///home/okc/workspace" typed out by hand.
+        //
+        //EVERY STEP IS SKIPPED IF IT IS ALREADY TRUE, which is what makes this
+        //the same press the second time. Coming back tomorrow to a machine that
+        //is off runs three of them; coming back after lunch runs none and just
+        //opens the editor.
+        //
+        //IT ASKS ONLY FOR WHAT IT CANNOT KNOW. Which machine and which sign-in
+        //are a person's choice the first time and are then remembered on the
+        //piece of work. It REFUSES rather than guessing — ../runners/guests
+        //makes the same argument about roles: an unlabelled machine means
+        //guessing whose identity to send, and it does not guess.
+        //
+        //AND IT SAYS WHAT IT DID, in order, on the answer and in Live. A press
+        //that silently performs four acts on real machines is one nobody can
+        //check afterwards.
+        undo.push(actions.define('diyOpen', {
+            about: 'Set a piece of work up if it needs it and open it in VS Code: machine, cut, sign-in, editor',
+            needs: 'workspace',
+            takes: ['id', 'machine', 'signIn'],
+            run: async function (args) {
+                var a = args || {};
+
+                //A PERSON'S PRESS, for the same reason ./open-editor.js is: the
+                //last step opens a window on the operator's own computer. The
+                //four before it are ordinary machine work, but they are not
+                //separable from it here — this action IS the opening.
+                if ((a._overTheWire || a._driven) && !a._fromTest) {
+                    throw new Error('Opening a piece of work is a person\'s press, made at the window — it ends by '
+                        + 'starting a window on the computer this app is running on. It is on the DIY tab.');
+                }
+
+                if (!a.id) throw new Error('Say which one: diyOpen --id <id>. "diy" lists them.');
+                var it = await store.get(a.id);
+                if (!it) throw new Error('There is no piece of work called "' + a.id + '".');
+
+                var to = log.on('diy', it.id);
+                var did = [];
+
+                //---- 1. SOMEWHERE FOR THE WORK TO GO ------------------------
+                if (!it.cut) {
+                    throw new Error('"' + it.title + '" has no branch cut, so there is nowhere for the work to go. '
+                        + 'Give it one with Edit, or cut one in Repositories first.');
+                }
+
+                //---- 2. A MACHINE OF MY OWN ---------------------------------
+                var name = String(a.machine || it.machine || '').trim();
+                if (!name) {
+                    //THE REFUSAL CARRIES THE ANSWER. "Pick a machine" with no
+                    //list is a refusal somebody has to go to another tab to act
+                    //on, and this is the moment they are least likely to know
+                    //which machines exist.
+                    var could = (ours.read() || []).filter(function (v) {
+                        return (v.tags || []).indexOf('supervisor') < 0;
+                    }).map(function (v) { return v.name; });
+
+                    throw new Error('"' + it.title + '" has no machine yet. Say which one to take: '
+                        + (could.length ? could.join(', ') : 'this host has no machines to take'));
+                }
+
+                var vm = ours.get(name);
+                if (!vm) throw new Error('There is no machine called "' + name + '".');
+
+                //---- 3. OUT OF THE POOL -------------------------------------
+                //
+                //`vmForTasks`, NOT `vmBorrow`. Borrowing brings a machine up
+                //CLEAN — it rolls to the base snapshot — which is right for a
+                //machine being taken fresh and is exactly wrong here, where the
+                //work of the last three days is on the disk. This says "leave
+                //this one out of the pool" and changes nothing else, and it is
+                //what ../ui/banners/trouble.js already reads to stop calling a
+                //machine somebody is using idle.
+                if (vm.forTasks !== false) {
+                    await actions.call('vmForTasks', { name: name, enabled: false });
+                    did.push('kept ' + name + ' back from the queue');
+                }
+
+                //---- 4. UP, AND ACTUALLY THERE ------------------------------
+                if (!vm.running) {
+                    to.info('starting ' + name);
+                    await actions.call('vmStart', { name: name });
+                    did.push('started it');
+                }
+
+                //DIALLED IN IS NOT THE SAME AS RUNNING, and everything after
+                //this needs a channel to the machine. `connected` is what
+                //../runners/machines/awaiting.js calls having dialled in.
+                if (!vm.connected) {
+                    to.info('waiting for ' + name + ' to dial in');
+                    await actions.call('vmAwait', { name: name, for: 'connected', seconds: 240 });
+                    did.push('waited for it to dial in');
+                }
+
+                //---- 5. THE CUT, LAID DOWN ----------------------------------
+                //
+                //ONLY IF IT IS NOT ALREADY ON IT. `vmWorkspace` moves the host's
+                //own checkouts off the branch so the machine can hold it, which
+                //is not a thing to redo on every press.
+                if (vm.branch !== it.cut) {
+                    to.info('putting ' + it.cut + ' on ' + name);
+                    await actions.call('vmWorkspace', { name: name, branch: it.cut });
+                    did.push('laid ' + it.cut + ' on it');
+                }
+
+                //---- 6. MY SIGN-IN ON IT ------------------------------------
+                var signIn = String(a.signIn || it.signIn || '').trim();
+                if (!vm.holdsCredential) {
+                    if (!signIn) {
+                        var free = [];
+                        try {
+                            var held = await actions.call('guests', {});
+                            free = ((held && held.guests) || [])
+                                .filter(function (g) { return g.has && !g.holder && g.role !== 'supervisor'; })
+                                .map(function (g) { return g.name + ' (' + g.role + ')'; });
+                        } catch (e) { /* the refusal is still worth making */ }
+
+                        throw new Error('"' + it.title + '" has no sign-in chosen, and ' + name + ' is holding none — '
+                            + 'so claude on it could not authenticate. Say which to lend: '
+                            + (free.length ? free.join(', ') : 'none are free'));
+                    }
+
+                    to.info('lending ' + signIn + ' to ' + name);
+                    await actions.call('guestLend', { name: signIn, machine: name });
+                    did.push('lent it ' + signIn);
+                }
+
+                //---- 7. AND OPEN IT -----------------------------------------
+                //
+                //A CLEAN ARGUMENT OBJECT. `openEditor` refuses a press that came
+                //down the pipe, and passing this action's own args through would
+                //hand it whatever markers arrived with them — including, from a
+                //drill, the `_fromTest` that is meant to be that action's own
+                //decision rather than something inherited.
+                var opened = await actions.call('openEditor', { name: name });
+                did.push('opened ' + opened.opened + ' on ' + opened.on);
+
+                //---- AND WHAT IT NOW REMEMBERS ------------------------------
+                //
+                //WRITTEN AFTER, NOT BEFORE. A press that fell over at step four
+                //should not leave the piece of work claiming a sign-in that was
+                //never lent.
+                var kept = await store.change(it.id, { machine: name, signIn: signIn || undefined });
+
+                to.good('opened "' + it.title + '"');
+
+                return {
+                    id: it.id,
+                    title: it.title,
+                    machine: name,
+                    cut: it.cut,
+                    signIn: kept.signIn,
+                    opened: opened.opened,
+                    on: opened.on,
+                    did: did,
+                    note: did.join(', then ') + '.'
                 };
             }
         }));

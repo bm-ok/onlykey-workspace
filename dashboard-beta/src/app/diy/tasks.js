@@ -139,6 +139,55 @@ module.exports = function tasks(theme, okc, remember) {
             setSaid({ text: 'Not wired up yet — this one is still to come.' });
         }
 
+        //---- THE ONE PRESS --------------------------------------------------
+        //
+        //IT ASKS ONLY WHAT IT CANNOT KNOW, AND ONLY ONCE. Which machine and
+        //which sign-in are a person's choice, and the piece of work remembers
+        //both — so the first press has a dialog in front of it and every one
+        //after it does not.
+        //
+        //THE SERVER REFUSES EITHER WAY. `diyOpen` names the free machines and
+        //sign-ins in its refusal; this dialog is the courtesy in front of that,
+        //the same way the cut picker is in front of the one-per-cut rule.
+        function open(x) {
+            var needsMachine = !x.machine || !x.machine.there;
+            var needsSignIn = !x.signIn && !(x.machine && x.machine.holdsCredential);
+
+            function go(extra) {
+                setSaid({ text: 'Setting ' + x.title + ' up. It says what it is doing in Live — starting a machine '
+                    + 'and laying the workspace down takes a few minutes the first time.' });
+                return run('diyOpen', Object.assign({ id: x.id }, extra || {}));
+            }
+
+            if (!needsMachine && !needsSignIn) return go();
+
+            ask({
+                title: 'Open ' + x.title,
+                plain: [
+                    'It takes the machine out of the pool, brings it up, lays ' + x.cut + ' on it, lends it your '
+                        + 'sign-in, and opens it in VS Code.',
+                    'Every step it does not need is skipped, so this is the slow press and the ones after it are not.'
+                ],
+                fields: [
+                    needsMachine ? {
+                        name: 'machine', label: 'Which machine', needed: true, options: machineOptions(),
+                        hint: 'It comes out of the pool and stays yours until you give it back. Nothing else will be given work on it.'
+                    } : null,
+                    needsSignIn ? {
+                        name: 'signIn', label: 'Which sign-in', needed: true, options: signInOptions(),
+                        hint: 'Lent to the machine so claude runs in there as you. It stays until it is taken back.'
+                    } : null
+                ].filter(Boolean),
+                confirm: 'Set it up and open it',
+                onYes: function (f) {
+                    var extra = {};
+                    if (f.machine) extra.machine = f.machine;
+                    if (f.signIn) extra.signIn = f.signIn;
+                    return go(extra);
+                }
+            });
+        }
+
         //THE CUTS SOMETHING ELSE ALREADY HAS ARE NOT OFFERED. The refusal lives
         //in the store; this is the courtesy in front of it, because a picker
         //that lists something and then rejects it taught you the rule by wasting
@@ -152,6 +201,30 @@ module.exports = function tasks(theme, okc, remember) {
 
         function gone(exceptId) {
             return cuts.filter(function (c) { return c.takenBy && c.takenBy.id !== exceptId; }).length;
+        }
+
+        //WHAT EACH ONE IS ALREADY DOING, ON ITS OWN LINE. A list of bare machine
+        //names asks somebody to remember which of them is holding the work they
+        //were doing on Tuesday — and taking the wrong one is not a mistake you
+        //find out about until the workspace has been laid over the top.
+        function machineOptions() {
+            return ((got && got.machines) || []).map(function (m) {
+                var says = [];
+                if (m.usedBy) says.push('already ' + m.usedBy);
+                else if (m.keptBack) says.push('kept back');
+                if (m.branch) says.push('on ' + m.branch);
+                says.push(m.running ? 'running' : 'off');
+                return { value: m.name, label: m.name + ' — ' + says.join(', ') };
+            });
+        }
+
+        function signInOptions() {
+            return ((got && got.signIns) || []).map(function (g) {
+                return {
+                    value: g.name,
+                    label: g.name + ' (' + g.role + ')' + (g.holder ? ' — on ' + g.holder : '')
+                };
+            });
         }
 
         //---- starting one ---------------------------------------------------
@@ -327,7 +400,7 @@ module.exports = function tasks(theme, okc, remember) {
                                     <Button kind="ok" protect
                                         disabled={!s.cut}
                                         title={s.cut ? 'set it up if it needs it, then open it' : 'it has no cut to work on yet'}
-                                        onClick={notYet}>
+                                        onClick={function () { open(s); }}>
                                         {ready ? 'Open it in VS Code' : 'Set it up and open it'}
                                     </Button>
                                     <Button disabled={!s.machine || !s.machine.there} onClick={notYet}>Watch the session</Button>
