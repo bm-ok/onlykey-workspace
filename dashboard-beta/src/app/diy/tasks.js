@@ -36,29 +36,61 @@ module.exports = function tasks(theme, okc, remember) {
     //the card in the list and the rows in the middle column are two readings of
     //the same three facts, and two readings is how a pane says "ready" beside a
     //list of what is missing.
-    function piecesOf(s, cutsBy) {
-        var m = s.machine;
+    //A MACHINE TAGGED `diy` THAT NOTHING ELSE HAS IS ALREADY MINE. Which is the
+    //correction this pane needed: it read the machine RECORDED ON THE SEAT, so
+    //a workspace with a diy machine sitting in the pool, free, off, waiting,
+    //drew "none yet" — in the same words as a workspace with no machine at all.
+    //One of those is a press away and the other is a machine build away, and
+    //the pane said the same thing about both.
+    //
+    //THE ROWS ANSWER "have I got what I need", not "what has been claimed".
+    //Claiming is what the press does; a checklist that lists the press's own
+    //steps as things missing is a checklist you cannot ever satisfy by hand.
+    function freeMachines(pool) {
+        return ((pool && pool.machines) || []).filter(function (m) { return !m.usedBy; });
+    }
+    function freeSignIns(pool) {
+        return ((pool && pool.signIns) || []).filter(function (g) { return !g.holder; });
+    }
+
+    function piecesOf(s, cutsBy, pool) {
+        var m = s.machine && s.machine.there ? s.machine : null;
         var known = s.cut ? cutsBy[s.cut] : null;
+
+        //NAMED AND GONE IS A THING TO SAY. The server answers `there: false` for
+        //a machine deleted out from under a piece of work, and that is neither
+        //"mine" nor "none" — it is a machine this seat still points at.
+        var lost = s.machine && !s.machine.there ? s.machine : null;
+        var take = m ? null : freeMachines(pool)[0];
+        var lend = s.signIn ? null : freeSignIns(pool)[0];
+        var anyMachine = ((pool && pool.machines) || []).length;
+        var anySignIn = ((pool && pool.signIns) || []).length;
+
+        function state(v) {
+            return <Badge kind={v.running ? 'ok' : ''}>{v.running ? (v.connected ? 'running' : 'running, not dialled in') : 'off'}</Badge>;
+        }
 
         return [
             {
                 key: 'machine',
                 what: 'a machine of my own',
-                //A MACHINE THAT IS NAMED AND GONE IS NOT A MACHINE. The server
-                //answers `there: false` for one deleted out from under a piece
-                //of work, and counting it as present would draw a seat as ready
-                //that cannot be opened.
-                there: !!(m && m.there),
-                right: !m
-                    ? <Badge kind="warn">none yet</Badge>
-                    : !m.there
-                        ? <span><Mono>{m.name}</Mono>{' '}<Badge kind="bad">gone</Badge></span>
-                        : <span><Mono>{m.name}</Mono>{' '}<Badge kind={m.running ? 'ok' : ''}>{m.running ? (m.connected ? 'running' : 'running, not dialled in') : 'off'}</Badge></span>,
-                why: !m
-                    ? 'Nothing is set aside for this yet. Taking one keeps the queue off it for as long as you want it.'
-                    : !m.there
-                        ? 'It was taken for this and is not in the register any more — it was deleted somewhere else. Opening this will take another.'
-                        : 'Out of the pool and yours. The queue will not take it and nothing rolls it back while you are in it.'
+                there: !!(m || take),
+                right: m
+                    ? <span><Mono>{m.name}</Mono>{' '}{state(m)}</span>
+                    : take
+                        ? <span><Mono>{take.name}</Mono>{' '}<Badge kind={take.running ? 'ok' : ''}>{take.running ? 'running' : 'off'}</Badge></span>
+                        : lost
+                            ? <span><Mono>{lost.name}</Mono>{' '}<Badge kind="bad">gone</Badge></span>
+                            : <Badge kind={anyMachine ? 'warn' : 'bad'}>{anyMachine ? 'all taken' : 'none tagged diy'}</Badge>,
+                why: m
+                    ? 'Out of the pool and yours. The queue will not take it and nothing rolls it back while you are in it.'
+                    : take
+                        ? 'Tagged diy and nothing else has it, so it is yours. Opening takes it out of the pool and starts it.'
+                        : lost
+                            ? 'It was taken for this and is not in the register any more — it was deleted somewhere else, and no other diy machine is free to replace it.'
+                            : anyMachine
+                                ? 'Every diy machine is already held by something else on this list. Finish one, or tag another machine diy.'
+                                : 'Nothing here is tagged diy. Tag one on Runners → Virtual machines → Tags. A worker will not do: the queue would take it back underneath you.'
             },
             {
                 key: 'cut',
@@ -74,19 +106,25 @@ module.exports = function tasks(theme, okc, remember) {
             {
                 key: 'signin',
                 what: 'my Claude sign-in on it',
-                there: !!s.signIn,
+                there: !!(s.signIn || lend),
                 right: s.signIn
                     ? <span><Mono>{s.signIn.as}</Mono>{' '}<Badge kind="ok">held</Badge></span>
-                    : <Badge kind="warn">not lent yet</Badge>,
+                    : lend
+                        ? <Mono>{lend.name}</Mono>
+                        : <Badge kind={anySignIn ? 'warn' : 'bad'}>{anySignIn ? 'all lent out' : 'none kept'}</Badge>,
                 why: s.signIn
                     ? 'Typing claude in a terminal in there works, as you. It stays on the machine until it is taken back.'
-                    : 'Without it, claude on the machine cannot authenticate and the session will not start.'
+                    : lend
+                        ? 'Kept here and on no machine, so it is free to lend. Opening puts it on the machine, and it stays there until it is taken back.'
+                        : anySignIn
+                            ? 'Your diy sign-in is out on another machine. Take it back on Keys, or add a second one.'
+                            : 'There is no diy sign-in. Add one on Keys → Claude DIY — without it claude on the machine cannot authenticate. A worker key cannot be lent to a diy machine.'
             }
         ];
     }
 
-    function Seat({ s, cutsBy, on, onPick }) {
-        var missing = piecesOf(s, cutsBy).filter(function (p) { return !p.there; }).length;
+    function Seat({ s, cutsBy, pool, on, onPick }) {
+        var missing = piecesOf(s, cutsBy, pool).filter(function (p) { return !p.there; }).length;
         return (
             <Card pick on={on} onClick={onPick}>
                 <CardTitle>
@@ -177,13 +215,25 @@ module.exports = function tasks(theme, okc, remember) {
             var needsMachine = !x.machine || !x.machine.there;
             var needsSignIn = !x.signIn && !(x.machine && x.machine.holdsCredential);
 
+            //IT ONLY ASKS WHEN THERE IS SOMETHING TO DECIDE. One free diy
+            //machine and one free diy sign-in is not a choice — it is the
+            //answer, and putting it behind a dialog made the simplest possible
+            //case, a person with exactly what they need, the slow one.
+            //
+            //THE SERVER PICKS, NOT THIS. `diyOpen` takes the only free one when
+            //there is only one, so the command line behaves the same way and
+            //this pane is not the place the rule lives. Which is why `go()` here
+            //passes nothing: what it means is "you decide", not "I forgot".
+            var pickMachine = needsMachine && freeMachines(got).length > 1;
+            var pickSignIn = needsSignIn && freeSignIns(got).length > 1;
+
             function go(extra) {
                 setSaid({ text: 'Setting ' + x.title + ' up. It says what it is doing in Live — starting a machine '
                     + 'and laying the workspace down takes a few minutes the first time.' });
                 return run('diyOpen', Object.assign({ id: x.id }, extra || {}));
             }
 
-            if (!needsMachine && !needsSignIn) return go();
+            if (!pickMachine && !pickSignIn) return go();
 
             ask({
                 title: 'Open ' + x.title,
@@ -193,11 +243,11 @@ module.exports = function tasks(theme, okc, remember) {
                     'Every step it does not need is skipped, so this is the slow press and the ones after it are not.'
                 ],
                 fields: [
-                    needsMachine ? {
+                    pickMachine ? {
                         name: 'machine', label: 'Which machine', needed: true, options: machineOptions(),
                         hint: 'It comes out of the pool and stays yours until you give it back. Nothing else will be given work on it.'
                     } : null,
-                    needsSignIn ? {
+                    pickSignIn ? {
                         name: 'signIn', label: 'Which sign-in', needed: true, options: signInOptions(),
                         hint: 'Lent to the machine so claude runs in there as you. It stays until it is taken back.'
                     } : null
@@ -235,11 +285,12 @@ module.exports = function tasks(theme, okc, remember) {
         //names asks somebody to remember which of them is holding the work they
         //were doing on Tuesday — and taking the wrong one is not a mistake you
         //find out about until the workspace has been laid over the top.
+        //ONLY THE FREE ONES, because this only opens when there is more than one
+        //free — so a machine another piece of work is sitting on is not a choice
+        //here, it is a mistake with a workspace laid over the top of it.
         function machineOptions() {
-            return ((got && got.machines) || []).map(function (m) {
+            return freeMachines(got).map(function (m) {
                 var says = [];
-                if (m.usedBy) says.push('already ' + m.usedBy);
-                else if (m.keptBack) says.push('kept back');
                 if (m.branch) says.push('on ' + m.branch);
                 says.push(m.running ? 'running' : 'off');
                 return { value: m.name, label: m.name + ' — ' + says.join(', ') };
@@ -247,11 +298,8 @@ module.exports = function tasks(theme, okc, remember) {
         }
 
         function signInOptions() {
-            return ((got && got.signIns) || []).map(function (g) {
-                return {
-                    value: g.name,
-                    label: g.name + ' (' + g.role + ')' + (g.holder ? ' — on ' + g.holder : '')
-                };
+            return freeSignIns(got).map(function (g) {
+                return { value: g.name, label: g.name + ' (' + g.role + ')' };
             });
         }
 
@@ -377,8 +425,19 @@ module.exports = function tasks(theme, okc, remember) {
         if (!got && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!got) return <Pane><Skeleton rows={4} /></Pane>;
 
-        var pieces = s ? piecesOf(s, cutsBy) : [];
+        var pieces = s ? piecesOf(s, cutsBy, got) : [];
         var ready = s && pieces.every(function (p) { return p.there; });
+
+        //WHICH ONES THE PRESS WOULD ACTUALLY USE — the seat's own if it has
+        //them, otherwise the free one the rows above are already showing. Read
+        //off the same two functions the rows use, so the sentence under the
+        //button and the checklist above it cannot name different machines.
+        var willUse = {
+            machine: (s && s.machine && s.machine.there && s.machine.name)
+                || (freeMachines(got)[0] || {}).name || null,
+            signIn: (s && s.signIn && s.signIn.as)
+                || (freeSignIns(got)[0] || {}).name || null
+        };
 
         //WHAT IS ACTUALLY ON THE BRANCH, per repository — and only the ones
         //carrying something, because nine rows of "nothing yet" is a wall that
@@ -400,7 +459,7 @@ module.exports = function tasks(theme, okc, remember) {
                         <Stack>
                             {items.length
                                 ? items.map(function (x) {
-                                    return <Seat key={x.id} s={x} cutsBy={cutsBy} on={x.id === picked}
+                                    return <Seat key={x.id} s={x} cutsBy={cutsBy} pool={got} on={x.id === picked}
                                         onPick={function () { setPicked(x.id); }} />;
                                 })
                                 : <Empty>{got.note || 'Nothing of your own yet.'}</Empty>}
@@ -459,12 +518,29 @@ module.exports = function tasks(theme, okc, remember) {
                                     </Button>
                                     <Button disabled={!s.machine || !s.machine.there} onClick={notYet}>Watch the session</Button>
                                 </div>
+                                {/* WHAT IT IS ABOUT TO DO, WITH THE NAMES IN IT.
+                                    "Takes a machine, lays the cut on it, lends
+                                    your sign-in" is a description of a
+                                    mechanism; `ok-diy1`, `dashboard/setup`,
+                                    `diy-b2` is a description of what happens
+                                    when you press it — and this press starts a
+                                    VM, so being able to read it back before
+                                    pressing is the point.
+
+                                    IT NAMES THE MACHINE IT WOULD TAKE, not just
+                                    the one already taken: with one free machine
+                                    the press no longer asks, so this line is the
+                                    only place the choice is shown at all. */}
                                 <PartWhy>
                                     {!s.cut
                                         ? 'Give it a cut first — there is nowhere for the work to go.'
-                                        : ready
-                                            ? 'Opens ' + s.cut + ' on ' + s.machine.name + ', over ssh, with this app’s own key.'
-                                            : 'Takes a machine, lays the cut on it, lends your sign-in, then opens it — in that order, saying what it is doing.'}
+                                        : !ready
+                                            ? 'Set the rows above right first — each one says what would fix it.'
+                                            : willUse.machine === (s.machine && s.machine.name)
+                                                ? 'Opens ' + s.cut + ' on ' + willUse.machine + ', over ssh, with this app’s own key.'
+                                                : 'Takes ' + willUse.machine + ', starts it, lays ' + s.cut + ' on it'
+                                                    + (willUse.signIn ? ', lends it ' + willUse.signIn : '')
+                                                    + ', then opens it in VS Code.'}
                                 </PartWhy>
 
                                 <div className="row" style={{ marginTop: '12px' }}>

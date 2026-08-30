@@ -65,6 +65,43 @@ async function plugin(imports, register) {
         return by;
     }
 
+    //---- THE POOL, ASKED IN ONE PLACE ---------------------------------------
+    //
+    //A MACHINE TAGGED `diy` IS A MACHINE OF MINE. That is the whole rule, and
+    //it was written out three times in this file with three different answers:
+    //here it was `canBe(v, 'diy')`, and in `diyOpen`'s refusal it was "anything
+    //not tagged supervisor" — which offered workers, and taking one hands the
+    //queue's own machine to a person for an afternoon.
+    //
+    //`ours.canBe` OWNS WHAT A TAG MEANS. Reading `tags.indexOf('diy')` here
+    //would be a second reading of the same fact, and the second one goes stale.
+    function pool() {
+        return (ours.read() || []).filter(function (v) { return ours.canBe(v, 'diy'); });
+    }
+
+    //AND FREE MEANS NO OTHER PIECE OF WORK HAS IT. Not "off", not "kept back" —
+    //a DIY machine is kept back from the queue on purpose, by the press below,
+    //so treating that as unavailable would make the second press refuse the
+    //machine the first one took.
+    function freeIn(items, exceptId) {
+        var taken = {};
+        (items || []).forEach(function (x) {
+            if (x.machine && x.id !== exceptId) taken[x.machine] = true;
+        });
+        return pool().filter(function (v) { return !taken[v.name]; });
+    }
+
+    //THE SAME QUESTION ABOUT SIGN-INS. `diy` only: ../runners/guests refuses a
+    //worker credential on a machine tagged diy, so offering one is offering a
+    //refusal five steps into the press.
+    async function freeSignIns() {
+        try {
+            var all = await actions.call('guests', {});
+            return ((all && all.guests) || [])
+                .filter(function (g) { return g.has && !g.holder && g.role === 'diy'; });
+        } catch (e) { return []; }
+    }
+
     function seatOf(it, held) {
         var vm = it.machine ? ours.get(it.machine) : null;
         var sign = it.machine ? (held[it.machine] || null) : null;
@@ -137,8 +174,7 @@ async function plugin(imports, register) {
                 //will never pick up, and `diy` is exactly what says so —
                 //offering a worker here would hand somebody a machine the tick
                 //can roll back underneath them.
-                var machines = (ours.read() || [])
-                    .filter(function (v) { return ours.canBe(v, 'diy'); })
+                var machines = pool()
                     .map(function (v) {
                         var whose = null;
                         items.forEach(function (x) { if (x.machine === v.name) whose = x.title; });
@@ -351,18 +387,39 @@ async function plugin(imports, register) {
                 }
 
                 //---- 2. A MACHINE OF MY OWN ---------------------------------
+                //ONE FREE DIY MACHINE IS NOT A DECISION. It asked which machine
+                //to take when there was exactly one it could possibly have
+                //meant — a dialog whose only correct answer was already on the
+                //screen behind it, in front of the only press this tab has.
+                //
+                //IT STILL ASKS WHEN THERE IS SOMETHING TO ASK. Two free
+                //machines is a choice nobody else can make, because which one
+                //has last week's work on its disk is not a fact this app holds.
                 var name = String(a.machine || it.machine || '').trim();
                 if (!name) {
-                    //THE REFUSAL CARRIES THE ANSWER. "Pick a machine" with no
-                    //list is a refusal somebody has to go to another tab to act
-                    //on, and this is the moment they are least likely to know
-                    //which machines exist.
-                    var could = (ours.read() || []).filter(function (v) {
-                        return (v.tags || []).indexOf('supervisor') < 0;
-                    }).map(function (v) { return v.name; });
+                    var could = freeIn(await store.all(), it.id);
 
-                    throw new Error('"' + it.title + '" has no machine yet. Say which one to take: '
-                        + (could.length ? could.join(', ') : 'this host has no machines to take'));
+                    if (could.length === 1) {
+                        name = could[0].name;
+                        did.push('took ' + name + ', the one diy machine free');
+                    } else {
+                        //THE REFUSAL CARRIES THE ANSWER. "Pick a machine" with
+                        //no list is a refusal somebody has to go to another tab
+                        //to act on, and this is the moment they are least
+                        //likely to know which machines exist.
+                        //
+                        //AND WHEN THERE ARE NONE it says what would make one,
+                        //because "no machines" and "none tagged diy" are a tag
+                        //apart and only one of them needs a machine built.
+                        throw new Error('"' + it.title + '" has no machine yet. '
+                            + (could.length
+                                ? 'Say which one to take: ' + could.map(function (v) { return v.name; }).join(', ')
+                                : pool().length
+                                    ? 'Every diy machine is already taken by something else on this list.'
+                                    : 'Nothing in this workspace is tagged "diy". Tag one on Runners → Virtual '
+                                        + 'machines → Tags — a worker cannot be used, because the queue would '
+                                        + 'take it back underneath you.'));
+                    }
                 }
 
                 var vm = ours.get(name);
@@ -413,17 +470,24 @@ async function plugin(imports, register) {
                 var signIn = String(a.signIn || it.signIn || '').trim();
                 if (!vm.holdsCredential) {
                     if (!signIn) {
-                        var free = [];
-                        try {
-                            var held = await actions.call('guests', {});
-                            free = ((held && held.guests) || [])
-                                .filter(function (g) { return g.has && !g.holder && g.role !== 'supervisor'; })
-                                .map(function (g) { return g.name + ' (' + g.role + ')'; });
-                        } catch (e) { /* the refusal is still worth making */ }
+                        //SAME AGAIN: one free diy sign-in is not a decision.
+                        //And the list it used to refuse against was every free
+                        //sign-in that was not a supervisor's — so it offered
+                        //worker keys, which `guestLend` then refuses on a diy
+                        //machine. A choice whose only outcome is a refusal.
+                        var free = await freeSignIns();
 
-                        throw new Error('"' + it.title + '" has no sign-in chosen, and ' + name + ' is holding none — '
-                            + 'so claude on it could not authenticate. Say which to lend: '
-                            + (free.length ? free.join(', ') : 'none are free'));
+                        if (free.length === 1) {
+                            signIn = free[0].name;
+                            did.push('used ' + signIn + ', the one diy sign-in free');
+                        } else {
+                            throw new Error('"' + it.title + '" has no sign-in chosen, and ' + name
+                                + ' is holding none — so claude on it could not authenticate. '
+                                + (free.length
+                                    ? 'Say which to lend: ' + free.map(function (g) { return g.name; }).join(', ')
+                                    : 'There is no diy sign-in free. Add one on Keys → Claude DIY — a worker key '
+                                        + 'cannot be lent to a diy machine.'));
+                        }
                     }
 
                     to.info('lending ' + signIn + ' to ' + name);

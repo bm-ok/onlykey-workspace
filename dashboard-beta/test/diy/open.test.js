@@ -15,9 +15,12 @@ const roles = require('../../src/app/vms/ours/roles');
 //  * EVERY STEP IS SKIPPED IF IT IS ALREADY TRUE. Otherwise the second press of
 //    the day re-lays a workspace over work in progress and lends a credential
 //    that is already there — and both of those are quiet.
-//  * IT REFUSES RATHER THAN GUESSING which machine and which sign-in, and the
-//    refusal carries the list, because that is the moment somebody is least
-//    likely to know what there is.
+//  * IT TAKES THE ONLY CANDIDATE AND REFUSES BETWEEN TWO. One free diy machine
+//    is not a choice — asking which of the one was how this pane made the
+//    simplest case, a person with exactly what they need, the slow one. Two is
+//    a choice nobody else can make, because which machine has last week's work
+//    on its disk is not a fact this app holds, and there the refusal carries
+//    the list: it is the moment somebody is least likely to know what there is.
 //
 //NOTHING HERE TOUCHES A MACHINE. Every action it calls is a stand-in that
 //records the call, so the ORDER is what is being tested — which is the part
@@ -71,7 +74,7 @@ async function anApp() {
     stub('guestLend', (a) => { vms[a.machine].holdsCredential = true; return { name: a.name }; });
     stub('guests', () => ({ guests: guests }));
     stub('credentialsHeld', () => ({ guests: guests }));
-    stub('branchBoard', () => ({ branches: [{ name: 'diy/flat', in: ['a', 'b'], cut: true }] }));
+    stub('branchBoard', () => ({ branches: [{ name: 'diy/flat', in: ['a', 'b'], cut: true }, { name: 'diy/other', in: ['a'], cut: true }] }));
 
     await diyPlugin({
         app: { host: { actions } },
@@ -197,7 +200,46 @@ test('with no cut there is nowhere for the work to go', async () => {
     assert.equal(called.filter((c) => c === 'editor.open').length, 0);
 });
 
-test('with no machine it refuses, and the refusal carries the list', async () => {
+//---- WHAT IS NOT A DECISION ------------------------------------------------
+//
+//IT USED TO REFUSE HERE, AND NAME THE ONE MACHINE IT MEANT. Which reads as
+//careful and is not: with one diy machine and one diy sign-in, the refusal —
+//and the dialog the pane put in front of it — asked a question whose only
+//correct answer was already on the screen behind it. The pane drew "none yet"
+//against a workspace that had everything, and the press asked which of the one.
+//
+//SO: ONE CANDIDATE IS THE ANSWER, TWO IS A QUESTION. Which one has last week's
+//work on its disk is not a fact this app holds, so it will not pick between
+//two — but it will not pretend one is a choice either.
+
+test('one free diy machine is not a decision, so it takes it', async () => {
+    const actions = await anApp();
+    const it = await start(actions);
+
+    const said = await actions.call('diyOpen', { id: it.id, _fromTest: true });
+
+    assert.equal(said.machine, 'beta-diy1');
+    assert.ok(said.did.some((d) => /beta-diy1/.test(d) && /free/.test(d)),
+        'it did not say which machine it took: ' + JSON.stringify(said.did));
+
+    //AND IT IS REMEMBERED, so the second press is not a second decision.
+    const list = await actions.call('diy', {});
+    assert.equal(list.items[0].machine.name, 'beta-diy1');
+});
+
+test('one free diy sign-in is not a decision either', async () => {
+    const actions = await anApp();
+    const it = await start(actions);
+
+    const said = await actions.call('diyOpen', { id: it.id, _fromTest: true });
+
+    assert.equal(said.signIn, 'diy-b1');
+    assert.ok(called.indexOf('guestLend') >= 0, 'it never lent one');
+    assert.equal(called.filter((c) => c === 'editor.open').length, 1, 'it did not reach the editor');
+});
+
+test('but TWO free machines is a question, and the refusal carries both', async () => {
+    vms['beta-diy2'] = VM({ name: 'beta-diy2' });
     const actions = await anApp();
     const it = await start(actions);
 
@@ -209,20 +251,24 @@ test('with no machine it refuses, and the refusal carries the list', async () =>
             //to know which machines exist, and a refusal they have to go to
             //another tab to act on is one that costs the press.
             assert.match(e.message, /beta-diy1/);
+            assert.match(e.message, /beta-diy2/);
             return true;
         }
     );
+    assert.equal(called.filter((c) => c === 'editor.open').length, 0);
 });
 
-test('with no sign-in it refuses, and names the ones that are free', async () => {
+test('and TWO free sign-ins, which names them and not the supervisor', async () => {
     const actions = await anApp();
+    guests.push({ name: 'diy-b2', role: 'diy', has: true, holder: null });
     const it = await start(actions);
 
     await assert.rejects(
-        () => actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', _fromTest: true }),
+        () => actions.call('diyOpen', { id: it.id, _fromTest: true }),
         (e) => {
             assert.match(e.message, /no sign-in chosen/);
-            assert.match(e.message, /diy-b1 \(diy\)/);
+            assert.match(e.message, /diy-b1/);
+            assert.match(e.message, /diy-b2/);
             //A SUPERVISOR SIGN-IN IS NOT A THING TO OFFER HERE. Lending one to
             //a runner is refused downstream anyway, and offering it makes the
             //refusal something the person walks into.
@@ -234,6 +280,60 @@ test('with no sign-in it refuses, and names the ones that are free', async () =>
     //AND IT STOPPED BEFORE THE EDITOR, having already done the earlier steps —
     //which is correct: they are what it could do, and each is skipped next time.
     assert.equal(called.filter((c) => c === 'editor.open').length, 0);
+});
+
+//---- AND WHAT NOTHING AT ALL LOOKS LIKE ------------------------------------
+//
+//"NONE FREE" AND "TWO FREE" ARE THE SAME REFUSAL WITH DIFFERENT ADVICE, and the
+//advice is the whole value: one of them is a press away and the other needs a
+//machine built or a key added. The version before this said "this host has no
+//machines to take" for a host with three, none tagged.
+
+test('no diy machine says what would make one, rather than that there are none', async () => {
+    vms = { 'beta-worker1': VM({ name: 'beta-worker1', tags: ['worker'] }) };
+    const actions = await anApp();
+    const it = await start(actions);
+
+    await assert.rejects(
+        () => actions.call('diyOpen', { id: it.id, _fromTest: true }),
+        (e) => {
+            assert.match(e.message, /tagged "diy"/);
+            //A WORKER IS NOT AN ALTERNATIVE and the refusal says why: the queue
+            //takes it back underneath you.
+            assert.ok(!/beta-worker1/.test(e.message), 'it offered a worker: ' + e.message);
+            return true;
+        }
+    );
+});
+
+test('every diy machine already taken is a different sentence again', async () => {
+    const actions = await anApp();
+    const mine = await start(actions);
+    await actions.call('diyOpen', { id: mine.id, _fromTest: true });
+
+    //A SECOND CUT, because one piece of work per cut is a separate rule and
+    //this test is not about it.
+    const other = await actions.call('diyStart', { title: 'something else', cut: 'diy/other' });
+
+    await assert.rejects(
+        () => actions.call('diyOpen', { id: other.id, _fromTest: true }),
+        /already taken by something else/
+    );
+});
+
+test('no diy sign-in points at Keys, and says a worker key will not do', async () => {
+    const actions = await anApp();
+    guests = [{ name: 'worker-b2', role: 'worker', has: true, holder: null }];
+    const it = await start(actions);
+
+    await assert.rejects(
+        () => actions.call('diyOpen', { id: it.id, _fromTest: true }),
+        (e) => {
+            assert.match(e.message, /Claude DIY/);
+            assert.ok(!/worker-b2/.test(e.message), 'it offered a worker key: ' + e.message);
+            return true;
+        }
+    );
 });
 
 test('a machine that is not in the register is refused by name', async () => {
@@ -248,6 +348,10 @@ test('a machine that is not in the register is refused by name', async () => {
 
 test('nothing is remembered when the press falls over', async () => {
     const actions = await anApp();
+    //NO DIY SIGN-IN, so it gets as far as step 6 and stops there. It has to
+    //fall over somewhere REAL: the steps before this one have already run and
+    //changed the machine, which is exactly the state this claim is about.
+    guests = [{ name: 'worker-b2', role: 'worker', has: true, holder: null }];
     const it = await start(actions);
 
     await assert.rejects(() => actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', _fromTest: true }));
@@ -256,4 +360,5 @@ test('nothing is remembered when the press falls over', async () => {
     //never lent is a seat that draws as ready and cannot be opened.
     const list = await actions.call('diy', {});
     assert.equal(list.items[0].signIn, null);
+    assert.equal(list.items[0].machine, null, 'it remembered a machine it never finished taking');
 });
