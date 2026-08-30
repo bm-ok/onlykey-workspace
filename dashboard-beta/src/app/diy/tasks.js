@@ -90,6 +90,25 @@ module.exports = function tasks(theme) {
         Badge, Button, Empty, Note, Notice, Mono, Muted, Plus, Group, Head, Part, PartWhy, ask
     } = theme;
 
+    //---- ONE PIECE OF WORK PER CUT ----------------------------------------
+    //
+    //THE CUT IS THE BUCKET, AND TWO BUCKETS CANNOT BE ONE. A cut is laid down
+    //on a machine as a whole workspace — every repository checked out on that
+    //branch — so two pieces of work sharing one would be two people's commits
+    //arriving on one branch with nothing saying which was whose, and either
+    //could "give the machine back" and roll away work that was not theirs.
+    //
+    //ENFORCED BY NOT OFFERING IT rather than by refusing after the press. A
+    //picker that lists something and then rejects it is a picker that taught you
+    //the rule by wasting the attempt.
+    function cutsFree(seats, exceptId) {
+        var taken = {};
+        seats.forEach(function (s) {
+            if (s.cut && s.id !== exceptId) taken[s.cut.branch] = s.name;
+        });
+        return CUTS.filter(function (c) { return !c.value || !taken[c.value]; });
+    }
+
     //---- what a seat is made of, and whether it is there --------------------
     //
     //ONE FUNCTION, SO THE CARD AND THE CHECKLIST CANNOT DISAGREE. The badge on
@@ -187,6 +206,9 @@ module.exports = function tasks(theme) {
         //sentence. So the list filled with truncated sentences and the one place
         //a name is actually READ was the one place it was derived.
         function makeOne() {
+            var free = cutsFree(seats, null);
+            var gone = CUTS.length - free.length;
+
             ask({
                 title: 'Start a piece of work',
                 plain: [
@@ -205,8 +227,10 @@ module.exports = function tasks(theme) {
                         hint: 'This is for you to read when you come back to it — not a brief, and nothing is sent anywhere.'
                     },
                     {
-                        name: 'cut', label: 'Branch cut to push into', options: CUTS,
-                        hint: 'The bucket the work goes in. Every repository sits on this branch on the machine, with origin pointing back at this host.'
+                        name: 'cut', label: 'Branch cut to push into', options: free,
+                        hint: 'The bucket the work goes in. Every repository sits on this branch on the machine, with '
+                            + 'origin pointing back at this host.'
+                            + (gone ? ' ' + gone + ' already belong to something here and are not offered — one piece of work per cut.' : '')
                     }
                 ],
                 confirm: 'Start it',
@@ -237,6 +261,78 @@ module.exports = function tasks(theme) {
                     });
                     setPicked(id);
                     setSaid('Written down here in the window only — this is still the look, so it goes when the page reloads.');
+                }
+            });
+        }
+
+        //---- CHANGING ONE -------------------------------------------------
+        //
+        //THE TITLE AND THE DESCRIPTION ARE MINE TO REWRITE. What a piece of work
+        //is called and what I said about it are notes to myself; getting them
+        //wrong first time and being stuck with it is how a list stops being read.
+        //
+        //THE CUT IS NOT, ONCE IT IS SET. It is the bucket: the machine's whole
+        //workspace is laid down on that branch and commits are already sitting
+        //on it, so changing it here would not MOVE anything — it would point
+        //this piece of work somewhere else and orphan what has been pushed,
+        //silently. Shown disabled rather than hidden, because "this cannot
+        //change" is a different sentence from "there is nothing here", and a
+        //field that vanishes is one somebody goes looking for.
+        //
+        //SETTING ONE THAT WAS NEVER PICKED IS NOT CHANGING IT, so a piece of
+        //work started on "none yet" can still be given a cut here — from the
+        //free ones only.
+        function editOne(s) {
+            var has = !!s.cut;
+            var free = cutsFree(seats, s.id);
+
+            ask({
+                title: 'Change ' + s.name,
+                plain: has
+                    ? ['The cut cannot be changed: work is already pushed to it, and pointing this somewhere else '
+                        + 'would leave that behind with nothing naming it.']
+                    : ['No cut has been picked yet, so one can still be set here. After that it is fixed.'],
+                fields: [
+                    {
+                        name: 'title', label: 'Title', needed: true, value: s.name,
+                        hint: 'Short enough to pick out of a list of a dozen a fortnight from now.'
+                    },
+                    {
+                        name: 'what', label: 'What are you doing?', multiline: true, rows: 6, value: s.notes,
+                        placeholder: 'In your own words.',
+                        hint: 'For you to read when you come back to it. Nothing is sent anywhere.'
+                    },
+                    has
+                        ? {
+                            name: 'cut', label: 'Branch cut', value: s.cut.branch, disabled: true,
+                            hint: 'Fixed for the life of this piece of work. To work on another branch, start another one.'
+                        }
+                        : {
+                            name: 'cut', label: 'Branch cut to push into', options: free,
+                            hint: 'Settable once. Cuts that belong to something else here are not offered — one piece of work per cut.'
+                        }
+                ],
+                confirm: 'Save it',
+                onYes: function (f) {
+                    var name = String(f.title || '').trim();
+                    if (!name) throw new Error('Give it a title — it is what the list shows.');
+
+                    setSeats(function (was) {
+                        return was.map(function (x) {
+                            if (x.id !== s.id) return x;
+                            return Object.assign({}, x, {
+                                name: name,
+                                notes: String(f.what || '').trim(),
+                                //THE CUT IS ONLY EVER TAKEN FROM THE FORM WHEN
+                                //THERE WAS NONE. Reading it back off a disabled
+                                //field would work today, and would be the line
+                                //that quietly stops being true the day that
+                                //field is enabled by accident.
+                                cut: has ? x.cut : (f.cut ? { branch: f.cut, repos: 9, commits: 0 } : null)
+                            });
+                        });
+                    });
+                    setSaid('Changed here in the window only — still the look, so it goes when the page reloads.');
                 }
             });
         }
@@ -334,6 +430,7 @@ module.exports = function tasks(theme) {
                                 </PartWhy>
 
                                 <div className="row" style={{ marginTop: '12px' }}>
+                                    <Button onClick={function () { editOne(s); }}>Edit</Button>
                                     <Button onClick={notYet}>{s.state === 'done' ? 'Open it again' : 'Mark it done'}</Button>
                                     <Button onClick={notYet}>Give the machine back</Button>
                                 </div>
