@@ -147,11 +147,20 @@ async function plugin(imports, register) {
     //somebody opens another, so ./scripts.js is handed a function.
     var keptDir = null;
 
+    //AND THE BUNDLE'S `skills/` IN THE SAME DRAWER. A workspace's `.okc` is laid
+    //out the way an exported bundle is, so the three skills arrive there under
+    //the names ../../bootstrap gives them — `skills/supervisor.md` rather than
+    //`provision/supervisor-skill.md`. ./scripts.js looks there first; without it
+    //an unpacked bundle's skills sat in a folder nothing read.
+    var skillsDir = null;
+
     async function noteKeptDir() {
         try {
             var at = await imports.state.here.where();
             keptDir = at ? path.join(at, 'provision') : null;
+            skillsDir = at ? path.join(at, 'skills') : null;
         } catch (e) {
+            skillsDir = null;
             //NO WORKSPACE OPEN IS NOT A FAULT, exactly as above: `searchPath`
             //drops a folder that is not there, and the app's shipped copy
             //answers instead.
@@ -172,7 +181,8 @@ async function plugin(imports, register) {
     var scripts = makeScripts({
         appDir: appDir,
         workspaceDir: function () { return projectDir; },
-        keptDir: function () { return keptDir; }
+        keptDir: function () { return keptDir; },
+        skillsDir: function () { return skillsDir; }
     });
 
     //LEARNED NOW, NOT WHEN SOMETHING HAPPENS TO ASK. `keptDir` was null from

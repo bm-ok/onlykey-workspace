@@ -292,3 +292,85 @@ test('a file is read fresh every time, so editing one needs no restart', () => {
     //THE ONE PLACE WHERE NOT CACHING IS THE POINT rather than an omission.
     assert.match(scripts.raw({ name: 'r1' }, 'toolchain'), /edited while running/);
 });
+
+//---- the bundle's name for a skill -----------------------------------------
+//
+//A SKILL IS A PROVISIONING FILE HERE and a bundle entry over in ../../bootstrap,
+//and the two disagree about both the folder and the filename:
+//
+//    provision/supervisor-skill.md        what a machine fetches
+//    skills/supervisor.md                 what a bundle carries
+//
+//A workspace's `.okc` is laid out the way an exported bundle is, so unpacking a
+//tar into one puts the three skills under the SECOND set of names. Before this
+//they sat there unread: the contracts, prompts and jobs from the same bundle all
+//took effect, the skills did not, and the pane went on reporting the app's own
+//shipped copy — which is exactly what it would say if nothing had been unpacked.
+
+function withSkills(root) {
+    const dir = path.join(root, 'skills');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+test('a bundle’s skills/<which>.md answers for the provisioning name', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-bundle-'));
+    const skillsDir = withSkills(root);
+    fs.writeFileSync(path.join(skillsDir, 'supervisor.md'), '# the unpacked skill\n');
+
+    const s = makeScripts({ appDir, workspaceDir, skillsDir: () => skillsDir });
+
+    assert.equal(s.raw(null, 'skill'), '# the unpacked skill\n',
+        'the app’s shipped copy answered while a bundle was unpacked beside it');
+});
+
+test('and it beats the copy the app ships', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-bundle-'));
+    const skillsDir = withSkills(root);
+    fs.writeFileSync(path.join(skillsDir, 'supervisor.md'), '# mine\n');
+
+    //THE MORE SPECIFIC ANSWER WINS, which is the rule the whole search path is
+    //built on: what somebody put in THIS workspace beats what the app was built
+    //with. Both files exist here, so this cannot pass by finding only one.
+    assert.equal(fs.readFileSync(path.join(appDir, 'supervisor-skill.md'), 'utf8'), '# the skill\n');
+
+    const s = makeScripts({ appDir, workspaceDir, skillsDir: () => skillsDir });
+    assert.equal(s.raw(null, 'skill'), '# mine\n');
+});
+
+test('all three are known by the name a bundle gives them', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-bundle-'));
+    const skillsDir = withSkills(root);
+    fs.writeFileSync(path.join(skillsDir, 'supervisor.md'), 'S\n');
+    fs.writeFileSync(path.join(skillsDir, 'worker.md'), 'W\n');
+    fs.writeFileSync(path.join(skillsDir, 'judge.md'), 'J\n');
+
+    //`worker` IS `runner-skill.md` AND NOT `worker-skill.md`, which is the pair
+    //most likely to be got wrong by whoever writes this mapping next.
+    const s = makeScripts({ appDir, workspaceDir, skillsDir: () => skillsDir });
+    assert.equal(s.raw(null, 'skill'), 'S\n');
+    assert.equal(s.raw(null, 'workerSkill'), 'W\n');
+    assert.equal(s.raw(null, 'judgeSkill'), 'J\n');
+});
+
+test('nothing else is looked for under a bundle name', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-bundle-'));
+    const skillsDir = withSkills(root);
+
+    //A SHELL SCRIPT IS NOT A SKILL. Only the three documents are aliased, so a
+    //`skills/` folder cannot start answering for the provisioning scripts that
+    //build a machine.
+    fs.writeFileSync(path.join(skillsDir, 'first-boot.sh'), '# not this\n');
+
+    const s = makeScripts({ appDir, workspaceDir, skillsDir: () => skillsDir });
+    assert.equal(s.raw(null, 'firstBoot'), '# the app first boot\n');
+});
+
+test('no bundle unpacked, and the shipped copy answers as before', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-bundle-'));
+
+    //A FOLDER THAT IS NOT THERE IS THE ORDINARY CASE — a workspace nobody has
+    //dropped a bundle into — and it must not be a failure.
+    const s = makeScripts({ appDir, workspaceDir, skillsDir: () => path.join(root, 'skills') });
+    assert.equal(s.raw(null, 'skill'), '# the skill\n');
+});
