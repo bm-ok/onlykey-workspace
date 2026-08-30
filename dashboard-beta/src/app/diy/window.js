@@ -12,18 +12,18 @@ var makeTasks = require('./tasks');
 //what the queue's workers do; Queue is the thing that hands work out. This sits
 //between them because it is the first without the second.
 //
-//ONE PANE WHILE THE LOOK IS BEING AGREED. The pane draws from data written into
-//./tasks.js and asks the app nothing — see that file's header. The back half is
-//not written yet, on purpose.
+//ONE PANE. The look was agreed against seats written into ./tasks.js before any
+//of it was wired, which is why the shape is not a first draft -- see that file's
+//header. It reads `diy` now, and the store behind that is ./store.js.
 //---------------------------------------------------------------------------
 
 plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme } = imports;
+    var { shell, theme, okc, remember } = imports;
 
     shell.tab({ name: 'DIY', order: 25 });
-    shell.pane({ tab: 'DIY', name: 'My work', order: 10, Component: makeTasks(theme) });
+    shell.pane({ tab: 'DIY', name: 'My work', order: 10, Component: makeTasks(theme, okc, remember) });
 
     await register(null, {});
 }
