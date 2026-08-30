@@ -562,15 +562,56 @@ module.exports = function tasks(theme, okc, remember) {
                                     DESK, which is out of bounds for anything
                                     but a person. */}
                                 <div className="row" style={{ marginTop: '12px' }}>
-                                    <Button kind="ok" protect
-                                        disabled={!s.cut}
-                                        title={s.cut ? 'set it up if it needs it, then open it' : 'it has no cut to work on yet'}
-                                        onClick={function () { open(s); }}>
-                                        {ready ? 'Open it in VS Code' : 'Set it up and open it'}
-                                    </Button>
-                                    <Button disabled={!s.machine || !s.machine.there} onClick={notYet}>Watch the session</Button>
+                                    {/*---- ONE LABEL, AND OFF WHEN IT CANNOT ---
 
-                                    {/*---- AND THE OTHER END OF THAT PRESS ----
+                                        IT SAID "Set it up and open it" WHEN IT
+                                        WAS NOT READY, from before the rows above
+                                        meant "what I have" rather than "what has
+                                        been claimed". Under the old reading that
+                                        was honest: a seat with a cut and no
+                                        machine assigned still had a machine
+                                        waiting for it, and the press was the
+                                        thing that went and got it.
+
+                                        UNDER THE NEW READING IT IS A LIE. `ready`
+                                        now means the machine and the sign-in are
+                                        THERE — so not ready means there is no
+                                        free diy machine, or no free diy sign-in,
+                                        or no cut. Every one of those is a press
+                                        that walks four steps and refuses, and
+                                        offering it in a purple button is
+                                        offering somebody a refusal.
+
+                                        SO: ONE LABEL, and the button is off
+                                        exactly when the checklist above it says
+                                        something is missing. The line under it
+                                        is where the answer is, because the
+                                        answer is different for each row. */}
+                                    <Button kind="ok" protect
+                                        disabled={!ready}
+                                        title={ready ? 'open it' : 'something above is missing — each row says what would fix it'}
+                                        onClick={function () { open(s); }}>
+                                        Open it in VS Code
+                                    </Button>
+                                    {/*---- NO "WATCH THE SESSION" -------------
+
+                                        IT WAS NEVER WIRED, and a button whose
+                                        only behaviour is to say it does not work
+                                        yet is worse than no button: it is a
+                                        promise on screen, it takes up the place
+                                        beside the one press that does work, and
+                                        somebody presses it before they believe
+                                        it. This pane was drawn before the back
+                                        end existed, on purpose, and that is the
+                                        one leftover of drawing it that way.
+
+                                        WHAT IT WOULD HAVE DONE is `vmSessions`
+                                        and `vmSessionTail`, which exist and work
+                                        from the command line. When there is a
+                                        pane for reading a session it can have a
+                                        button; until then the absence is honest.
+
+                                        ---- AND THE OTHER END OF THAT PRESS ----
 
                                         STOPPING FOR THE DAY IS NOT THROWING IT
                                         AWAY, and the first sketch of this had
