@@ -68,10 +68,26 @@ var SEATS = [
     }
 ];
 
+//---- THE CUTS THERE ARE, ALSO WRITTEN IN --------------------------------
+//
+//A real one asks the app which branches exist. This is a list so the dialog can
+//be judged with something in it: a picker whose only state anybody ever sees is
+//empty is a picker nobody can tell is wrong.
+//
+//"none yet" IS AN OPTION AND IS FIRST. A piece of work can be written down
+//before there is anywhere to push it — that is the ordinary way round, since the
+//describing is what tells you what to cut.
+var CUTS = [
+    { value: '', label: 'none yet — pick one later' },
+    { value: 'diy/flat-workspace-layout', label: 'diy/flat-workspace-layout — 9 repos, 3 commits' },
+    { value: 'diy/okpqc-venv', label: 'diy/okpqc-venv — 9 repos, 7 commits' },
+    { value: 'diy/app-key-path', label: 'diy/app-key-path — 9 repos, nothing on it yet' }
+];
+
 module.exports = function tasks(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
-        Badge, Button, Empty, Note, Notice, Mono, Muted, Plus, Group, Head, Part, PartWhy
+        Badge, Button, Empty, Note, Notice, Mono, Muted, Plus, Group, Head, Part, PartWhy, ask
     } = theme;
 
     //---- what a seat is made of, and whether it is there --------------------
@@ -138,10 +154,14 @@ module.exports = function tasks(theme) {
     }
 
     function Tasks() {
+        //HELD IN THE WINDOW AND NOWHERE ELSE, while this is the look. A seat
+        //made here survives until the page reloads, which is enough to judge how
+        //adding one FEELS and is honest about keeping nothing.
+        var [seats, setSeats] = useState(SEATS);
         var [picked, setPicked] = useState('a');
         var [said, setSaid] = useState(null);
 
-        var s = SEATS.filter(function (x) { return x.id === picked; })[0] || null;
+        var s = seats.filter(function (x) { return x.id === picked; })[0] || null;
         var pieces = s ? piecesOf(s) : [];
         var ready = s && pieces.every(function (p) { return p.there; });
 
@@ -151,6 +171,65 @@ module.exports = function tasks(theme) {
             setSaid('This is the look, not the working thing. Nothing is wired up behind these yet.');
         }
 
+        //---- STARTING ONE -------------------------------------------------
+        //
+        //TWO FIELDS AND NO MORE. Describing it and saying where it pushes are
+        //the whole of what a person knows at the moment they start — the
+        //machine and the sign-in are not decisions, they are setup, and the one
+        //press works them out later. A form that asked for them here would be
+        //asking somebody to configure a runner before they have written down
+        //what they are doing.
+        //
+        //THE DESCRIPTION IS THE NAME. Its first line titles the card, so there
+        //is no second box asking for a label that would only ever repeat the
+        //first few words of the box above it.
+        function makeOne() {
+            ask({
+                title: 'Start a piece of work',
+                plain: [
+                    'Yours, and nothing else touches it: not the queue, not the judge, not the sweep.',
+                    'The machine and your sign-in are set up by the one press afterwards.'
+                ],
+                fields: [
+                    {
+                        name: 'what', label: 'What are you doing?', multiline: true, rows: 6, needed: true,
+                        placeholder: 'In your own words. The first line names it in the list.',
+                        hint: 'This is for you to read when you come back to it — not a brief, and nothing is sent anywhere.'
+                    },
+                    {
+                        name: 'cut', label: 'Branch cut to push into', options: CUTS,
+                        hint: 'The bucket the work goes in. Every repository sits on this branch on the machine, with origin pointing back at this host.'
+                    }
+                ],
+                confirm: 'Start it',
+                onYes: function (f) {
+                    var text = String(f.what || '').trim();
+                    if (!text) throw new Error('Say what you are doing.');
+
+                    var first = text.split('\n')[0].trim();
+                    var id = 'n' + Date.now().toString(36);
+                    var cut = f.cut
+                        ? { branch: f.cut, repos: 9, commits: 0 }
+                        : null;
+
+                    setSeats(function (was) {
+                        return [{
+                            id: id,
+                            name: first.length > 60 ? first.slice(0, 57) + '...' : first,
+                            notes: text,
+                            state: 'open',
+                            cut: cut,
+                            machine: null,
+                            signIn: null,
+                            pushed: cut ? [] : []
+                        }].concat(was);
+                    });
+                    setPicked(id);
+                    setSaid('Written down here in the window only — this is still the look, so it goes when the page reloads.');
+                }
+            });
+        }
+
         return (
             <Pane>
                 {said ? <Notice kind="ok" onClose={function () { setSaid(null); }}>{said}</Notice> : null}
@@ -158,11 +237,11 @@ module.exports = function tasks(theme) {
                     <Col narrow>
                         <TitleRow>
                             My work<Grow />
-                            <span className="muted">{SEATS.length}</span>
+                            <span className="muted">{seats.length}</span>
                             <Plus title="Start a new piece of work of my own" onClick={notYet} />
                         </TitleRow>
                         <Stack>
-                            {SEATS.map(function (x) {
+                            {seats.map(function (x) {
                                 return <Seat key={x.id} s={x} on={x.id === picked}
                                     onPick={function () { setPicked(x.id); }} />;
                             })}
