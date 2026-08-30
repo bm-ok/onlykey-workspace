@@ -1,33 +1,29 @@
-var makeMine = require('./mine');
-var makeWork = require('./work');
+var makeTasks = require('./tasks');
 
 //---------------------------------------------------------------------------
-//THE DIY TAB — a worker lane with no queue in it.
+//THE DIY TAB — a worker's seat with a person in it.
 //
-//A queued worker gets a machine, a branch cut, a workspace, a sign-in, and a
-//session somebody can read. This is the same lane with the person in the middle
-//of it: take a machine, put a branch on it, open it, send it work, watch it,
-//give it back. Nothing here is picked up by the tick, read by the judge, or
-//tidied away by the sweep.
+//A worker is a seat: a machine out of the pool, a branch cut laid on it, a
+//credential lent to it, a session run, and the work pushed back to the cut.
+//This is the same seat with the person doing the work, running their own
+//session by hand — and nothing downstream taking what comes out of it.
 //
 //BESIDE Worker AND BEFORE Queue, which is the argument in one number. Worker is
 //what the queue's workers do; Queue is the thing that hands work out. This sits
 //between them because it is the first without the second.
 //
-//THE TAB NAMES ARE THE STRUCTURE — see ../runners/machines/window.js, which had
-//to be told so. Every other tab in this app is named after something in the app
-//being ported from; this one is not, because the app being ported from has no
-//idea of a lane a person drives. It was named by the person who wanted one.
+//ONE PANE WHILE THE LOOK IS BEING AGREED. The pane draws from data written into
+//./tasks.js and asks the app nothing — see that file's header. The back half is
+//not written yet, on purpose.
 //---------------------------------------------------------------------------
 
 plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc, remember } = imports;
+    var { shell, theme } = imports;
 
     shell.tab({ name: 'DIY', order: 25 });
-    shell.pane({ tab: 'DIY', name: 'My machine', order: 10, Component: makeMine(theme, okc, remember) });
-    shell.pane({ tab: 'DIY', name: 'Work', order: 20, Component: makeWork(theme, okc, remember) });
+    shell.pane({ tab: 'DIY', name: 'My work', order: 10, Component: makeTasks(theme) });
 
     await register(null, {});
 }
