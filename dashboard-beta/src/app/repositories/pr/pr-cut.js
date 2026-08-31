@@ -187,15 +187,33 @@ module.exports = function cuts(theme, okc, remember, shell) {
         var forSource = wants && wants.source;
         var forTarget = wants && wants.target;
 
+        //---- AND THE TYPED HALF HAS TO BE HANDED OVER ---------------------
+        //
+        //THE NOTE ABOVE SAYS "typed PLUS every block" AND THIS ASKED FOR
+        //NEITHER-PLUS-BLOCKS. `prTemplatePreview` composes from `body`, and
+        //this call left it out — so the preview showed the blocks and dropped
+        //the paragraph somebody wrote, which is the mirror image of the fault
+        //the note was written against and just as wrong.
+        //
+        //IT IS INVISIBLE UNLESS YOU KNOW WHAT YOU TYPED. What is drawn is a
+        //complete, plausible pull request; the only sign is that it opens with
+        //a heading the app wrote instead of the sentence you did. And this is
+        //the screen where the decision to publish is made.
+        //
+        //New PR Cut NEVER HIT IT because it joins the typed half in the window
+        //as you type, so its preview never lags a keystroke — see `text` there.
+        //Only the pane that reads a KEPT draft has to send it.
+        var forBody = wants && wants.body;
+
         useEffect(function () {
             if (!forSource || !forTarget) { setComposed(null); return; }
             var gone = false;
             setComposed({ asking: true });
-            okc.call('prTemplatePreview', { source: forSource, target: forTarget })
+            okc.call('prTemplatePreview', { source: forSource, target: forTarget, body: forBody || undefined })
                 .then(function (v) { if (!gone) setComposed(v); },
                     function (e) { if (!gone) setComposed({ why: e.message }); });
             return function () { gone = true; };
-        }, [forSource, forTarget]);
+        }, [forSource, forTarget, forBody]);
 
         if (!got && !drafts && !err) return <Pane><Skeleton rows={4} /></Pane>;
 
@@ -582,6 +600,23 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                 : null}
                         </Panel>
 
+                        <h2>The story <span className="muted">{on ? '— newest first' : ''}</span></h2>
+                        {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
+                            <Panel>
+                                {/* A VERTICAL TIMELINE: what came IN from GitHub (a
+                                    tag, a maintainer's comment), what went OUT in the
+                                    person's name (a reply, the pull request, a push),
+                                    what the supervisor said at each waking, and the
+                                    tasks and judgements between. Newest at the top --
+                                    where it stands now -- and the initiator at the
+                                    bottom. The composer is beside the server, in the pr plugin. */}
+                                <StoryList story={story} empty="Nothing is recorded about this cut yet." />
+                            </Panel>
+                        )}
+                        {got && got.note ? <Note>{got.note}</Note> : null}
+                    </Col>
+
+                    <Col wide>
                         <h2>What it is</h2>
                         {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
                             <div>
@@ -647,23 +682,6 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                     )}
                             </div>
                         )}
-                    </Col>
-
-                    <Col wide>
-                        <h2>The story <span className="muted">{on ? '— newest first' : ''}</span></h2>
-                        {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
-                            <Panel>
-                                {/* A VERTICAL TIMELINE: what came IN from GitHub (a
-                                    tag, a maintainer's comment), what went OUT in the
-                                    person's name (a reply, the pull request, a push),
-                                    what the supervisor said at each waking, and the
-                                    tasks and judgements between. Newest at the top --
-                                    where it stands now -- and the initiator at the
-                                    bottom. The composer is beside the server, in the pr plugin. */}
-                                <StoryList story={story} empty="Nothing is recorded about this cut yet." />
-                            </Panel>
-                        )}
-                        {got && got.note ? <Note>{got.note}</Note> : null}
                     </Col>
                 </Cols>
             </Pane>

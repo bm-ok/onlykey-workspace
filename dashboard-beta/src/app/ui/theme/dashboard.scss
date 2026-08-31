@@ -642,6 +642,26 @@ main { padding: 16px; }
 .col.narrow { flex: 0 1 260px; }
 .col.wide { flex: 1.6 1 0; }
 
+/* A COLUMN THAT IS NOT A COLUMN OF CONTENT.
+ *
+ * `narrow` and `wide` both keep the 260px minimum, because what is in them is
+ * meant to be read. This one holds a single mark between two columns — the
+ * arrow on New PR Cut, saying which way the change travels — and a 260px
+ * minimum for one glyph pushes the two sides apart by a quarter of the pane.
+ *
+ * Centred in both directions, so the mark sits against the middle of the pair
+ * rather than at the top of a tall column. */
+/* A FIXED WIDTH RATHER THAN THE GLYPH'S. It is used once per row AND once in
+ * the heading above them, and an empty one collapsing to nothing would put the
+ * headings out of step with the rows they name. */
+.col.thin {
+  flex: 0 0 24px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* TWO CONTAINERS IN ONE COLUMN, WITH NOTHING BETWEEN THEM.
  *
  * Spacing here was a property of the CONTAINER and never of the column: .stack
@@ -743,6 +763,11 @@ main { padding: 16px; }
 @media (max-width: 1100px) {
   .cols { flex-wrap: wrap; }
   .col, .col.narrow, .col.wide { flex: 1 1 320px; }
+  /* NOT `thin`, WHICH WOULD TAKE A ROW OF ITS OWN. Once the pair has wrapped
+   * onto two rows the arrow no longer points across anything, so it stays the
+   * width of its glyph and sits between them rather than becoming a third
+   * 320px column with one character in it. */
+  .col.thin { flex: 0 0 auto; }
 }
 
 .stack { display: flex; flex-direction: column; gap: 8px; }

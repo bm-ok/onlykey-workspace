@@ -32,7 +32,7 @@ var { useState, useEffect, useRef } = React;
 module.exports = function writer(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, Head, Card, CardTitle, CardSub,
-        Badge, Button, Skeleton, Empty, Note, Markdown, Form, Field, Notice, ask, ago
+        Badge, Button, Skeleton, Empty, Note, Markdown, Form, Field, Notice, Views, Mono, Muted, ask, ago
     } = theme;
 
     return function NewPRCut() {
@@ -203,6 +203,145 @@ module.exports = function writer(theme, okc, remember) {
         var text = [typed, v && v.additions].filter(Boolean).join('\n\n---\n\n');
         var existing = v && v.existing && v.existing.count;
 
+        //---- WHAT THE TWO NAMES ACTUALLY ARE --------------------------------
+        //
+        //"default branches" INTO "dashboard/setup" SAYS NOTHING. They are names
+        //somebody typed, and the pane asked for a decision about publishing on
+        //the strength of two of them. What is this? Where is it? Where is it
+        //going? None of it was on the screen, and all of it was already in
+        //hand.
+        //
+        //ONE CARD PER REPOSITORY, PER SIDE — the address, the branch, and the
+        //commit it is at. A line is one branch per repository; this is that
+        //sentence drawn rather than asserted.
+        //
+        //ONLY THE REPOSITORIES IN THE CUT. A line names all nine here and two
+        //of them carry work, so listing nine would bury the two that are about
+        //to become pull requests.
+        function hashOf(lineName, repo) {
+            var g = usable.filter(function (x) { return x.name === lineName; })[0];
+            var p = ((g && g.on) || []).filter(function (x) { return x.repo === repo; })[0];
+            return (p && p.at) || null;
+        }
+
+        function sideCard(w, side) {
+            var addr = side === 'from' ? w.from : w.into;
+            var branch = side === 'from' ? w.branch : w.base;
+            var at = hashOf(side === 'from' ? pickFrom : pickInto, w.repo);
+
+            return (
+                <Card key={w.repo}>
+                    <CardTitle>
+                        {addr
+                            ? <Mono>{addr}</Mono>
+                            : <Badge kind="warn">nothing picked</Badge>}
+                    </CardTitle>
+                    <CardSub>
+                        <Mono>{branch}</Mono>
+                        {at ? <span>{' '}<Muted>{at}</Muted></span> : null}
+                        {side === 'into' && !addr
+                            ? <span>{' '}<Muted>{w.intoWhy}</Muted></span>
+                            : null}
+                    </CardSub>
+                </Card>
+            );
+        }
+
+        //---- WHERE THE PULL REQUEST BEING READ WILL OPEN --------------------
+        //
+        //TWO FACTS, AND THE PANE SHOWED NEITHER. `into <line>` names the BRANCH
+        //it lands on; the REMOTE it opens against is chosen per repository and
+        //lived only on another tab. Somebody about to open pull requests on
+        //somebody else's GitHub could not see whose.
+        //
+        //A REPOSITORY WITH NOTHING PICKED IS THE ONE THAT MATTERS. `where`
+        //answers `into: null` and says where it is chosen, and a cut carrying
+        //one of those cannot fully land — which is worth knowing before the
+        //press rather than from GitHub afterwards.
+        function whereThisOpens(v) {
+            var shown = as || v.showing;
+            var w = (v.where || []).filter(function (r) { return r.repo === shown; })[0];
+            if (!w) return null;
+
+            if (!w.into) {
+                return (
+                    <Note>
+                        <Badge kind="warn">no remote picked</Badge>{' '}
+                        This one has nowhere to open: {w.intoWhy || 'nothing is chosen for it'}.
+                    </Note>
+                );
+            }
+
+            //CROSSING IS WORTH ITS OWN WORD. Opening against somebody else's
+            //fork is a different act from opening against your own, and the
+            //answer already knows which this is.
+            return (
+                <Note>
+                    Opens on <Mono>{w.into}</Mono>, into <Mono>{w.base}</Mono>
+                    {w.crossing ? <span>{' '}<Badge kind="warn">not your own fork</Badge></span> : null}.
+                </Note>
+            );
+        }
+
+        //---- THE PRESS THAT GETS PAST AN EMPTY PANE -------------------------
+        //
+        //SAYING WHAT IS MISSING IS NOT THE SAME AS OFFERING IT. This pane knew
+        //perfectly well that it needed a line and told somebody to go to
+        //another tab and make one — which is the pane stopping them at the
+        //exact moment it could have helped.
+        //
+        //IT IS THE SAME `lineSave` THE LINES PANE OFFERS, with nothing to go on,
+        //which takes what each repository is on now. That is almost always the
+        //thing missing here: work is cut FROM the heads and lands back INTO
+        //them, so the target line is the one nobody thought to name.
+        //
+        //IT ASKS FOR A NAME AND CANNOT DEFAULT ONE. The repositories are on
+        //`master`, `main` and `heroku-deploy` here — there is no single branch
+        //name to call it after, which is exactly why a line needs a name of its
+        //own. The Branches Lines pane says the same thing at its own door.
+        //
+        //NAMED IN WORDS RATHER THAN AS A PATH. That file's name ends with the
+        //same word as the `lines` hook in this one, so writing the path here put
+        //`<hook>.<something>` into a comment — and
+        //../../../test/rules/ask-hook-shape.test.js reads it as a property on
+        //the hook, which hands back only state, error, reads and again. A rule
+        //that scans text cannot tell a filename from a call, and of the two the
+        //comment is the cheaper half to change.
+        function nameTheHeads() {
+            var heads = (lines.state && lines.state.repos) || [];
+            if (!heads.length) return null;
+
+            return (
+                <Button kind="ok" onClick={function () {
+                    ask({
+                        title: 'Name what each repository is on now',
+                        plain: [
+                            'This makes a line out of the branch each repository is currently on — '
+                                + heads.map(function (r) { return r.repo + ' on ' + r.on; }).join(', ') + '.',
+                            'That is where work lands, so it is what a pull request goes INTO. Nothing '
+                                + 'moves and nothing is pushed.'
+                        ],
+                        fields: [
+                            { name: 'name', label: 'Call it', needed: true,
+                                hint: 'They are not all on the same branch name, so this needs one of its own.' },
+                            { name: 'why', label: 'What it is for', hint: 'Optional.' }
+                        ],
+                        confirm: 'Name it',
+                        onYes: function (f) {
+                            return okc.call('lineSave', { name: f.name, why: f.why || undefined }).then(
+                                function () {
+                                    setSaid({ text: '“' + f.name + '” is a line now. Pick it on the right to '
+                                        + 'send a change into it.' });
+                                    lines.again();
+                                },
+                                function (e) { setSaid({ kind: 'bad', text: e.message }); throw e; }
+                            );
+                        }
+                    });
+                }}>Name what each repository is on now</Button>
+            );
+        }
+
         //A SELECT WITH NOTHING IN IT IS A CONTROL THAT LOOKS BROKEN. An empty
         //dropdown gives a person nothing to read and nothing to press, and no
         //way to tell it apart from one that failed to load — which is how this
@@ -221,6 +360,78 @@ module.exports = function writer(theme, okc, remember) {
                     the cut&rsquo;s own pull requests, which nothing else can write.
                 </Note>
                 {said ? <Notice kind={said.kind} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
+
+                {/*---- WHICH TWO LINES, ABOVE BOTH COLUMNS ------------------
+
+                    IT LIVED IN THE RIGHT-HAND COLUMN'S HEADING, pushed to the
+                    far end of it by a `grow`. So the one decision this pane is
+                    about — what is being sent, and where — was two unlabelled
+                    dropdowns in a corner, while six cards of template
+                    configuration held the whole left side.
+
+                    IT IS NOT PART OF EITHER COLUMN. The left column is what
+                    every pull request says; the right is the one being
+                    written. The PAIR is what both of them are about, so it
+                    belongs above them rather than inside one. */}
+                <Head>
+                    <span>From</span>
+                    <select value={pickFrom || ''} onChange={function (e) { setFrom(e.target.value); asked.current = null; filled.current = null; }}>
+                        {lineOptions().map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option>; })}
+                    </select>
+                    <span className="muted">into</span>
+                    <select value={pickInto || ''} onChange={function (e) { setInto(e.target.value); asked.current = null; filled.current = null; }}>
+                        {lineOptions().map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option>; })}
+                    </select>
+                    <span className="grow" />
+                </Head>
+
+                {/*---- AND WHAT THOSE TWO NAMES ARE, SIDE BY SIDE -----------
+
+                    THE PAIR OF DROPDOWNS IS AN ABSTRACTION over eighteen real
+                    things: nine branches on one side and nine on the other.
+                    Picking between two names and pressing publish is a decision
+                    made without seeing any of them.
+
+                    SO THE TWO SIDES ARE DRAWN. Left is what is being sent,
+                    right is where each one lands — the address, the branch, and
+                    the commit each is at, which is the whole of what a line is.
+                    A repository with no destination shows that here rather than
+                    only in the tab below. */}
+                {v && (v.where || []).length ? (
+                    <React.Fragment>
+                        <Cols>
+                            <Col><Head><span>What is being sent</span></Head></Col>
+                            <Col thin />
+                            <Col><Head><span>Where each one lands</span></Head></Col>
+                        </Cols>
+
+                        {/*---- ONE ROW PER REPOSITORY, AND THE ARROW IN IT ---
+
+                            AS TWO COLUMNS WITH ONE ARROW BESIDE THEM, the arrow
+                            pointed at the pair rather than at a pair: it said
+                            the right-hand column comes from the left-hand one,
+                            and left somebody to line the rows up by eye.
+
+                            EACH ROW IS THE UNIT, because each row IS a pull
+                            request — this repository, at this commit, going
+                            onto that one. The arrow belongs between those two
+                            and nowhere else, and building it this way is also
+                            what keeps the pair level: they are siblings in one
+                            row rather than the nth item of two stacks that
+                            happen to be beside each other. */}
+                        <Stack>
+                            {(v.where || []).map(function (w) {
+                                return (
+                                    <Cols key={w.repo}>
+                                        <Col>{sideCard(w, 'from')}</Col>
+                                        <Col thin><Muted>→</Muted></Col>
+                                        <Col>{sideCard(w, 'into')}</Col>
+                                    </Cols>
+                                );
+                            })}
+                        </Stack>
+                    </React.Fragment>
+                ) : null}
 
                 <Cols>
                     <Col narrow>
@@ -253,22 +464,25 @@ module.exports = function writer(theme, okc, remember) {
                     </Col>
 
                     <Col wide>
-                        <Head>
-                            <span>The pull request</span>
-                            <span className="grow" />
-                            <select value={pickFrom || ''} onChange={function (e) { setFrom(e.target.value); asked.current = null; filled.current = null; }}>
-                                {lineOptions().map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option>; })}
-                            </select>
-                            <span className="muted">into</span>
-                            <select value={pickInto || ''} onChange={function (e) { setInto(e.target.value); asked.current = null; filled.current = null; }}>
-                                {lineOptions().map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option>; })}
-                            </select>
-                            {v && (v.repos || []).length > 1 ? (
-                                <select value={as || v.showing || ''} onChange={function (e) { setAs(e.target.value); asked.current = null; }}>
-                                    {(v.repos || []).map(function (rp) { return <option key={rp} value={rp}>{'as ' + rp}</option>; })}
-                                </select>
-                            ) : null}
-                        </Head>
+                        <Head><span>The pull request</span></Head>
+
+                        {/*---- WHAT IS THE SAME ON ALL OF THEM, ABOVE THE TABS
+
+                            ONE TITLE GOES ON EVERY PULL REQUEST IN THE CUT, so
+                            it does not belong inside a tab. Under one it reads
+                            as that repository's title, and typing it while
+                            looking at `node-onlykey-emulator` gives no sign it
+                            is also about to be the title on `onlykey-testing`.
+
+                            SO THE LINE IS WHERE THE TAB IS. Above it, shared;
+                            below it, that repository's own. */}
+                        {v ? (
+                            <Form>
+                                <Field f={{ label: 'Title — one sentence on every pull request in the cut', placeholder: 'what this change is' }}
+                                    value={title}
+                                    onChange={function (x) { setTitle(x); keep(x, body); }} />
+                            </Form>
+                        ) : null}
 
                         {/*---- THREE WAYS TO HAVE NO PAIR, AND THEY ARE NOT THE
                             SAME ---------------------------------------------
@@ -286,14 +500,19 @@ module.exports = function writer(theme, okc, remember) {
                             missing and where it is fixed; this one did not. */}
                         {!names.length ? (
                             <Empty>
-                                No lines have been named in this workspace yet, so there is nothing to
-                                compare. A line is one branch per repository, held together under a name —
-                                name one on Repositories → Branches Lines, and a second to send it into.
+                                <p>
+                                    No lines have been named in this workspace yet, so there is nothing to
+                                    compare. A line is one branch per repository, held together under a name.
+                                </p>
+                                <p>{nameTheHeads()}</p>
                             </Empty>
                         ) : names.length < 2 ? (
                             <Empty>
-                                Only one line is named here — “{names[0]}”. A pull request goes from one line
-                                into another, so there is nothing to send it to yet.
+                                <p>
+                                    Only one line is named here — “{names[0]}”. A pull request goes from one
+                                    line into another, so there is nowhere to send it yet.
+                                </p>
+                                <p>{nameTheHeads()}</p>
                             </Empty>
                         ) : !pickFrom || !pickInto || pickFrom == pickInto ? (
                             <Empty>Two different lines are needed to preview what a pull request between them would say.</Empty>
@@ -303,8 +522,6 @@ module.exports = function writer(theme, okc, remember) {
                             <Skeleton rows={4} />
                         ) : (
                             <React.Fragment>
-                                <Note>{v.note}</Note>
-
                                 {/* INSIDE A Form, WHICH IS NOT DECORATION. `Field`
                                     draws a bare <label> and a bare <input>; every
                                     rule that stacks them, sizes them and colours
@@ -314,14 +531,58 @@ module.exports = function writer(theme, okc, remember) {
                                     and white -- which is exactly what the first
                                     photograph of this pane showed. */}
                                 <Form>
-                                    <Field f={{ label: 'Title — one sentence on every pull request in the cut', placeholder: 'what this change is' }}
-                                        value={title}
-                                        onChange={function (x) { setTitle(x); keep(x, body); }} />
                                     <Field f={{ label: 'What you want to say — everything below is added by the blocks on the left', multiline: true, rows: 8, placeholder: 'Left blank, the blocks speak for themselves.' }}
                                         value={body}
                                         onChange={function (x) { setBody(x); keep(title, x); }} />
                                 </Form>
                                 {kept ? <Note>{kept}</Note> : null}
+
+                                {/*---- AND BELOW WHAT YOU TYPE, ONE TAB PER
+                                    PULL REQUEST BEING MADE ------------------
+
+                                    IT WAS A DROPDOWN SAYING "as node-onlykey-
+                                    emulator", which reads as a setting rather
+                                    than as what it is: this cut opens ONE PULL
+                                    REQUEST PER REPOSITORY, and that control
+                                    picks which of them is being read. A
+                                    dropdown hides the others, so how many were
+                                    about to be opened was behind a menu.
+
+                                    AND IT SITS UNDER THE WRITING, not over it,
+                                    because everything above is the SAME on all
+                                    of them — one title, one body — and the tab
+                                    changes only what is shown beneath it. Above
+                                    the tabs, shared; below them, that
+                                    repository's own reading of it.
+
+                                    ONLY WHEN THERE IS MORE THAN ONE. A lone tab
+                                    is a label pretending to be a control. */}
+                                {(v.repos || []).length > 1 ? (
+                                    <Views names={v.repos || []} on={as || v.showing || ''}
+                                        onPick={function (rp) { setAs(rp); asked.current = null; }} />
+                                ) : null}
+
+                                {/*---- AND WHERE THIS ONE ACTUALLY OPENS -----
+
+                                    THE PANE NEVER SAID WHOSE FORK IT LANDS ON.
+                                    "into <line>" is the BRANCH side — master,
+                                    main, heroku-deploy — and which REMOTE a
+                                    pull request opens against is a different
+                                    fact entirely, decided per repository on
+                                    Repositories → Repos → Where work goes.
+                                    Both were invisible here, so the one thing
+                                    you cannot undo was the one thing the pane
+                                    would not tell you.
+
+                                    AND IT IS OFTEN NOT PICKED. `where` already
+                                    answers `into: null` with a reason for any
+                                    repository nobody chose one for — a cut with
+                                    one of those in it is a cut that cannot
+                                    fully land, and finding that out afterwards
+                                    is finding it out from GitHub. */}
+                                {whereThisOpens(v)}
+
+                                <Note>{v.note}</Note>
 
                                 {!v.text && !v.additions ? (
                                     <Empty>{v.note}</Empty>

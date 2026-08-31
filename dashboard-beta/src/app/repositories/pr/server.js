@@ -1225,11 +1225,12 @@ async function plugin(imports, register) {
                 var kept = ((await landings()).read({}) || {})[key(source, target)] || null;
                 var real = (kept && kept.pulls ? kept.pulls : []).filter(function (p) { return p.number; });
 
+                //THE PLACEHOLDER IS BUILT BELOW, once the destinations are
+                //known — see `pulls` after `where`. The numbers are the only
+                //part that genuinely cannot exist yet.
                 var pulls = real.length
                     ? real.map(function (p) { return { repo: p.repo, number: p.number, url: p.url }; })
-                    : pair.on.map(function (r) {
-                        return { repo: r.repo, number: '?', url: 'https://github.com/…/pull/?  (' + r.repo + ')' };
-                    });
+                    : null;
 
                 var on = pair.on.map(function (r) { return r.repo; });
                 var which = a.repo && on.indexOf(a.repo) >= 0 ? a.repo : on[0];
@@ -1291,6 +1292,36 @@ async function plugin(imports, register) {
                         crossing: !!(mine && into && into !== mine),
                         fromUrl: mine ? 'https://github.com/' + mine : null,
                         intoUrl: into ? 'https://github.com/' + into : null
+                    });
+                }
+
+                //---- AND THE LINKS, NOW THAT THE DESTINATIONS ARE KNOWN ------
+                //
+                //IT WAS `https://github.com/…/pull/?` FOR EVERY REPOSITORY, and
+                //the elision was doing no work: the owner and name of the
+                //repository a pull request opens on is exactly what `where`
+                //just worked out. Only the NUMBER cannot be known before the
+                //cut exists, so only the number is a question mark.
+                //
+                //IT READS AS A BROKEN LINK, which is how it was reported. A
+                //preview whose whole job is being believed cannot afford a line
+                //that looks like a fault — and this one is in the block that
+                //links the cut's pull requests to each other, so it is the part
+                //a reader of the finished pull request will follow.
+                //
+                //NOTHING PICKED SAYS SO INSTEAD. A repository with no
+                //destination has no address to show, and `…` in its place hid
+                //the fact that this half of the cut cannot open at all.
+                if (!pulls) {
+                    pulls = pair.on.map(function (r) {
+                        var to = (where.filter(function (w) { return w.repo === r.repo; })[0] || {}).into;
+                        return {
+                            repo: r.repo,
+                            number: '?',
+                            url: to
+                                ? 'https://github.com/' + to + '/pull/?'
+                                : '(no remote picked for ' + r.repo + ')'
+                        };
                     });
                 }
 

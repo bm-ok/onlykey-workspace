@@ -31,8 +31,20 @@ function Cols({ children }) { return <div className="cols">{children}</div>; }
 //flex rules, narrower minimum, so three fit before they wrap.
 function Cols3({ children }) { return <div className="cols3">{children}</div>; }
 
-function Col({ narrow, wide, children }) {
-    return <div className={'col' + (narrow ? ' narrow' : '') + (wide ? ' wide' : '')}>{children}</div>;
+//`thin` IS NOT A NARROWER `narrow`. The other two are columns of content and
+//keep a minimum width so what is in them stays readable; this one holds a mark
+//BETWEEN two columns — an arrow saying which way the thing goes — and wants to
+//be exactly as wide as that mark and no wider.
+//
+//IT IS HERE RATHER THAN AS A STYLE ON THE PANE because a pane never names a CSS
+//class: the one rule that keeps a misspelt class from being this app's quietest
+//failure. A layout the kit cannot express is a gap in the kit.
+function Col({ narrow, wide, thin, children }) {
+    return (
+        <div className={'col' + (narrow ? ' narrow' : '') + (wide ? ' wide' : '') + (thin ? ' thin' : '')}>
+            {children}
+        </div>
+    );
 }
 
 //A column of things with air between them.
