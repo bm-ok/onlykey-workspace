@@ -96,7 +96,13 @@ module.exports = function openEditor(deps) {
     //WHAT VS CODE ALREADY HAS OPEN, and whether it still works. Injected the
     //same way everything else here is, so a test can answer for it without a
     //VS Code on the machine and without closing anything.
-    var stale = d.stale || makeStale({ exec: exec, platform: platform });
+    //
+    //`launchSpec` GOES WITH IT, because asking VS Code a question is starting
+    //VS Code, and on Windows that means going through cmd.exe — see the top of
+    //this file. Without it every `--status` threw EINVAL before it started and
+    //answered "nothing open", which is indistinguishable from the truth on a
+    //machine that has nothing open.
+    var stale = d.stale || makeStale({ exec: exec, platform: platform, spec: launchSpec });
 
     //---- where the editor actually is, and how that was decided ------------
     //

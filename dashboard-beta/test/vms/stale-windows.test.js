@@ -120,6 +120,32 @@ test('and a close that fails is reported rather than thrown', () => {
     });
 });
 
+test('asking goes through cmd.exe on Windows, because node will not start a .cmd', () => {
+    //THE TRAP THIS APP ALREADY KNEW ABOUT AND THIS WALKED INTO ANYWAY. node
+    //refuses to spawn a `.cmd` and throws EINVAL SYNCHRONOUSLY — it is the first
+    //thing ../../src/app/vms/editor/open-editor.js says at the top of the file,
+    //and it is why `launchSpec` exists.
+    //
+    //ASKING WITHOUT IT FAILED SILENTLY. The throw was caught and answered
+    //"nothing open" — which is also the true answer on a machine that has
+    //nothing open, so the whole feature was a no-op on Windows and looked
+    //exactly like working. It was noticed the first time somebody pressed the
+    //button, not by any test, because the tests around `open` inject a stale
+    //stub and never reach this call.
+    const ran = [];
+    const stale = makeStale({
+        platform: 'win32',
+        spec: (command, args) => ({ file: 'C:/Windows/cmd.exe', argv: ['/c', command].concat(args) }),
+        exec: (file, argv, opts, done) => { ran.push([file].concat(argv).join(' ')); done(null, STATUS); }
+    });
+
+    return stale.look('C:/x/code-insiders.cmd', 'okc-ok-diy1').then((seen) => {
+        assert.deepEqual(ran, ['C:/Windows/cmd.exe /c C:/x/code-insiders.cmd --status'],
+            'it asked without going through cmd.exe, which throws EINVAL on a .cmd');
+        assert.equal(seen.windows.length, 1, 'it did not read the answer it got');
+    });
+});
+
 test('asking VS Code and being refused is an empty answer, not a failure', () => {
     //NOT BEING ABLE TO ASK is not a reason to refuse to open an editor. It is a
     //reason to do what this app did before any of this existed.

@@ -81,6 +81,24 @@ module.exports = function staleWindows(deps) {
     var exec = d.exec || cp.execFile;
     var platform = d.platform || process.platform;
 
+    //---- THE SAME WAY THE EDITOR IS LAUNCHED, AND FOR THE SAME REASON --------
+    //
+    //NODE REFUSES TO SPAWN A `.cmd` AND THROWS EINVAL SYNCHRONOUSLY. That is
+    //the first thing ./open-editor.js says at the top of the file, it is why
+    //`launchSpec` exists, and this asked for `--status` without it: on Windows
+    //the editor is `code-insiders.cmd`, so every status call threw before it
+    //started, was caught here, and answered "nothing open".
+    //
+    //WHICH IS THE WORST POSSIBLE ANSWER, because it is also the true one on a
+    //machine with nothing open — so the whole feature was a no-op on Windows
+    //and looked exactly like a machine that had no stale window. It shipped and
+    //was noticed the first time somebody pressed the button.
+    //
+    //HANDED IN RATHER THAN COPIED. `launchSpec` belongs to the file that
+    //launches things; a second version of "how do you run a command on this
+    //platform" is the drift that produced this.
+    var spec = d.spec || function (command, args) { return { file: command, argv: args }; };
+
     //ASKING COSTS A SUBPROCESS, so it is only ever asked immediately before an
     //editor is launched at a particular machine — never on a read a pane makes.
     function look(exe, alias) {
@@ -88,11 +106,13 @@ module.exports = function staleWindows(deps) {
             var done = false;
             var finish = function (v) { if (!done) { done = true; resolve(v); } };
 
+            var how = spec(exe, ['--status']);
+
             //IT NEVER REJECTS. Not being able to ask VS Code what it has open is
             //not a reason to refuse to open an editor — it is a reason to do
             //what this app did before there was any of this.
             try {
-                exec(exe, ['--status'], { windowsHide: true, timeout: 20000 }, function (err, out) {
+                exec(how.file, how.argv, { windowsHide: true, timeout: 20000 }, function (err, out) {
                     if (err && !out) return finish(read('', alias));
                     finish(read(out, alias));
                 });
