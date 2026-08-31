@@ -3,6 +3,11 @@ var path = require('path');
 var cp = require('child_process');
 var makePlatforms = require('./remote-platform');
 
+//WHAT VS CODE ALREADY HAS OPEN ON THIS MACHINE, and whether it still works.
+//See ./stale-windows.js: a window left over from before a rollback holds a dead
+//connection for three hours and swallows every later launch aimed at that host.
+var makeStale = require('./stale-windows');
+
 //---------------------------------------------------------------------------
 //OPENING THE WORK IN VS CODE, WHEREVER THE WORK IS.
 //
@@ -53,6 +58,13 @@ var UNIX = ['/usr/bin/code', '/usr/local/bin/code', '/snap/bin/code', '/usr/bin/
 //has genuinely started.
 var GRACE_MS = 1500;
 
+//HOW LONG A CLOSING WINDOW IS GIVEN before the replacement is launched.
+//The new launch is aimed at the host the old window still holds, which is
+//the whole thing being avoided -- so it waits for the close to land rather
+//than racing it. Short, because it is a window being asked to close and not
+//a machine being asked to boot.
+var CLOSE_MS = 1200;
+
 module.exports = function openEditor(deps) {
     var d = deps || {};
 
@@ -80,6 +92,11 @@ module.exports = function openEditor(deps) {
         env: env, platform: platform, there: there, say: say,
         readFile: d.readFile, writeFile: d.writeFile, home: d.home
     });
+
+    //WHAT VS CODE ALREADY HAS OPEN, and whether it still works. Injected the
+    //same way everything else here is, so a test can answer for it without a
+    //VS Code on the machine and without closing anything.
+    var stale = d.stale || makeStale({ exec: exec, platform: platform });
 
     //---- where the editor actually is, and how that was decided ------------
     //
@@ -190,16 +207,29 @@ module.exports = function openEditor(deps) {
     //inside a folder and shows each repository's status, so opening the tree
     //that holds them gives all of them with no file to generate — and it means
     //the editor never needs to know what the work spans.
-    function open(input) {
+    //`how.window` IS 'new' OR 'focus', and it is decided by `open` below from
+    //what VS Code says it already has open. This half only launches.
+    function launch(input, how) {
         var it = input || {};
         if (!it.dir) throw new Error('There is no folder to open.');
 
         var found = discover(it.command);
         var exe = found.command;
 
+        //---- FOCUSING IS THE ABSENCE OF A FLAG, NOT A FLAG ------------------
+        //
+        //VS Code opens a folder in the window that already has it — focusing
+        //that window — unless it is told otherwise, which is exactly the wanted
+        //behaviour when the connection is healthy.
+        //
+        //NOT `--reuse-window`. That forces the LAST ACTIVE window, which is
+        //whichever one somebody happened to click on last: it would take a
+        //window full of somebody else's work and replace it with this one.
+        var where = (how && how.window === 'focus') ? [] : ['--new-window'];
+
         var args = it.remote
-            ? ['--folder-uri', folderUri(it.remote, it.dir), '--new-window']
-            : [it.dir, '--new-window'];
+            ? ['--folder-uri', folderUri(it.remote, it.dir)].concat(where)
+            : [it.dir].concat(where);
 
         var spec = launchSpec(exe, args);
         var to = say.apply(null, ['editor'].concat(it.tags || []));
@@ -275,6 +305,10 @@ module.exports = function openEditor(deps) {
                 if (settled) return;
                 to.good('VS Code was asked to open it.');
                 finish(resolve, { opened: it.dir, on: it.remote || null, using: exe, found: found.from,
+                //WHICH OF THE THREE IT DID, so a caller can say so rather than
+                //reporting every press as the same act — see `open` below.
+                window: (how && how.window) || 'new',
+                closed: (how && how.closed) || [],
                 platform: platformSaid.added ? 'told VS Code it is Linux' : platformSaid.why });
             };
 
@@ -310,6 +344,65 @@ module.exports = function openEditor(deps) {
         });
     }
 
+    //---- AND WHICH OF THE THREE THIS PRESS IS --------------------------------
+    //
+    //ASKED OF VS CODE, ONCE, IMMEDIATELY BEFORE LAUNCHING. `--status` names the
+    //windows it has open and the connections it could not establish, per host —
+    //see ./stale-windows.js for the shape and for what happens without this.
+    //
+    //  nothing open for this machine   a new window
+    //  open and connected              FOCUS it; opening a second window on the
+    //                                  same folder is not what the button means
+    //  open and the connection dead    CLOSE it and open a new one. It cannot
+    //                                  reconnect on its own — it is sitting in
+    //                                  "Cannot reconnect. Please reload the
+    //                                  window." with three hours of grace — and
+    //                                  while it is there every launch aimed at
+    //                                  that host does nothing at all.
+    //
+    //ONLY WHEN THE CONNECTION IS DEAD IS ANYTHING CLOSED. A window somebody is
+    //working in is never touched: both a window for this host AND a failure
+    //VS Code reports for this host are required.
+    //
+    //AND ONLY FOR A REMOTE. A local folder has no host to have a window for.
+    function open(input) {
+        var it = input || {};
+        if (!it.dir) throw new Error('There is no folder to open.');
+        if (!it.remote) return launch(it, { window: 'new' });
+
+        var exe = discover(it.command).command;
+        var to = say.apply(null, ['editor'].concat(it.tags || []));
+
+        return stale.look(exe, it.remote).then(function (seen) {
+            if (!seen.windows.length) return launch(it, { window: 'new' });
+
+            if (!seen.dead) {
+                to.info('VS Code already has ' + it.remote + ' open and connected — bringing that window forward');
+                return launch(it, { window: 'focus' });
+            }
+
+            to.warn('the VS Code window on ' + it.remote + ' cannot reconnect — closing it and opening a new one');
+
+            return Promise.all(seen.windows.map(function (w) { return stale.close(w.pid); }))
+                .then(function (closed) {
+                    var stuck = closed.filter(function (c) { return !c.closed; });
+                    if (stuck.length) {
+                        //SAID, AND STILL LAUNCHED. A window that would not close
+                        //is worth knowing about, and refusing to open an editor
+                        //over it would leave somebody with nothing.
+                        to.warn('could not close ' + stuck.length + ' of them: '
+                            + stuck.map(function (c) { return c.why; }).join('; '));
+                    }
+
+                    //A MOMENT FOR IT TO GO. The launch that follows is aimed at
+                    //the host the closing window still holds, and that is the
+                    //whole thing being avoided.
+                    return new Promise(function (r) { after(CLOSE_MS, r); })
+                        .then(function () { return launch(it, { window: 'new', closed: closed }); });
+                });
+        });
+    }
+
     return {
         open: open,
         //HANDED OUT so the DIY press can say whether it wrote the entry, and so
@@ -323,4 +416,5 @@ module.exports = function openEditor(deps) {
 };
 
 module.exports.GRACE_MS = GRACE_MS;
+module.exports.CLOSE_MS = CLOSE_MS;
 module.exports.EDITORS = EDITORS;

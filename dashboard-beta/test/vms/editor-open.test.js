@@ -25,6 +25,10 @@ const makeEditor = require('../../src/app/vms/editor/open-editor');
 
 let spawned, fake, clock, said, files, wrote;
 
+//WHAT `code --status` IS PRETENDING TO SAY, and which windows were asked to
+//close. Set per test; the default is a machine VS Code has nothing open on.
+let staleSays, closed;
+
 function fakeChild() {
     const c = new EventEmitter();
     c.unref = () => { c.unreffed = true; };
@@ -55,6 +59,18 @@ function editor(over) {
         readFile: () => { throw new Error('a test read the real settings.json'); },
         writeFile: (p, text) => { wrote.push({ file: p, text: text }); },
         platform: 'win32',
+        //WHAT VS CODE ALREADY HAS OPEN, ANSWERED HERE. `open` asks before it
+        //launches — see ../../src/app/vms/editor/stale-windows.js — and the real
+        //one runs `code --status` through the same `exec` this harness fakes,
+        //which records the call and never answers it. Left on the default, every
+        //remote case in this file would wait for a callback that never comes.
+        //
+        //NOTHING OPEN IS THE DEFAULT, which is what every case written before
+        //this assumed and still means: a new window.
+        stale: {
+            look: async () => staleSays,
+            close: async (pid) => { closed.push(pid); return { pid: pid, closed: true }; }
+        },
         after: (ms, fn) => { const t = { ms, fn, live: true }; clock.push(t); return t; },
         clear: (t) => { if (t) t.live = false; },
         say: () => {
@@ -81,6 +97,13 @@ function within(what, p) {
     ]);
 }
 
+//A REMOTE OPEN ASKS BEFORE IT LAUNCHES. `open` runs `code --status` first to
+//see what VS Code already has open on that machine -- see
+//../../src/app/vms/editor/stale-windows.js -- so for a remote the spawn happens
+//a turn later than it used to. `settle` is that turn, and it is a macrotask so
+//it lands after every promise the question is made of.
+const settle = () => new Promise((r) => setImmediate(r));
+
 const fire = (ms) => {
     const t = clock.find((x) => x.live && x.ms === ms);
     assert.ok(t, 'nothing was waiting ' + ms + 'ms');
@@ -88,7 +111,11 @@ const fire = (ms) => {
     t.fn();
 };
 
-beforeEach(() => { spawned = []; fake = {}; clock = []; said = []; files = new Set(); wrote = []; });
+beforeEach(() => {
+    spawned = []; fake = {}; clock = []; said = []; files = new Set(); wrote = [];
+    staleSays = { alias: '', windows: [], dead: false };
+    closed = [];
+});
 
 //---- where the editor is ------------------------------------------------------
 
@@ -183,9 +210,10 @@ test('a local folder is opened directly, in a new window', () => {
     assert.deepEqual(spawned[0].argv, ['/home/okc/work', '--new-window']);
 });
 
-test('a remote folder goes through VS Code\'s own remote', () => {
+test('a remote folder goes through VS Code\'s own remote', async () => {
     files.add('/snap/bin/code');
     editor({ platform: 'linux', env: {} }).open({ dir: '/home/okc/work', remote: 'okc@h' });
+    await settle();
 
     assert.deepEqual(spawned[0].argv,
         ['--folder-uri', 'vscode-remote://ssh-remote+okc%40h/home/okc/work', '--new-window']);
@@ -208,12 +236,115 @@ test('it resolves on the grace window, because the editor outlives this call', (
         //dialog — see ../../src/app/vms/editor/remote-platform.js. A local
         //folder has no host to have a platform, so it says so rather than
         //leaving the field off and making its absence mean two things.
+        //`window` AND `closed` SAY WHICH OF THE THREE THIS PRESS WAS -- a new
+        //window, a focused one, or one opened after a dead window was closed.
+        //See ../../src/app/vms/editor/stale-windows.js. A local folder has no
+        //host to have a window for, so it is always a new one.
         assert.deepEqual(r, {
             opened: '/a', on: null, using: '/snap/bin/code', found: 'found where it installs',
+            window: 'new', closed: [],
             platform: 'nothing remote to say it about'
         });
         assert.equal(fake.child.unreffed, true, 'it held the process it does not own');
     });
+});
+
+//---- the window that is already open ------------------------------------------
+//
+//THREE PRESSES, NOT ONE. Found by doing it: open the editor on a machine, put
+//the machine to sleep, clear it back to base, press open again — every step a
+//button in this app. The press reported success, VS Code never connected, no
+//server was pushed, and the extension step waited its full three minutes for
+//something that was never coming. Asked 19:15:00, gave up 19:18:08, nothing on
+//the guest at all.
+//
+//THE WINDOW FROM BEFORE WAS SITTING IN "Cannot reconnect. Please reload the
+//window.", holding a dead connection with three hours of grace, swallowing every
+//launch aimed at that host. `--new-window` was already passed and did not help.
+//-------------------------------------------------------------------------------
+
+test('a healthy window for the machine is FOCUSED, not opened a second time', async () => {
+    files.add('/snap/bin/code');
+    staleSays = {
+        alias: 'okc-ok-diy1', dead: false,
+        windows: [{ pid: 24700, title: 'workspace [SSH: okc-ok-diy1] - Visual Studio Code' }]
+    };
+
+    editor({ platform: 'linux', env: {} }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
+    await settle();
+
+    //NO FLAG IS HOW VS CODE IS TOLD TO FOCUS. It opens a folder in the window
+    //that already has it unless told otherwise; `--new-window` would put a
+    //second window on the same folder, which is not what the button means.
+    assert.deepEqual(spawned[0].argv,
+        ['--folder-uri', 'vscode-remote://ssh-remote+okc-ok-diy1/home/okc/workspace']);
+    assert.deepEqual(closed, [], 'it closed a window somebody was working in');
+});
+
+test('a window whose connection is dead is closed, and a new one opened', async () => {
+    files.add('/snap/bin/code');
+    staleSays = {
+        alias: 'okc-ok-diy1', dead: true,
+        windows: [{ pid: 24700, title: 'Welcome - workspace [SSH: okc-ok-diy1] - Visual Studio Code' }]
+    };
+
+    const p = editor({ platform: 'linux', env: {} }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
+    await settle();
+
+    assert.deepEqual(closed, [24700], 'the dead window was left where it was');
+
+    //AND THE REPLACEMENT WAITS FOR IT TO GO. The launch is aimed at the host the
+    //closing window still holds, which is the whole thing being avoided.
+    assert.deepEqual(spawned, [], 'it launched before the window had closed');
+    fire(1200);
+    await settle();
+
+    assert.deepEqual(spawned[0].argv,
+        ['--folder-uri', 'vscode-remote://ssh-remote+okc-ok-diy1/home/okc/workspace', '--new-window']);
+
+    fire(1500);
+    const r = await within('open()', p);
+    assert.equal(r.window, 'new');
+    assert.deepEqual(r.closed, [{ pid: 24700, closed: true }]);
+});
+
+test('a window that will not close is said, and the editor is opened anyway', async () => {
+    //REFUSING TO OPEN AN EDITOR because a window would not close leaves somebody
+    //with nothing. It is worth knowing and it is not worth stopping for.
+    files.add('/snap/bin/code');
+    staleSays = {
+        alias: 'okc-ok-diy1', dead: true,
+        windows: [{ pid: 24700, title: 'workspace [SSH: okc-ok-diy1]' }]
+    };
+
+    editor({
+        platform: 'linux', env: {},
+        stale: {
+            look: async () => staleSays,
+            close: async (pid) => ({ pid: pid, closed: false, why: 'Access is denied.' })
+        }
+    }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
+
+    await settle();
+    fire(1200);
+    await settle();
+
+    assert.equal(spawned.length, 1, 'it did not open the editor');
+    assert.ok(said.some((l) => /Access is denied/.test(l)), said.join(' | '));
+});
+
+test('nothing open for this machine is the ordinary press, unchanged', async () => {
+    files.add('/snap/bin/code');
+    //A BROKEN CONNECTION WITH NO WINDOW is not this machine's problem to fix —
+    //both halves are required before anything is closed.
+    staleSays = { alias: 'okc-ok-diy1', dead: true, windows: [] };
+
+    editor({ platform: 'linux', env: {} }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
+    await settle();
+
+    assert.deepEqual(closed, []);
+    assert.deepEqual(spawned[0].argv,
+        ['--folder-uri', 'vscode-remote://ssh-remote+okc-ok-diy1/home/okc/workspace', '--new-window']);
 });
 
 //---- and the dialog it stops before it appears --------------------------------
@@ -223,7 +354,7 @@ test('it resolves on the grace window, because the editor outlives this call', (
 //extension runs, no folder opens. So the one press this app has for getting into
 //a machine ended on a dialog, for every machine ever built.
 
-test('a remote open tells VS Code the far end is Linux, BEFORE it starts', () => {
+test('a remote open tells VS Code the far end is Linux, BEFORE it starts', async () => {
     //BEFORE, BECAUSE REMOTE-SSH READS IT AT CONNECT TIME. Written afterwards it
     //would be correct for the next press and useless for this one — and this one
     //is the press somebody is watching.
@@ -241,6 +372,7 @@ test('a remote open tells VS Code the far end is Linux, BEFORE it starts', () =>
         },
         platforms: { ensure: (alias) => { order.push('told about ' + alias); return { added: true, why: 'added it' }; } }
     }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
+    await settle();
 
     assert.deepEqual(order, ['told about okc-ok-diy1', 'launched']);
 });
@@ -259,7 +391,7 @@ test('and a LOCAL open says nothing about a platform, because there is no host',
     assert.equal(asked, 0, 'it wrote a remote platform entry for a folder on this computer');
 });
 
-test('and it opens the editor anyway when it could not write the entry', () => {
+test('and it opens the editor anyway when it could not write the entry', async () => {
     //THE WORST CASE IS THE DIALOG SOMEBODY WAS ALREADY GETTING. A press that
     //refuses because it could not save a click is worse than the click.
     files.add('/snap/bin/code');
@@ -268,6 +400,7 @@ test('and it opens the editor anyway when it could not write the entry', () => {
         platform: 'linux', env: {},
         platforms: { ensure: () => ({ added: false, file: '/x/settings.json', why: 'it could not be written: EACCES' }) }
     }).open({ dir: '/a', remote: 'okc-h' });
+    await settle();
 
     assert.equal(spawned.length, 1, 'it did not start the editor');
     //AND IT SAID SO, naming the file, because the fix is one line somebody can type.
@@ -366,9 +499,10 @@ test('it settles exactly once, whatever arrives afterwards', () => {
     return within('open()', p).then((r) => assert.equal(r.opened, '/a'));
 });
 
-test('what it says names the folder and the far end', () => {
+test('what it says names the folder and the far end', async () => {
     files.add('/snap/bin/code');
     const p = editor({ platform: 'linux', env: {} }).open({ dir: '/a', remote: 'okc@h' });
+    await settle();
     fire(1500);
 
     return within('open()', p).then(() => {
