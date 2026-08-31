@@ -232,6 +232,30 @@ module.exports = function tasks(theme, okc, remember) {
         //everything pushed to it live on this host and are not touched. Somebody
         //who does not know that will not press it, and somebody who thinks it
         //takes the branch too will not press it either.
+        //---- AND KEEPING IT INSTEAD ----------------------------------------
+        //
+        //GATED, THOUGH IT DESTROYS NOTHING. What it changes is what every later
+        //rollback means — including the one on the button beside it — and that
+        //is worth reading a sentence about once.
+        function keep(x) {
+            ask({
+                title: 'Keep ' + x.machine.name + ' as it is?',
+                plain: [
+                    'A snapshot is taken of the machine as it stands now, and that becomes what it comes '
+                        + 'back to. Clearing it afterwards means THIS, not the bare machine it was built as.',
+                    'Nothing is thrown away. The snapshot it was built as stays, so there is still a way '
+                        + 'further back.',
+                    'This is for a machine you have set up and want to keep — a toolchain, a build, '
+                        + 'anything that took long enough that you would not want to do it again.'
+                ],
+                confirm: 'Keep it',
+                onYes: function () {
+                    setSaid({ text: 'Taking a snapshot of ' + x.machine.name + ' and making it the starting point.' });
+                    return run('diyKeep', { id: x.id });
+                }
+            });
+        }
+
         function clear(x) {
             ask({
                 title: 'Clear ' + x.machine.name + ' back to base?',
@@ -652,6 +676,33 @@ module.exports = function tasks(theme, okc, remember) {
                                     {s.machine && s.machine.there && s.machine.dirty && !s.machine.running
                                         ? <Button kind="danger" protect onClick={function () { clear(s); }}>
                                             Clear the machine
+                                        </Button>
+                                        : null}
+
+                                    {/*---- AND THE OPPOSITE ANSWER ------------
+
+                                        THE SAME MACHINE, THE SAME MOMENT, THE
+                                        OPPOSITE DECISION — which is why it sits
+                                        beside Clear rather than anywhere else.
+                                        Clear says the disk was a detour; this
+                                        says it was the point, and makes it what
+                                        the machine comes back to.
+
+                                        IT IS WHAT SETTING A MACHINE UP FOR A
+                                        REAL PROJECT NEEDS. A toolchain, a built
+                                        addon and a venv are hours and gigabytes;
+                                        without this the only starting point is
+                                        the bare install, so the first Clear
+                                        throws all of it away.
+
+                                        NOT PURPLE. It destroys nothing — it adds
+                                        a snapshot and moves a pointer, and the
+                                        bare one stays. It is still gated,
+                                        because it changes what every later
+                                        rollback means. */}
+                                    {s.machine && s.machine.there && s.machine.dirty && !s.machine.running
+                                        ? <Button protect onClick={function () { keep(s); }}>
+                                            Keep it as the starting point
                                         </Button>
                                         : null}
                                 </div>

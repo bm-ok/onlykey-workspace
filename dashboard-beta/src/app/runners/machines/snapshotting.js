@@ -122,21 +122,33 @@ module.exports.everyName = everyName;
 
 //---- WHAT THE REGISTER LEARNS FROM A SNAPSHOT BEING TAKEN -----------------
 //
-//`baseSnapshot` IS ONLY SET ONCE. It is where a machine goes back to, and a
-//later snapshot is a point along the way rather than a new beginning — moving it
-//would make "roll it back" mean somewhere else without anybody saying so.
+//`baseSnapshot` DOES NOT MOVE ON ITS OWN, and that is still the rule: it is
+//where a machine goes back to, and a later snapshot is a point along the way
+//rather than a new beginning. A snapshot taken to mark progress must not
+//quietly change what "roll it back" means.
+//
+//BUT IT CAN BE MOVED WHEN SOMEBODY SAYS SO — `how.makeBase`. A machine set up
+//for a real project is hours of work: a toolchain, a built addon, a venv. Left
+//unable to move, the only starting point is the bare machine it was installed
+//as, so putting it away throws all of that away and the next run builds it
+//again. The old snapshot is KEPT, so bare is still somewhere to go back to.
+//
+//IT WAS NOT ONLY UNMOVABLE, IT LIED ABOUT IT. `vmBaseSnapshot` said '"<title>"
+//is now the point this machine can be returned to' and answered
+//`baseSnapshot: title`, on every call — while this function kept the old one.
+//On a machine that already had a base, both were false and nothing said so.
 //
 //`cleanSince` IS STAMPED BECAUSE THE DISK NOW MATCHES A SNAPSHOT. Taking one is
 //the other way that becomes true — the machine did not move, the snapshot came
 //to it — and there is now nothing beyond the newest one. See vmSnapshotRestore,
 //which reads it.
-module.exports.recordFor = function recordFor(vm, title, when) {
+module.exports.recordFor = function recordFor(vm, title, when, how) {
     var was = vm || {};
     var snapshots = Object.assign({}, was.snapshots || {});
     snapshots[title] = was.branch || null;
 
     return {
-        baseSnapshot: was.baseSnapshot || title,
+        baseSnapshot: (how && how.makeBase) ? title : (was.baseSnapshot || title),
         snapshots: snapshots,
         cleanSince: new Date(when).toISOString(),
 

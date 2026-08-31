@@ -204,7 +204,13 @@ test('every stage the app owns has a file in the folder the app ships', () => {
     //THEY ARE STILL IN THE REPO. If that ever stops being true this test is the
     //wrong place to notice; ../library/bootstrap.test.js is where the bundle is
     //held to carrying them.
-    const NOT_OURS = ['extra', 'extraUser', 'skill', 'workerSkill', 'judgeSkill'];
+    //AND SO ARE THE TWO THAT RUN AFTER THE FIRST SNAPSHOT, for the same reason
+    //as `extra`: what a machine needs in order to build somebody's project is
+    //that project's business, and this app does not know the name of one. A
+    //workspace supplying neither gets the ordinary base snapshot and no second
+    //turn at all — see ../../src/app/vms/provision/afterwards.js.
+    const NOT_OURS = ['extra', 'extraUser', 'afterSnapshot', 'afterSnapshotUser',
+        'skill', 'workerSkill', 'judgeSkill'];
     const ours = Object.keys(STAGES).filter((s) => !NOT_OURS.includes(s));
 
     for (const stage of ours) {

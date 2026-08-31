@@ -181,7 +181,13 @@ test('a machine that has never been put away gets its snapshot without being ask
     assert.equal(pending.ms, 5000);
     pending.fn();
 
-    assert.deepEqual(await within('the scheduled snapshot', running), { name: 'one', baseSnapshot: 'base' });
+    //`next` SAYS WHAT HAPPENED AFTER THE SNAPSHOT, and `{ none: true }` is a
+    //host that was handed no `afterBase` — which is this test, and is also every
+    //workspace that supplies no project setup of its own. See
+    //../../src/app/vms/provision/afterwards.js: the turn is optional, and its
+    //absence is an ordinary answer rather than something to catch.
+    assert.deepEqual(await within('the scheduled snapshot', running),
+        { name: 'one', baseSnapshot: 'base', next: { none: true } });
     assert.equal(ours.get('one').baseSnapshot, 'base');
     assert.ok(asked.includes('takeSnapshot one base'), asked.join(' | '));
 });

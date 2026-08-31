@@ -844,12 +844,29 @@ async function plugin(imports, register) {
         //off — the snapshot was fine and the machine was gone, which is the
         //worst shape for a fault to have.
         undo.push(actions.define('vmBaseSnapshot', {
-            about: 'Shut a machine down, snapshot it as a clean starting point, and start it again',
-            takes: ['name', 'title'],
+            about: 'Shut a machine down, snapshot it as a clean starting point, and start it again. '
+                + '--makeBase moves what it rolls back to onto this one, keeping the old',
+            takes: ['name', 'title', 'makeBase'],
             run: async function (args) {
                 var a = args || {};
                 var vm = ours.get(a.name);
                 var title = snapshotting.titleFor(a.title || 'base');
+
+                //---- MOVING WHAT "BACK" MEANS IS A PERSON'S ACT --------------
+                //
+                //It decides what every rollback after it discards — a queue
+                //putting a machine away, and DIY's `Clear the machine`. The
+                //machine acts a person owns are refused down the pipe
+                //everywhere else in this app; this is one of them.
+                //
+                //TAKING A SNAPSHOT IS NOT. A drill takes them, and the queue's
+                //own settling takes the first one, so only the MOVE is gated.
+                var makeBase = a.makeBase === true || a.makeBase === 'true';
+                if (makeBase && (a._overTheWire || a._driven) && !a._fromTest) {
+                    throw new Error('Moving what "' + a.name + '" rolls back to is a person\'s press: it '
+                        + 'decides what every later rollback throws away. It is on the DIY tab, on a '
+                        + 'machine that is off.');
+                }
 
                 return await imports.busy.during(a.name, 'being snapshotted', async function () {
                     //BOTH REFUSALS BEFORE THE MACHINE IS SHUT DOWN, not after.
@@ -878,8 +895,34 @@ async function plugin(imports, register) {
                     }
 
                     await vbox.takeSnapshot(a.name, title, 'a clean starting point, taken once it was set up');
-                    ours.update(a.name, makeSnapshotting.recordFor(ours.get(a.name), title, Date.now()));
-                    to.good('"' + title + '" is now the point this machine can be returned to');
+
+                    //---- AND WHAT IT SAYS IS WHAT HAPPENED ------------------
+                    //
+                    //THIS LINE USED TO BE UNCONDITIONAL, and on a machine that
+                    //already had a base it was false: `recordFor` kept the old
+                    //one, so the snapshot was taken, the pointer did not move,
+                    //and the log said it had. Somebody would then put the
+                    //machine away expecting to land here and land on the bare
+                    //install instead, an afternoon of setting up gone.
+                    var was = ours.get(a.name);
+                    var moved = makeBase && was.baseSnapshot !== title;
+                    var stayed = !makeBase && was.baseSnapshot && was.baseSnapshot !== title;
+
+                    ours.update(a.name, makeSnapshotting.recordFor(was, title, Date.now(), { makeBase: makeBase }));
+                    var now = ours.get(a.name).baseSnapshot;
+
+                    if (moved) {
+                        to.good('"' + title + '" is now the point this machine can be returned to — '
+                            + '"' + was.baseSnapshot + '" is still there to go further back to');
+                    } else if (stayed) {
+                        //SAID, NOT SILENT. "I took a snapshot" and "I changed
+                        //what back means" are different acts and this is the
+                        //one place somebody finds out which they got.
+                        to.info('"' + title + '" was taken, and this machine still returns to '
+                            + '"' + was.baseSnapshot + '" — pass makeBase to move that onto this one');
+                    } else {
+                        to.good('"' + title + '" is now the point this machine can be returned to');
+                    }
 
                     if (wasRunning) {
                         //---- AND IT COMES BACK, WHICH IS ITS OWN RACE --------
@@ -904,7 +947,13 @@ async function plugin(imports, register) {
                     }
 
                     return Object.assign({}, await vbox.snapshots(a.name), {
-                        baseSnapshot: title,
+                        //THE REGISTER'S ANSWER, NOT THE TITLE THAT WAS ASKED
+                        //FOR. This said `title` unconditionally and was the
+                        //third place the same untruth was told — the log, this
+                        //field, and the record disagreeing with both.
+                        baseSnapshot: now,
+                        took: title,
+                        movedBase: !!moved,
                         //SAID, because "it is off" is a thing somebody will
                         //otherwise have to discover.
                         restarted: wasRunning

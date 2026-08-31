@@ -587,6 +587,85 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- OR KEEPING IT, WHICH IS THE OPPOSITE OF CLEARING --------------
+        //
+        //THE SAME MACHINE, THE SAME MOMENT, THE OPPOSITE ANSWER. Both presses
+        //are for a machine that is off with something on its disk. `diyClear`
+        //says that was a detour and throws it away; this says it was the point
+        //and makes it what the machine comes back to from now on.
+        //
+        //IT EXISTS FOR SETTING A MACHINE UP FOR A REAL PROJECT. That is a
+        //toolchain, a built native addon and a python venv — hours, and
+        //gigabytes. Without this the only starting point is the bare install,
+        //so the first `Clear the machine` throws all of it away and the next
+        //run builds it again.
+        //
+        //THE BARE ONE IS KEPT. Moving what "back" means is not the same as
+        //losing where it used to point, and a setup that turns out wrong needs
+        //somewhere to go — ../runners/machines/snapshotting.js takes the new
+        //snapshot on top rather than over.
+        undo.push(actions.define('diyKeep', {
+            about: 'Keep this machine as it is now: what it rolls back to becomes this, not the bare install',
+            needs: 'workspace',
+            takes: ['id', 'title'],
+            run: async function (args) {
+                var a = args || {};
+
+                //GATED HERE, NOT ONLY UNDERNEATH. `vmBaseSnapshot` refuses a
+                //`makeBase` that came down the pipe — but this reaches it
+                //through `actions.call`, which carries no markers, so that
+                //refusal would never see this press. A guard one layer down
+                //that the only caller walks past is not a guard.
+                if ((a._overTheWire || a._driven) && !a._fromTest) {
+                    throw new Error('Deciding what a machine comes back to is a person\'s press: it settles '
+                        + 'what every later rollback throws away. It is on the DIY tab, on a machine that '
+                        + 'is off.');
+                }
+
+                if (!a.id) throw new Error('Say which one: diyKeep --id <id>. "diy" lists them.');
+
+                var it = await store.get(a.id);
+                if (!it) throw new Error('There is no piece of work called "' + a.id + '".');
+                if (!it.machine) throw new Error('"' + it.title + '" has no machine, so there is nothing to keep.');
+
+                var live = (await liveByName())[it.machine];
+                if (!live) throw new Error('There is no machine called "' + it.machine + '" any more.');
+
+                //OFF, FOR THE SAME REASON `diyClear` IS. A snapshot of a
+                //running machine captures a disk part-way through being
+                //written, and that is the one thing a starting point must not
+                //be. `vmBaseSnapshot` would stop it itself, but stopping a
+                //machine somebody is working in is not this press's to do.
+                if (live.running) {
+                    throw new Error('"' + it.machine + '" is still running. Put it to sleep first — a '
+                        + 'snapshot taken while it is writing is a starting point that may not come back up.');
+                }
+
+                var to = log.on('diy', it.id);
+                to.info('keeping ' + it.machine + ' as it is, as its new starting point');
+
+                //`_fromTest` IS NOT PASSED. This IS the person's press that
+                //vmBaseSnapshot's refusal is written for — it arrives here
+                //through the window, and `diyKeep` is refused down the pipe by
+                //the same rule, above.
+                var said = await actions.call('vmBaseSnapshot', {
+                    name: it.machine,
+                    title: a.title || 'set-up',
+                    makeBase: true
+                });
+
+                return {
+                    id: it.id,
+                    machine: it.machine,
+                    base: said && said.baseSnapshot,
+                    kept: said && said.took,
+                    note: it.machine + ' comes back to "' + (said && said.baseSnapshot) + '" from now on. '
+                        + 'Clearing it means this, not the bare machine — and the snapshot it was built as '
+                        + 'is still there.'
+                };
+            }
+        }));
+
         undo.push(actions.define('diyForget', {
             about: 'Take a piece of work off my list. It does not touch the branch or the machine',
             needs: 'workspace',
