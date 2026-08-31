@@ -90,10 +90,40 @@ function installing(what, how) {
         '# THE SERVER ARRIVES AFTER THE EDITOR CONNECTS, so on a machine that was',
         '# just rolled back there is nothing to install with yet. Waited for here,',
         '# on the machine, rather than by the host asking over and over.',
+        '#',
+        '# ---- AND A PATH EXISTING IS NOT THE SERVER BEING READY ----------------',
+        '#',
+        '# THIS WAITED FOR THE WRONG THING. It took the first `code-server*` whose',
+        '# PATH existed, and VS Code downloads into `<build>.staging/` and renames',
+        '# the directory when it has finished unpacking. So on the press that',
+        '# follows a fresh build -- the one time the server is guaranteed to be',
+        '# arriving right now -- it picked a half-extracted tree, and running it',
+        '# died with a Node MODULE_NOT_FOUND out of server-main.js.',
+        '#',
+        '# TWO GUARDS, AND THEY CATCH DIFFERENT THINGS.',
+        '#',
+        '# RUNNING IT is what proves a server is whole, and it is what caught the',
+        '# real failure: a half-extracted tree whose binary existed and whose',
+        '# `--version` died. A name would not have had to be right for that.',
+        '#',
+        '# SKIPPING `.staging` BY NAME catches the case the probe cannot -- a',
+        '# download that has FINISHED extracting and is about to be renamed. It',
+        '# answers `--version` perfectly and its path stops existing moments later,',
+        '# in the middle of an install. Neither guard covers the other, which is',
+        '# why both are here and both are tested.',
+        '#',
+        '# ANY BUILD THAT RUNS WILL DO. There can be several after an upgrade --',
+        '# this machine has two -- and extensions live in one shared directory per',
+        '# server flavour, so whichever works installs to the same place.',
         'waited=0',
         'CLI=""',
         'while [ "$waited" -lt ' + seconds + ' ]; do',
-        '  CLI=$(ls -1 ' + SERVERS + '/cli/servers/*/server/bin/code-server* 2>/dev/null | head -1)',
+        '  for c in ' + SERVERS + '/cli/servers/*/server/bin/code-server*; do',
+        '    # AN UNMATCHED GLOB IS THE PATTERN ITSELF, which is not executable.',
+        '    [ -x "$c" ] || continue',
+        '    case "$c" in *.staging/*) continue ;; esac',
+        '    if "$c" --version >/dev/null 2>&1; then CLI="$c"; fi',
+        '  done',
         '  if [ -n "$CLI" ]; then break; fi',
         '  sleep ' + every,
         '  waited=$((waited + ' + every + '))',
@@ -126,17 +156,27 @@ function installing(what, how) {
         '  echo ' + SAYS + ' installed',
         'else',
         '  echo ' + SAYS + ' failed',
-        '  # THE LAST FEW LINES ONLY. The reason is at the end, and a whole stack',
-        '  # of them is a wall that gets scrolled past. Each is prefixed so the',
-        '  # host can pick them out of everything else on the channel.',
+        '  # THE HEAD AND THE TAIL, WHICH IS NOT THE SAME AS SIX LINES.',
+        '  #',
+        '  # THE TAIL ALONE CAME BACK ONCE AND IT WAS THE WRONG END. A node crash',
+        '  # names its cause on the FIRST line -- "Cannot find module X" -- and',
+        '  # then prints a requireStack; six lines from the bottom is the stack and',
+        '  # the closing brace, which says a great deal about nothing. A tool that',
+        '  # exits with a one-line complaint has its reason at both ends at once,',
+        '  # so taking both is right for either shape.',
+        '  #',
         '  # THE `echo` TERMINATES THE LAST LINE, and it is not decoration.',
         '  # `printf %s` writes no trailing newline, and `read` returns false on a',
         '  # final line without one -- so the loop body never ran for it and the',
-        '  # last message was dropped. The reason a tool gives is on its LAST line',
-        '  # far more often than not, so what came back was the preamble and never',
-        '  # the fault. `printf` rather than `echo "$OUT"` so a backslash in the',
-        '  # message survives being repeated.',
-        '  { printf %s "$OUT"; echo; } | tail -n 6 | while IFS= read -r line; do',
+        '  # last message was dropped. `printf` rather than `echo "$OUT"` so a',
+        '  # backslash in the message survives being repeated.',
+        '  #',
+        '  # READ TWICE RATHER THAN SPOOLED TO A FILE. A temp file here would need',
+        '  # making, cleaning up, and getting right on the path where the install',
+        '  # has ALREADY gone wrong -- which is the worst place to add a second',
+        '  # thing that can fail. The variable is a few lines long.',
+        '  { { printf %s "$OUT"; echo; } | head -n 4;',
+        '    { printf %s "$OUT"; echo; } | tail -n 4; } | while IFS= read -r line; do',
         '    echo ' + SAYS + '-why "$line"',
         '  done',
         'fi',
@@ -184,13 +224,21 @@ function said(output) {
 
 //THE LINES THE GUEST SENT BACK, in order. Each was prefixed on the machine so
 //they can be told apart from anything else that shared the channel.
+//WITHOUT SAYING ANYTHING TWICE. The machine sends the first four lines and the
+//last four, which is right for a node crash — the cause is at the top and the
+//stack at the bottom — and means anything shorter than eight lines arrives
+//doubled. Deduplicated by line rather than by position, because a real stack
+//repeats a path on purpose and the halves can overlap by any amount.
 function reasons(output) {
     var out = [];
+    var seen = {};
     var re = new RegExp(SAYS + '-why (.*)', 'g');
     var m;
     while ((m = re.exec(String(output || '')))) {
         var line = String(m[1]).trim();
-        if (line) out.push(line);
+        if (!line || Object.prototype.hasOwnProperty.call(seen, line)) continue;
+        seen[line] = true;
+        out.push(line);
     }
     return out;
 }

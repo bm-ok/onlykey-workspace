@@ -62,7 +62,18 @@ function aMachine(how) {
             ? 'getaddrinfo EAI_AGAIN marketplace.visualstudio.com' : it.installWhy;
         const grumble = (it.installFails && why)
             ? 'echo "Error while installing extensions:" >&2\necho "' + why + '" >&2\n' : '';
-        fs.writeFileSync(cli, '#!/bin/sh\necho "$@" >> "$HOME/asked"\n'
+        //AND IT ANSWERS `--version`, WHICH IS HOW THE SCRIPT KNOWS IT IS WHOLE.
+        //
+        //A REAL ONE DOES. This stub failed every argument alike when
+        //`installFails` was set, so the moment the script started proving a
+        //server works before using it, the stub looked like a half-extracted
+        //download and the wait ran to its full length. A stand-in that refuses
+        //what the real thing answers does not test the code, it tests the stub.
+        //
+        //BEFORE THE `asked` LINE, so that file stays a record of installs.
+        fs.writeFileSync(cli, '#!/bin/sh\n'
+            + 'case "$1" in --version) echo 1.136.0-insider; exit 0 ;; esac\n'
+            + 'echo "$@" >> "$HOME/asked"\n'
             + grumble + 'exit ' + (it.installFails ? '1' : '0') + '\n');
         fs.chmodSync(cli, 0o755);
     }
@@ -87,7 +98,7 @@ test('an extension already there is left alone, and nothing is fetched', () => {
     //machine's life.
     const home = aMachine({ hasServer: true, hasExtension: true });
 
-    const out = run(guest.installing(WANT), home);
+    const out = run(guest.installing(WANT, { seconds: 6 }), home);
 
     assert.deepEqual(guest.said(out), { done: true, why: 'already there' });
     assert.equal(askedOn(home), '', 'it ran the installer for an extension that was already there');
@@ -96,7 +107,7 @@ test('an extension already there is left alone, and nothing is fetched', () => {
 test('and it is installed when it is not there', () => {
     const home = aMachine({ hasServer: true });
 
-    const out = run(guest.installing(WANT), home);
+    const out = run(guest.installing(WANT, { seconds: 6 }), home);
 
     assert.deepEqual(guest.said(out), { done: true, why: 'installed it on the machine' });
     assert.match(askedOn(home), new RegExp('--install-extension ' + WANT.replace('.', '\\.')));
@@ -114,7 +125,7 @@ test('the STANDALONE cli is used, not the one that needs a running window', () =
     fs.writeFileSync(path.join(remote, 'code-insiders'), '#!/bin/sh\necho REMOTE-CLI >> "$HOME/asked"\nexit 0\n');
     fs.chmodSync(path.join(remote, 'code-insiders'), 0o755);
 
-    run(guest.installing(WANT), home);
+    run(guest.installing(WANT, { seconds: 6 }), home);
 
     assert.ok(askedOn(home).indexOf('REMOTE-CLI') < 0, 'it used the CLI that needs a running window');
 });
@@ -126,7 +137,7 @@ test('either flavour of server is found, because either may have connected', () 
     //written against and nowhere else.
     ['.vscode-server', '.vscode-server-insiders'].forEach((flavour) => {
         const home = aMachine({ hasServer: true, flavour: flavour });
-        assert.equal(guest.said(run(guest.installing(WANT), home)).done, true, flavour);
+        assert.equal(guest.said(run(guest.installing(WANT, { seconds: 6 }), home)).done, true, flavour);
     });
 });
 
@@ -172,7 +183,7 @@ test('an install that fails is said, and is still not a failure of the press', (
     //answers.
     const home = aMachine({ hasServer: true, installFails: true });
 
-    const out = run(guest.installing(WANT), home);
+    const out = run(guest.installing(WANT, { seconds: 6 }), home);
 
     const it = guest.said(out);
     assert.equal(it.done, false);
@@ -198,7 +209,7 @@ test('a failure that says nothing is reported as saying nothing, rather than as 
     //in the voice of a diagnosis for a failure nobody had looked at.
     const home = aMachine({ hasServer: true, installFails: true, installWhy: '' });
 
-    const it = guest.said(run(guest.installing(WANT), home));
+    const it = guest.said(run(guest.installing(WANT, { seconds: 6 }), home));
     assert.equal(it.done, false);
     assert.match(it.why, /gave no reason/);
     assert.doesNotMatch(it.why, /marketplace/, 'it invented a cause for a silent failure');
@@ -207,9 +218,108 @@ test('a failure that says nothing is reported as saying nothing, rather than as 
 test('and it exits 0 whatever happened, because the caller is mid-press', () => {
     //`execFileSync` THROWS ON A NON-ZERO EXIT, so these three passing at all is
     //the assertion.
-    run(guest.installing(WANT), aMachine({}) , 0);
-    run(guest.installing(WANT), aMachine({ hasServer: true, installFails: true }));
-    run(guest.installing(WANT), aMachine({ hasServer: true, hasExtension: true }));
+    //
+    //AND EVERY WAIT IS BOUNDED. The first of these has no server on it at all,
+    //so it sits out the whole wait — three minutes of the suite, spent proving
+    //something the case above already proves in three seconds.
+    run(guest.installing(WANT, { seconds: 3 }), aMachine({}));
+    run(guest.installing(WANT, { seconds: 6 }), aMachine({ hasServer: true, installFails: true }));
+    run(guest.installing(WANT, { seconds: 6 }), aMachine({ hasServer: true, hasExtension: true }));
+});
+
+//---- a server that is still being unpacked ----------------------------------
+//
+//WHAT ACTUALLY HAPPENED, ON A REAL MACHINE, THE FIRST TIME THIS RAN AFTER A
+//REBUILD. VS Code downloads a server into `<build>.staging/` and renames the
+//directory when it has finished. This took the first `code-server*` whose PATH
+//existed — so it picked the half-extracted tree, and running it died with a node
+//MODULE_NOT_FOUND out of server-main.js. The press reported an editor opened and
+//VS Code then said the extension was disabled in that workspace.
+//
+//THE PRESS AFTER A FRESH BUILD IS EXACTLY WHEN THE SERVER IS ARRIVING, so this
+//is not a rare race — it is the ordinary case for the one machine that needs it.
+//-----------------------------------------------------------------------------
+
+//A DOWNLOAD VS CODE HAS NOT FINISHED WITH: the binary is there and it does not
+//work, which is the whole trap. Named `.staging` the way VS Code names it.
+function aHalfUnpackedServer(home) {
+    const bin = path.join(home, '.vscode-server-insiders', 'cli', 'servers',
+        'Insiders-5c9173.staging', 'server', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const cli = path.join(bin, 'code-server-insiders');
+    fs.writeFileSync(cli, '#!/bin/sh\n'
+        + 'echo "Error: Cannot find module \'../out/server-main\'" >&2\n'
+        + 'echo "  requireStack: [" >&2\n'
+        + 'exit 1\n');
+    fs.chmodSync(cli, 0o755);
+    return cli;
+}
+
+test('a server still being unpacked is not used, and is not mistaken for a missing one', () => {
+    const home = aMachine({});
+    aHalfUnpackedServer(home);
+
+    const it = guest.said(run(guest.installing(WANT, { seconds: 3 }), home));
+
+    //IT WAITED AND THEN SAID SO, which is the honest answer: there is no server
+    //it can use YET. Opening again once the window is up does it, and that is
+    //what the sentence tells somebody to do.
+    assert.equal(it.done, false);
+    assert.match(it.why, /had not finished putting its server/);
+    assert.equal(askedOn(home), '', 'it ran an installer with a half-extracted server');
+});
+
+test('a finished server is used even when a half-unpacked one is sitting beside it', () => {
+    //THE STATE A MACHINE IS ACTUALLY IN mid-upgrade, and the one where picking
+    //by name alone goes wrong: `.staging` sorts before the finished build.
+    const home = aMachine({ hasServer: true });
+    aHalfUnpackedServer(home);
+
+    const out = run(guest.installing(WANT, { seconds: 6 }), home);
+
+    assert.equal(guest.said(out).done, true, out);
+    assert.match(askedOn(home), /--install-extension/);
+});
+
+test('a finished .staging download is left alone too, because its path is about to move', () => {
+    //THE CASE RUNNING IT CANNOT CATCH. This one has finished extracting and
+    //answers `--version` perfectly — and VS Code is about to rename the
+    //directory out from under it, in the middle of an install.
+    //
+    //WITHOUT THIS TEST THE NAME GUARD WAS DEAD WEIGHT: removing it from the
+    //script changed no result, because every other `.staging` fixture here is
+    //also broken and the probe rejected them on its own. A guard that no test
+    //can tell the absence of is a guard nobody can trust.
+    const home = aMachine({});
+    const bin = path.join(home, '.vscode-server-insiders', 'cli', 'servers',
+        'Insiders-abcdef.staging', 'server', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const cli = path.join(bin, 'code-server-insiders');
+    fs.writeFileSync(cli, '#!/bin/sh\n'
+        + 'case "$1" in --version) echo 1.136.0-insider; exit 0 ;; esac\n'
+        + 'echo "$@" >> "$HOME/asked"\nexit 0\n');
+    fs.chmodSync(cli, 0o755);
+
+    const it = guest.said(run(guest.installing(WANT, { seconds: 3 }), home));
+
+    assert.equal(it.done, false, 'it installed through a directory that is about to be renamed');
+    assert.equal(askedOn(home), '', 'it ran an installer inside a .staging directory');
+});
+
+test('and a server that is there but broken is not counted as a server', () => {
+    //THE GUARD THAT DOES NOT DEPEND ON A NAME. `.staging` is what VS Code calls
+    //an unfinished download today; running the thing is what proves it is whole
+    //whatever it is called tomorrow.
+    const home = aMachine({});
+    const bin = path.join(home, '.vscode-server-insiders', 'cli', 'servers', 'Insiders-plain', 'server', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const cli = path.join(bin, 'code-server-insiders');
+    fs.writeFileSync(cli, '#!/bin/sh\nexit 1\n');
+    fs.chmodSync(cli, 0o755);
+
+    const it = guest.said(run(guest.installing(WANT, { seconds: 3 }), home));
+    assert.equal(it.done, false);
+    assert.match(it.why, /had not finished putting its server/);
 });
 
 //---- what may be put in it --------------------------------------------------
