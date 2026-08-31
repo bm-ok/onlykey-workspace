@@ -156,6 +156,14 @@ module.exports = function lines(theme, okc, shell, remember) {
             //reason a line exists here, and `lineSave` is the door that takes
             //them.
             var heads = repos.filter(function (r) { return r.on; });
+
+            //EVERY REPOSITORY IN THE WORKSPACE, because the dialog below asks
+            //about each of them. `board.repos` is the workspace's own list;
+            //`repos` here is only the ones that reported a HEAD, which is nearly
+            //always the same list and is not the one to build a form from.
+            var allRepos = (board && board.repos && board.repos.length)
+                ? board.repos.slice()
+                : repos.map(function (r) { return r.repo; });
             var picks = could.map(function (b) {
                 return { value: 'cut:' + b.name, label: b.name + ' — ' + (b.summary || 'nothing on it yet') };
             });
@@ -166,7 +174,7 @@ module.exports = function lines(theme, okc, shell, remember) {
                 }]);
             }
 
-            if (!picks.length) {
+            if (!picks.length && !allRepos.length) {
                 setSaid({
                     bad: true,
                     text: 'There is nothing to make a line out of — this workspace has no repositories in it.'
@@ -174,42 +182,126 @@ module.exports = function lines(theme, okc, shell, remember) {
                 return;
             }
 
+            //---- ONE ROW PER REPOSITORY, WHICH IS WHAT A LINE IS -------------
+            //
+            //THIS ASKED FOR ONE POINT AND A LINE IS NOT ONE POINT. The record
+            //has always held a repo-to-branch MAP -- `on` in lines.json, and
+            //`lineSave` takes it -- and the dialog could only offer a branch
+            //name that happened to exist in several repositories at once. So a
+            //line whose repositories are on different branches could be stored,
+            //read, compared and cut from, and could not be MADE here.
+            //
+            //WHICH IS THE ORDINARY CASE THE MOMENT ANYTHING IS BROUGHT DOWN
+            //FROM ORIGIN ON ITS OWN: one repository on 5.7.0-modern-rewrite and
+            //eight on master is a line somebody wants and could not name.
+            function branchesIn(repo) {
+                return (board && board.branches || [])
+                    .filter(function (b) { return (b.in || []).indexOf(repo) >= 0; })
+                    .map(function (b) { return b.name; })
+                    .sort();
+            }
+
+            //---- AND THE POINT STAYS, AS THE THING THAT FILLS THEM IN --------
+            //
+            //NINE DROPDOWNS IS NINE DECISIONS, and the answer is usually "the
+            //same cut everywhere". So the first field still offers the whole
+            //shape at once and writes the rest, which are then there to be
+            //corrected. See `fills` in ../../ui/theme/dialog.js.
+            //
+            //IT FILLS THE NAME AND THE REASON TOO, and only when they are still
+            //empty. `branchAsLine` took the reason off the cut on the server,
+            //where somebody could neither see it nor change it before it was
+            //written; the same inheritance is worth more in the box, where it
+            //can be read and edited.
+            function fillsFrom(value, values) {
+                var out = {};
+                var typed = String((values && values.name) || '').trim();
+                var said = String((values && values.why) || '').trim();
+
+                if (value === 'head:') {
+                    allRepos.forEach(function (r) {
+                        var h = repos.filter(function (x) { return x.repo === r; })[0];
+                        out['on:' + r] = (h && h.on) || '';
+                    });
+                    return out;
+                }
+
+                var b = String(value || '').replace(/^cut:/, '');
+                if (!b) return out;
+
+                var entry = (board && board.branches || []).filter(function (x) { return x.name === b; })[0];
+                allRepos.forEach(function (r) {
+                    out['on:' + r] = (entry && (entry.in || []).indexOf(r) >= 0) ? b : '';
+                });
+
+                if (!typed) out.name = b;
+                if (!said && entry && entry.note && entry.note.reason) out.why = entry.note.reason;
+                return out;
+            }
+
+            var fields = [{
+                name: 'point',
+                label: 'Start from',
+                options: [{ value: '', label: 'pick each repository below' }].concat(picks),
+                fills: fillsFrom,
+                hint: 'Fills the rows below in one go. Change any of them afterwards.'
+            }];
+
+            allRepos.forEach(function (r) {
+                fields.push({
+                    name: 'on:' + r,
+                    label: r,
+                    //LEAVING ONE OUT IS A REAL ANSWER. A line does not have to
+                    //name every repository, and a dropdown that cannot say
+                    //"none" would put a branch in one it has nothing to do with.
+                    options: [{ value: '', label: '— not in this line —' }]
+                        .concat(branchesIn(r).map(function (n) { return { value: n, label: n }; }))
+                });
+            });
+
+            fields.push({ name: 'name', label: 'Call the line', placeholder: 'leave blank to keep the branch name' });
+            fields.push({ name: 'why', label: 'Why it exists', placeholder: 'what it is for, read six weeks from now' });
+
             ask({
                 title: 'Name a line',
                 plain: [
-                    'A line is one branch per repository, moved and compared as one thing. This moves nothing and pushes nothing — it names a cut that already exists.',
+                    'A line is one branch per repository, moved and compared as one thing. This moves nothing and pushes nothing — it names branches that already exist.',
                     //THE PROTECTION IS THE POINT AND IT IS EASY TO MISS. Said in
                     //the same words as the Branches Cut pane says it, because it
                     //is the same act and two descriptions of one act is how the
                     //two drift apart.
-                    'AND IT PROTECTS THE BRANCH: no machine may push to it afterwards. Work goes onto its own cut and is merged in, which is what makes chaining safe.'
+                    'AND IT PROTECTS THE BRANCHES: no machine may push to them afterwards. Work goes onto its own cut and is merged in, which is what makes chaining safe.',
+                    'They do not have to be the same branch, and it does not have to name every repository.'
                 ],
-                fields: [
-                    { name: 'branch', label: 'Which point', options: picks },
-                    { name: 'name', label: 'Call the line', placeholder: 'leave blank to keep the branch name' },
-                    { name: 'why', label: 'Why it exists', placeholder: 'what it is for, read six weeks from now' }
-                ],
+                fields: fields,
                 cost: 'Machines stop being able to push to what it names.',
                 confirm: 'Name it',
                 onYes: function (f) {
-                    var pick = f.branch || picks[0].value;
+                    var on = {};
+                    allRepos.forEach(function (r) {
+                        var v = String(f['on:' + r] || '').trim();
+                        if (v) on[r] = v;
+                    });
 
-                    //FROM THE HEADS. `lineSave` with nothing to go on takes what
-                    //each repository is on, which is exactly this. It needs a
-                    //name of its own because there is no branch name to fall
-                    //back on — the whole point is that they may differ.
-                    if (pick === 'head:') {
-                        var said = (f.name || '').trim();
-                        if (!said) throw new Error('Give the line a name. These repositories are on ' +
-                            heads.map(function (r) { return r.repo + ':' + r.on; }).join(', ') +
-                            ', so there is no one branch name to call it after.');
-                        return tell(okc.call('lineSave', { name: said, why: f.why || undefined }))
-                            .then(function () { setPicked(said); });
+                    if (!Object.keys(on).length) {
+                        throw new Error('This names no branches. Pick one in at least one repository, '
+                            + 'or start from a point above to fill them all in.');
                     }
 
-                    var b = pick.replace(/^cut:/, '');
-                    var title = (f.name || '').trim() || b;
-                    return tell(okc.call('branchAsLine', { branch: b, name: title, why: f.why || undefined }))
+                    var title = String(f.name || '').trim();
+                    if (!title) {
+                        //ONE NAME IS A NAME TO FALL BACK ON; several is not, and
+                        //that is the whole reason a line has a name of its own.
+                        var names = Object.keys(on).map(function (r) { return on[r]; })
+                            .filter(function (v, i, a) { return a.indexOf(v) === i; });
+                        if (names.length !== 1) {
+                            throw new Error('Give the line a name. It names ' + names.join(', ')
+                                + ', so there is no one branch name to call it after.');
+                        }
+                        title = names[0];
+                    }
+
+                    return tell(okc.call('lineSave', { name: title, why: f.why || undefined, on: on }))
                         .then(function () { setPicked(title); });
                 }
             });

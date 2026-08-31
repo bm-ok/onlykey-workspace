@@ -114,3 +114,56 @@ test('sentences after a section start a new list rather than rejoining the first
     assert.ok(out.indexOf('before') < out.indexOf('A section'), 'the first bullet moved');
     assert.ok(out.indexOf('A section') < out.indexOf('after'), 'the last bullet moved above its heading');
 });
+
+//---------------------------------------------------------------------------
+//ONE FIELD ANSWERING OTHERS.
+//
+//THE SIBLING OF `disabled`, which lets a choice STOP another question. This
+//lets one ANSWER several: naming a line is one branch per repository, and with
+//nine repositories that is nine dropdowns nobody wants to work through when the
+//answer is "the same cut everywhere".
+//---------------------------------------------------------------------------
+
+const { applyFills } = load(AT);
+
+test('a field that fills others writes them, and leaves the rest alone', () => {
+    const fields = [
+        { name: 'point', fills: (v) => ({ 'on:a': v, 'on:b': v }) },
+        { name: 'on:a' }, { name: 'on:b' }, { name: 'why' }
+    ];
+
+    const out = applyFills(fields, 'point', { point: 'main', 'on:a': '', 'on:b': '', why: 'mine' });
+
+    assert.equal(out['on:a'], 'main');
+    assert.equal(out['on:b'], 'main');
+    assert.equal(out.why, 'mine', 'it overwrote a field it was not asked to fill');
+});
+
+test('it will not write a field that does not exist', () => {
+    //A TYPO IN A `fills` WOULD OTHERWISE put a value into the answer under a
+    //name nothing renders, and it would arrive at `onYes` looking deliberate.
+    const fields = [{ name: 'point', fills: () => ({ 'on:typo': 'x', 'on:a': 'y' }) }, { name: 'on:a' }];
+
+    const out = applyFills(fields, 'point', { point: 'p', 'on:a': '' });
+
+    assert.equal(out['on:a'], 'y');
+    assert.ok(!('on:typo' in out), 'a value was written under a name no field has: ' + JSON.stringify(out));
+});
+
+test('a field with no fills changes nothing but itself', () => {
+    const fields = [{ name: 'a' }, { name: 'b' }];
+    assert.deepEqual(applyFills(fields, 'a', { a: '1', b: '2' }), { a: '1', b: '2' });
+});
+
+test('and `fills` is given the values, so it can leave what somebody typed', () => {
+    //THE NAME AND THE REASON ARE FILLED IN ONLY WHILE THEY ARE STILL EMPTY.
+    //Overwriting a sentence somebody wrote because they then changed the
+    //starting point is the kind of helpfulness that loses work.
+    const fields = [
+        { name: 'point', fills: (v, values) => (String(values.why || '').trim() ? {} : { why: 'from the cut' }) },
+        { name: 'why' }
+    ];
+
+    assert.equal(applyFills(fields, 'point', { point: 'p', why: '' }).why, 'from the cut');
+    assert.equal(applyFills(fields, 'point', { point: 'p', why: 'mine' }).why, 'mine');
+});

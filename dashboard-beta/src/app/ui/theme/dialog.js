@@ -156,6 +156,26 @@ function Field({ f, value, onChange }) {
     );
 }
 
+//WHAT ONE FIELD ANSWERING OTHERS COMES TO, on its own so it can be run.
+//
+//A DIALOG CANNOT BE OPENED FROM THE COMMAND LINE -- `windowClick` refuses
+//without the drills, and they are off for a workspace anybody minds -- so the
+//alternative to a pure function here is shipping this read but never run.
+//
+//ONLY FIELDS THAT EXIST ARE WRITTEN. A typo in a `fills` would otherwise put a
+//value into the answer under a name nothing renders, and it would arrive at
+//`onYes` looking deliberate.
+function applyFills(fields, name, values) {
+    var f = (fields || []).filter(function (x) { return x.name === name; })[0];
+    if (!f || typeof f.fills !== 'function') return values;
+
+    var also = f.fills(values[name], values) || {};
+    Object.keys(also).forEach(function (k) {
+        if ((fields || []).some(function (x) { return x.name === k; })) values[k] = also[k];
+    });
+    return values;
+}
+
 function startingValues(fields) {
     var v = {};
     (fields || []).forEach(function (f) {
@@ -246,8 +266,27 @@ function Dialog({ id, spec }) {
 
     useEffect(function () { if (first.current) first.current.focus(); }, []);
 
+    //---- AND A FIELD MAY ANSWER OTHER FIELDS -------------------------------
+    //
+    //THE SIBLING OF `disabled` BELOW, and it is the other half of the same
+    //idea: `disabled` lets a choice STOP another question, `fills` lets one
+    //ANSWER several.
+    //
+    //WHAT IT IS FOR. Naming a line is one branch per repository, and with nine
+    //repositories that is nine dropdowns nobody wants to work through when the
+    //answer is "the same cut everywhere". So a first field offers the whole
+    //shape at once and writes the rest, which are then there to correct — the
+    //common case is one press and the uncommon one is still possible.
+    //
+    //IT SETS VALUES AND NOTHING ELSE. A `fills` that could disable, hide or
+    //rename would be a second layout system living inside a dialog spec.
     function set(name, v) {
-        setValues(function (was) { var next = Object.assign({}, was); next[name] = v; return next; });
+        setValues(function (was) {
+            var next = Object.assign({}, was);
+            next[name] = v;
+
+            return applyFills(fields, name, next);
+        });
     }
 
     //---- A FIELD MAY DEPEND ON WHAT ANOTHER ONE SAYS -----------------------
@@ -448,4 +487,4 @@ function Dialogs() {
 //drills that press buttons are off for a real workspace — so the only way to
 //run it rather than read it is to render it directly. See
 //test/ui/dialog-plain.test.js.
-module.exports = { ask, Dialogs, Field, Plain };
+module.exports = { ask, Dialogs, Field, Plain, applyFills };
