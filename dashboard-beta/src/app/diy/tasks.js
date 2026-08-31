@@ -209,8 +209,34 @@ module.exports = function tasks(theme, okc, remember) {
             });
         }
 
-        function notYet() {
-            setSaid({ text: 'Not wired up yet — this one is still to come.' });
+        //---- NAMING THE CUT AS A LINE ---------------------------------------
+        //
+        //IT ASKS FOR A NAME, because the line is a thing somebody will pick out
+        //of a list later and "dashboard/setup" is the branch rather than what
+        //the work was. Defaulted to the cut, so pressing through changes
+        //nothing and typing is only for when it helps.
+        function nameAsLine(x) {
+            ask({
+                title: 'Name "' + x.cut + '" as a line',
+                plain: [
+                    'A line is one branch per repository, held together under a name. It is what a pull '
+                        + 'request is cut from, and what a change is measured against.',
+                    'Nothing moves and nothing is pushed. It names what is already there.'
+                ],
+                fields: [
+                    { name: 'name', label: 'Call it', value: x.cut, needed: true,
+                        hint: 'What it will be called in the line list, and on Repositories → New PR Cut.' },
+                    { name: 'why', label: 'What it is for',
+                        hint: 'Optional. Read by whoever finds this line later.' }
+                ],
+                confirm: 'Name it',
+                onYes: function (f) {
+                    return run('branchAsLine',
+                        { branch: x.cut, name: f.name || x.cut, why: f.why || undefined },
+                        'Named. It can be cut into a pull request on Repositories → New PR Cut, '
+                            + 'against a line to land in.');
+                }
+            });
         }
 
         //---- STOPPING FOR THE DAY -------------------------------------------
@@ -836,9 +862,42 @@ module.exports = function tasks(theme, okc, remember) {
                                     Nothing reads this. No judge, no queue, no sweep, and no pull request until
                                     you decide there should be one.
                                 </Note>
+                                {/*---- THE NEXT STEP, RATHER THAN THE LAST ONE
+
+                                    THIS SAID "Cut a pull request from it" AND
+                                    DID NOTHING. It was not only unwired — it
+                                    was the wrong step. A pull request is cut
+                                    between two LINES, and a line is one branch
+                                    per repository under a name. A branch cut is
+                                    not one yet, so the press it named could not
+                                    have worked even wired: `prCutMake` looks
+                                    both sides up in `lines` and refuses.
+
+                                    SO THE BUTTON IS THE STEP THAT IS ACTUALLY
+                                    NEXT. Naming this cut as a line is what
+                                    turns work into something a pull request can
+                                    be measured from, and `branchAsLine` is the
+                                    app's own door for it — the same one
+                                    ../repositories/branches/branch-cut.js
+                                    offers on a cut.
+
+                                    AND IT IS HERE BECAUSE THIS IS WHERE
+                                    SOMEBODY IS. They have just pushed; the next
+                                    thing they want is for it to go somewhere,
+                                    and a pane that names the obstacle without
+                                    offering the press is a pane that stops
+                                    them. */}
                                 <div className="row">
-                                    <Button disabled={!carrying.length} onClick={notYet}>Cut a pull request from it</Button>
+                                    <Button kind="ok" disabled={!s.cut}
+                                        onClick={function () { nameAsLine(s); }}>
+                                        Name it as a line
+                                    </Button>
                                 </div>
+                                <PartWhy>
+                                    A line is one branch per repository, under a name. It is what a pull request
+                                    is cut from — so this is the step between what you have pushed and sending
+                                    it anywhere.
+                                </PartWhy>
                             </Panel>
                         )}
                     </Col>
