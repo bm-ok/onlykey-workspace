@@ -167,6 +167,7 @@ module.exports = function cuts(theme, okc, remember, shell) {
         var storyOf = (picked || '').split(' -> ');
         var story = okc.use('prCutStory', storyOf.length === 2 ? { source: storyOf[0], target: storyOf[1] } : {}, 15000);
 
+
         //DRAFTS ARE LOCAL AND ANSWER INSTANTLY; cuts are a network call. Asked
         //separately so the one row on the screen that wants a person is not
         //waiting behind GitHub being asked about seventeen things that do not.
@@ -310,7 +311,7 @@ module.exports = function cuts(theme, okc, remember, shell) {
                 plain: [
                     open.map(function (p) { return p.repo + ' #' + p.number; }).join(', ') + ' — merged into ' + c.target + ', on GitHub, now.',
                     'This is the one thing here that cannot be undone from this window: it is a commit on a real default branch. Reverting it afterwards is a change of its own.',
-                    'Afterwards each fork is behind its parent. Sync the forks, then this host, before cutting anything new from them.',
+                    'Afterwards your forks and this host may be behind — Repositories → Sync says where every repository stands and catches them up, in that order.',
                     //The same table the panel draws. Somebody who scrolled past
                     //the destinations should not have to trust their memory of
                     //them at the moment of pressing.
@@ -403,20 +404,16 @@ module.exports = function cuts(theme, okc, remember, shell) {
             });
         }
 
-        //AFTER A CUT LANDS, EVERY FORK IS BEHIND ITS PARENT. The pane already
-        //says so in a note; the other app put the button that fixes it beside
-        //the sentence, which is the difference between being told and being able
-        //to act.
-        function syncForks() {
-            ask({
-                title: 'Sync every fork with its parent?',
-                plain: ['Each fork\u2019s default branch is pulled up from the repository it was forked from, on GitHub.',
-                    'Nothing here is touched — this host is still behind afterwards, and pulling is separate.'],
-                confirm: 'Sync the forks',
-                protect: true,
-                onYes: function () { return tell(okc.call('repoForkSync', {})); }
-            });
-        }
+        //AFTER A CUT LANDS, THE SYNCING IS SOMEBODY ELSE'S JOB. This pane
+        //used to measure the three drifts and run the fork sync itself, from a
+        //dialog of its own -- a second place that asked GitHub the same
+        //question and a second place that acted on the answer.
+        //
+        //Repositories -> Sync IS THAT PLACE, and it is the whole subject: every
+        //repository, all three standings, the dry run, and the presses. So this
+        //hands over rather than competing -- what a landed cut has to say is
+        //THAT there is catching up to do, and where it is done.
+        function syncForks() { shell.go('Repositories', 'Sync'); }
 
         //A DRAFT IS THE ONE THING HERE THAT CAN BE UNDONE COMPLETELY, and until
         //now it could only be sent. A draft written for a branch that no longer
@@ -604,17 +601,33 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                 </div>
                             )}
 
+                            {/*---- IT SAYS THERE IS CATCHING UP, NOT WHAT IT IS
+
+                                THIS ASSERTED "Each fork is now behind its
+                                parent" because a cut had landed — a claim about
+                                GitHub inferred from a local record, and wrong
+                                here in both directions at once: the two forks
+                                this cut merged INTO came out AHEAD of their
+                                parents, and four unrelated ones had been
+                                trailing for weeks with nothing anywhere saying
+                                so.
+
+                                MEASURING IT HERE WOULD BE THE SECOND PLACE
+                                DOING IT. Sync asks GitHub for all three
+                                standings and holds the presses; this says a
+                                landing leaves work to do and opens that pane. */}
                             {on && on.landed
                                 ? <React.Fragment>
                                     <Note kind="warn">
-                                        It has landed. Each fork is now behind its parent — sync the forks, then
-                                        this host, before cutting anything new from them.
+                                        It has landed. Your forks and this host may now be behind — Sync says
+                                        where every repository stands and catches them up, in that order,
+                                        before anything new is cut from them.
                                     </Note>
-                                    {/* BESIDE THE SENTENCE THAT SAYS TO DO IT.
-                                        Being told what needs doing and being
-                                        able to do it were two panes apart. */}
                                     <div className="row" style={{ marginTop: '8px' }}>
-                                        <Button kind="ok" protect onClick={syncForks}>Sync the forks</Button>
+                                        <Button kind="ok" onClick={syncForks}
+                                            title="Repositories → Sync: all three standings per repository, and the presses that close them">
+                                            Sync the forks
+                                        </Button>
                                     </div>
                                 </React.Fragment>
                                 : null}

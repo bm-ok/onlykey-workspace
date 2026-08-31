@@ -2857,15 +2857,24 @@ async function plugin(imports, register) {
         //---- THE WHOLE WORKSPACE, CAUGHT UP, IN ORDER -----------------------
         //
         //THREE COPIES OF EVERY DEFAULT BRANCH DRIFT ONE WAY after a merge: the
-        //fork behind where its work goes, this host behind the fork. One act:
-        //every fork that the sweep says is behind is synced on GitHub first,
-        //then every default branch here is fetched and fast-forwarded (only
+        //fork behind the project it came from, this host behind the fork. One
+        //act: every fork that is behind is synced on GitHub first, then every
+        //default branch here is fetched and fast-forwarded (only
         //fast-forwarded), then GitHub is asked again so the standings shown
         //are read, not assumed. Forks first, or this host fast-forwards to a
         //fork that is itself behind. Best effort per repository: one that
         //cannot be synced is named and the rest carry on.
+        //
+        //WHICH FORKS ARE BEHIND CAME OFF `behindTarget`, WHICH IS THE WRONG
+        //MEASURE. That one is the fork against where its work GOES, and the
+        //call underneath is merge-upstream, which always pulls from the PARENT.
+        //Where those are the same repository — every repository in the
+        //workspace this was found in — `behindTarget` is not computed at all,
+        //so "Catch up everything" quietly caught up nothing: it synced no fork,
+        //said so in a count of zero, and went on to fast-forward this host to a
+        //fork that was itself weeks behind.
         undo.push(actions.define('workspaceSync', {
-            about: 'Catch the whole workspace up, in order: every fork behind where its work goes is synced on '
+            about: 'Catch the whole workspace up, in order: every fork behind its parent is synced on '
                 + 'GitHub, then every default branch here is fetched and fast-forwarded, then GitHub is asked again',
             takes: [],
             run: async function () {
@@ -2873,17 +2882,26 @@ async function plugin(imports, register) {
                 if (!found.length) throw new Error('There are no repositories in this workspace to catch up.');
                 var notes = (await read()) || {};
 
+                //ASKED, NOT REMEMBERED. `repoForkBehind` is the same question
+                //the dialog on a landed cut asks, and asking it here means the
+                //list synced is the list a person was shown.
+                var standing = {};
+                try {
+                    var ahead = await actions.call('repoForkBehind', {});
+                    ((ahead && ahead.repos) || []).forEach(function (w) { standing[w.repo] = w; });
+                } catch (e) { standing = {}; }
+
                 var forks = [];
                 for (var i = 0; i < found.length; i++) {
                     var name = found[i].name;
-                    var bt = (notes[name] || {}).behindTarget;
+                    var bt = standing[name];
                     if (!bt || !(bt.behind > 0)) continue;
                     try {
-                        var r = await actions.call('repoForkSync', { repo: name, branch: bt.head });
+                        var r = await actions.call('repoForkSync', { repo: name, branch: bt.branch });
                         var row = (r && r.repos && r.repos[0]) || {};
-                        forks.push({ repo: name, from: bt.on, was: bt.behind, how: row.how || null, why: row.why || null });
+                        forks.push({ repo: name, from: bt.parent, was: bt.behind, how: row.how || null, why: row.why || null });
                     } catch (e) {
-                        forks.push({ repo: name, from: bt.on, was: bt.behind, how: null, why: e.message });
+                        forks.push({ repo: name, from: bt.parent, was: bt.behind, how: null, why: e.message });
                     }
                 }
 
@@ -3255,6 +3273,144 @@ async function plugin(imports, register) {
                         ? '"' + on + '" deleted on ' + gone.map(function (d) { return d.repo; }).join(', ')
                             + '. It is untouched here — branchDelete removes it from this host.'
                         : 'Nothing to delete: no fork had "' + on + '".'
+                };
+            }
+        }));
+
+        //---- WHAT A SYNC WOULD DO, BEFORE IT DOES IT -------------------------
+        //
+        //"4 fork(s) pulled up from their parents" WAS THE FIRST WORD ON THE
+        //SUBJECT. The forks had been drifting for however long they had been
+        //drifting, and nothing anywhere measured it — so the only way to find
+        //out that four of them were behind was to press the button that fixed
+        //it, which then reported a count and threw the detail away.
+        //
+        //THE PRESS ASKS FIRST NOW. This is that question on its own: for every
+        //fork, how far its default branch is behind its parent's, read from
+        //GitHub's compare and changing nothing. `repoForkSync` moves exactly
+        //the rows this returns with `behind > 0`, and the ones it cannot move
+        //say why here rather than after.
+        //
+        //IT IS THE PARENT, WHICH IS A DIFFERENT AXIS FROM `behindTarget`. That
+        //one measures a fork against WHERE ITS WORK GOES and is skipped
+        //entirely when those are the same repository -- which is the ordinary
+        //case here, and why nothing in this app had an opinion about a fork
+        //falling behind the project it came from.
+        //
+        //NOT ON THE SWEEP, deliberately. This is a compare per repository, and
+        //the sweep already spends one on `behindTarget`; asked at the press it
+        //is a round of calls somebody is waiting for on purpose.
+        undo.push(actions.define('repoForkBehind', {
+            about: 'How far each fork is behind its parent on GitHub — what repoForkSync would pull up, without pulling it',
+            takes: ['repo'],
+            run: async function (args) {
+                var a = args || {};
+
+                var found = await workspace.repos();
+                if (!found.length) throw new Error('There are no repositories in this workspace to look at.');
+
+                var here = found.map(function (r) { return r.name; });
+                var want = a.repo ? [String(a.repo)] : here;
+                for (var i = 0; i < want.length; i++) {
+                    if (here.indexOf(want[i]) < 0) {
+                        throw new Error('There is no repository called "' + want[i] + '" here. There is: '
+                            + here.join(', ') + '.');
+                    }
+                }
+
+                var doc = await kept();
+                var notes = doc.read({}) || {};
+                var rows = [];
+
+                for (var j = 0; j < want.length; j++) {
+                    var name = want[j];
+                    var note = notes[name] || {};
+                    var remote = await refs.origin(name);
+
+                    //THE SAME THREE REFUSALS `repoForkSync` MAKES, said as rows
+                    //rather than thrown. A dry run that stops at the first
+                    //repository it cannot ask about tells you less than the
+                    //press it is meant to replace.
+                    if (!remote || remote.kind !== 'github') {
+                        rows.push({ repo: name, why: 'no GitHub remote to sync' });
+                        continue;
+                    }
+                    var self = remote.owner + '/' + remote.repo;
+                    if (!note.parent) {
+                        rows.push({
+                            repo: name, self: self,
+                            why: 'not a fork of anything this app knows about'
+                        });
+                        continue;
+                    }
+                    var branch = String(note.upstreamDefault || '').trim();
+                    if (!branch) {
+                        rows.push({ repo: name, self: self, parent: note.parent, why: 'nothing says which branch to sync' });
+                        continue;
+                    }
+
+                    var pb = String(note.parent).split('/');
+                    try {
+                        //---- COMPARED BY SHA, NOT BY `owner:branch` ----------
+                        //
+                        //THE SHORTHAND NAMES A REPOSITORY BY GUESSING ITS NAME.
+                        //`bm-ok:master` means "master in the repository called
+                        //<this one's name> owned by bm-ok" — and half the forks
+                        //here are RENAMED: `bm-ok/0c-coder-lib-agent` is a fork
+                        //of `0c-coder/lib-agent`. The shorthand points at
+                        //`bm-ok/lib-agent`, which is a different repository or
+                        //no repository at all, and GitHub answers either way.
+                        //
+                        //SO THE PARENT'S HEAD IS FETCHED AND COMPARED INSIDE THE
+                        //FORK. A fork shares a commit network with its parent,
+                        //so the parent's sha resolves there, and neither side of
+                        //the compare is a name that could mean something else.
+                        //One extra call per repository to not be wrong.
+                        var pr = await github.call('GET', '/repos/' + pb[0] + '/' + pb[1]
+                            + '/branches/' + encodeURIComponent(branch));
+                        if (pr.status !== 200 || !pr.body || !pr.body.commit) {
+                            rows.push({
+                                repo: name, self: self, parent: note.parent, branch: branch,
+                                why: note.parent + ' has no "' + branch + '" this host can read'
+                                    + ((pr.body && pr.body.message) ? ' — ' + pr.body.message : '')
+                            });
+                            continue;
+                        }
+
+                        //BASE IS THE PARENT'S COMMIT, HEAD IS THE FORK'S BRANCH,
+                        //so `behind_by` is what the parent has that the fork does
+                        //not — exactly the commits a sync would bring down.
+                        var cmp = await github.call('GET', '/repos/' + remote.owner + '/' + remote.repo + '/compare/'
+                            + encodeURIComponent(pr.body.commit.sha) + '...' + encodeURIComponent(branch));
+                        if (cmp.status !== 200 || !cmp.body) {
+                            rows.push({
+                                repo: name, self: self, parent: note.parent, branch: branch,
+                                why: (cmp.body && cmp.body.message) || ('GitHub answered ' + cmp.status)
+                            });
+                            continue;
+                        }
+                        rows.push({
+                            repo: name, self: self, parent: note.parent, branch: branch,
+                            behind: Number(cmp.body.behind_by || 0),
+                            ahead: Number(cmp.body.ahead_by || 0)
+                        });
+                    } catch (e) {
+                        rows.push({ repo: name, self: self, parent: note.parent, branch: branch, why: e.message });
+                    }
+                }
+
+                var moving = rows.filter(function (r) { return r.behind > 0; });
+                var stuck = rows.filter(function (r) { return r.why; });
+
+                return {
+                    repos: rows,
+                    behind: moving.length,
+                    stuck: stuck.length,
+                    note: (moving.length
+                        ? moving.length + ' fork(s) would be pulled up: '
+                            + moving.map(function (r) { return r.repo + ' (' + r.behind + ')'; }).join(', ') + '.'
+                        : 'Every fork this app can ask about is level with its parent.')
+                        + (stuck.length ? ' ' + stuck.length + ' cannot be asked — see each row.' : '')
                 };
             }
         }));

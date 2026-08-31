@@ -1,5 +1,5 @@
 var React = require('react');
-var { useState } = React;
+var { useState, useEffect, useCallback } = React;
 
 //---------------------------------------------------------------------------
 //SYNC: THE WHOLE WORKSPACE, IN ONE PLACE, IN THE RIGHT ORDER.
@@ -15,11 +15,78 @@ var { useState } = React;
 //THE STANDINGS COME FROM THE SWEEP: `repositories` carries behindTarget (the
 //fork against where its work goes, GitHub's compare) and inStep (this host
 //against the fork). Nothing here is measured twice.
+//
+//---- AND THE THIRD DRIFT, WHICH THIS PANE DID NOT HAVE -------------------
+//
+//THERE ARE THREE GAPS, NOT TWO. A fork drifts from the project it was FORKED
+//FROM; it drifts from where its work GOES; and this host drifts from the fork.
+//The sentence at the top of this pane names three copies and the pane measured
+//the last two.
+//
+//AND THE BUTTON WAS WIRED TO THE WRONG ONE. `Sync fork` presses `repoForkSync`,
+//which is GitHub's merge-upstream and always pulls from the PARENT — but it was
+//enabled off `behindTarget`, which measures where work GOES. In this workspace
+//every repository sends work to its own fork, so `behindTarget` is null on all
+//nine, so `Sync fork` was disabled on every card in the list, permanently,
+//however far behind its parent the fork had drifted. Four of them had, and the
+//only place that could be discovered was a button on a different tab that fixed
+//it without saying what it had done.
+//
+//SO `repoForkBehind` IS READ HERE TOO, and it is what enables the button that
+//acts on it. Read on arrival and after anything that could move it — never on a
+//timer, because it is a call or two per repository and nothing about it changes
+//while somebody reads the page.
 //---------------------------------------------------------------------------
 
 module.exports = function sync(theme, okc) {
     var { Pane, Panel, Stack, TitleRow, Grow, Card, CardTitle, CardSub, Badge, Badges,
-        Button, Empty, Note, Notice, Skeleton, Mono, ago } = theme;
+        Button, Empty, Note, Notice, Skeleton, Mono, Muted, ago, ask } = theme;
+
+    //---- WHAT A SYNC WOULD DO, ROW BY ROW, BEFORE IT DOES IT ---------------
+    //
+    //A CONFIRM DIALOG THAT DESCRIBES A CATEGORY IS NOT A DRY RUN. "Each fork's
+    //default branch is pulled up from the repository it was forked from" is
+    //true of every press ever made and says nothing about THIS one: how many
+    //move, which, by how many commits, and which cannot move at all. Somebody
+    //pressed it and came back with "i have no idea what that did" — and they
+    //were right, because the only report was a count, after the fact.
+    //
+    //ALL FOUR FACTS ARE ON `repoForkBehind`, so all four are on the row. A fork
+    //that is level says so rather than being left out: "nothing to do" is the
+    //answer somebody is looking for as often as the other one.
+    function ForkRows({ rows }) {
+        if (!rows || !rows.length) return null;
+        return (
+            <table className="kv where"><tbody>
+                {rows.map(function (r) {
+                    return (
+                        <tr key={r.repo}>
+                            <th>{r.repo}</th>
+                            <td>
+                                {r.why
+                                    ? <div className="sub muted">{r.why}</div>
+                                    : <React.Fragment>
+                                        <div>
+                                            <Mono>{r.branch}</Mono>{' '}
+                                            <Badge kind={r.behind ? 'warn' : 'ok'}>
+                                                {r.behind ? r.behind + ' behind' : 'level'}
+                                            </Badge>
+                                            {/* AHEAD IS NOT A PROBLEM AND IS THE
+                                                WHOLE STORY on a fork a cut just
+                                                merged into — it says the work is
+                                                there, which is why there is
+                                                nothing to pull down. */}
+                                            {r.ahead ? <span>{' '}<Muted>{r.ahead + ' ahead'}</Muted></span> : null}
+                                        </div>
+                                        <div className="sub muted">{'from ' + r.parent}</div>
+                                    </React.Fragment>}
+                            </td>
+                        </tr>
+                    );
+                })}
+            </tbody></table>
+        );
+    }
 
     function standingOf(r) {
         var bt = r.behindTarget || null;
@@ -28,6 +95,30 @@ module.exports = function sync(theme, okc) {
         if (bt.why) return { fork: { word: 'could not compare', kind: 'warn' }, behind: 0, why: bt.why };
         if (bt.behind > 0) return { fork: { word: bt.behind + ' behind ' + bt.on, kind: 'warn' }, behind: bt.behind };
         return { fork: { word: 'level with ' + bt.on + (bt.ahead ? ' (' + bt.ahead + ' ahead)' : ''), kind: 'ok' }, behind: 0 };
+    }
+
+    //THE FORK AGAINST THE PROJECT IT CAME FROM. `repoForkBehind` answers one row
+    //per repository, and every row is drawn — "level" is the answer somebody is
+    //looking for as often as the other one, and a card that simply omits it
+    //cannot be told from a card nobody asked about.
+    function parentOf(r, rows) {
+        if (!rows) return { word: 'asking GitHub…', kind: 'muted', behind: 0, asking: true };
+        var w = rows.filter(function (x) { return x.repo === r.repo; })[0];
+        if (!w) return { word: 'not asked', kind: 'muted', behind: 0 };
+        if (w.why) return { word: w.why, kind: 'muted', behind: 0, why: w.why };
+        if (w.behind > 0) {
+            return {
+                word: w.behind + ' behind ' + w.parent, kind: 'warn', behind: w.behind,
+                from: w.parent, branch: w.branch
+            };
+        }
+        //AHEAD IS THE WHOLE STORY ON A FORK A CUT JUST MERGED INTO. It says the
+        //work is there, which is WHY there is nothing to pull down — without it
+        //"level" reads as "nothing has happened".
+        return {
+            word: 'level with ' + w.parent + (w.ahead ? ' (' + w.ahead + ' ahead)' : ''),
+            kind: 'ok', behind: 0, from: w.parent, branch: w.branch
+        };
     }
 
     function hereOf(r) {
@@ -43,15 +134,104 @@ module.exports = function sync(theme, okc) {
         var [busy, setBusy] = useState(null);
         var [said, setSaid] = useState(null);
 
+        //null while it has never been asked, so `parentOf` can say "asking"
+        //rather than draw a standing it does not have.
+        var [forks, setForks] = useState(null);
+
+        var readForks = useCallback(function () {
+            return okc.call('repoForkBehind', {}).then(function (v) {
+                setForks((v && v.repos) || []); return v;
+            }, function () {
+                //A ROW PER REPOSITORY IS THE CONTRACT, so a failure is an empty
+                //list and every card says "not asked" — never a stale standing
+                //from before whatever went wrong.
+                setForks([]); return null;
+            });
+        }, []);
+
+        useEffect(function () { readForks(); }, [readForks]);
+
         function tell(p, after) {
             return p.then(
-                function (r) { setSaid({ text: (r && r.note) || 'Done.', bad: !!(r && r.stuck) }); repos.again(); lines.again(); if (after) after(r); },
+                function (r) { setSaid({ text: (r && r.note) || 'Done.', bad: !!(r && r.stuck) }); repos.again(); lines.again(); readForks(); if (after) after(r); },
                 function (e) { setSaid({ bad: true, text: e.message }); }
             ).then(function () { setBusy(null); });
         }
 
-        function everything() { setBusy('*'); setSaid(null); return tell(okc.call('workspaceSync', {})); }
-        function forkSync(r) { setBusy('fork:' + r.repo); setSaid(null); return tell(okc.call('repoForkSync', { repo: r.repo }).then(function (x) { return okc.call('repositoriesCheck', { repo: r.repo }).then(function () { return x; }); })); }
+        //---- NEITHER PRESS GOES WITHOUT SAYING WHAT IT WOULD DO -------------
+        //
+        //ASKED AT THE PRESS, not taken off the badges. The standings on screen
+        //can be minutes old and a dry run that is minutes old is not a dry run
+        //— it is the same guess with a table around it. One call, awaited, and
+        //the badges are refreshed from the same answer on the way past.
+        //
+        //IF IT CANNOT BE READ the dialog says so and still offers the press.
+        //Not knowing is a reason to be careful, not a reason to be unable to
+        //act.
+        function withRows(then) {
+            return okc.call('repoForkBehind', {}).then(function (v) {
+                var rows = (v && v.repos) || [];
+                setForks(rows);
+                return then(rows, false);
+            }, function () { return then(forks || [], true); });
+        }
+
+        function everything() {
+            return withRows(function (rows, blind) {
+                var moving = rows.filter(function (r) { return r.behind > 0; });
+                var behindHere = (repos.state && (repos.state.repos || []).filter(function (r) { return r.inStep === false; })) || [];
+                return ask({
+                    title: 'Catch the whole workspace up?',
+                    plain: [
+                        blind
+                            ? 'GitHub could not be asked how far each fork is behind, so what follows is what '
+                                + 'the press does rather than what it would do here.'
+                            : moving.length
+                                ? 'On GitHub: ' + moving.map(function (r) { return r.repo + ' (' + r.behind + ')'; }).join(', ')
+                                    + ' pulled up from their parents. Every other fork is level and is left alone.'
+                                : 'On GitHub: nothing. Every fork this app can ask about is already level with its parent.',
+                        behindHere.length
+                            ? 'Here: ' + behindHere.length + ' default branch(es) fetched and fast-forwarded — '
+                                + behindHere.map(function (r) { return r.repo; }).join(', ') + '. Only fast-forwarded, never merged.'
+                            : 'Here: nothing to fetch — every default branch is already at its fork’s commit.',
+                        'Forks first, then this host, or this host would fast-forward to a fork that is itself behind.',
+                        <ForkRows key="forks" rows={rows} />
+                    ].filter(Boolean),
+                    confirm: 'Catch it up',
+                    onYes: function () { setBusy('*'); setSaid(null); return tell(okc.call('workspaceSync', {})); }
+                });
+            });
+        }
+
+        function forkSync(r) {
+            return withRows(function (rows, blind) {
+                var mine = rows.filter(function (x) { return x.repo === r.repo; });
+                var w = mine[0] || null;
+                return ask({
+                    title: 'Pull ' + r.repo + ' up from its parent?',
+                    plain: [
+                        blind || !w
+                            ? 'GitHub could not be asked how far this fork is behind, so what follows is what '
+                                + 'the press does rather than what it would do here.'
+                            : w.why
+                                ? 'It cannot be pulled up: ' + w.why
+                                : w.behind
+                                    ? 'GitHub merges ' + w.parent + ' ' + w.branch + ' into your fork — '
+                                        + w.behind + ' commit(s), in one call.'
+                                    : 'It is already level with ' + w.parent + ', so this would change nothing.',
+                        'Nothing here is touched — this host is behind until it is pulled, and pulling is separate.',
+                        <ForkRows key="forks" rows={mine} />
+                    ].filter(Boolean),
+                    confirm: w && w.behind ? 'Pull it up' : 'Sync it anyway',
+                    onYes: function () {
+                        setBusy('fork:' + r.repo); setSaid(null);
+                        return tell(okc.call('repoForkSync', { repo: r.repo }).then(function (x) {
+                            return okc.call('repositoriesCheck', { repo: r.repo }).then(function () { return x; });
+                        }));
+                    }
+                });
+            });
+        }
         function pullHere(r) { setBusy('here:' + r.repo); setSaid(null); return tell(okc.call('repoSyncBranch', { repo: r.repo, branch: r.default || undefined })); }
         function askGitHub() { setBusy('ask'); setSaid(null); return tell(okc.call('repositoriesCheck', {})); }
         function syncLine(g) { setBusy('line:' + g.name); setSaid(null); return tell(okc.call('lineSync', { name: g.name })); }
@@ -61,6 +241,7 @@ module.exports = function sync(theme, okc) {
 
         var rows = repos.state.repos || [];
         var forksBehind = rows.filter(function (r) { return standingOf(r).behind > 0; }).length;
+        var parentBehind = rows.filter(function (r) { return parentOf(r, forks).behind > 0; }).length;
         var hereBehind = rows.filter(function (r) { return r.inStep === false; }).length;
         var allLines = (lines.state && (lines.state.lines || lines.state.groups)) || [];
         var linesBehind = allLines.filter(function (g) { return g.sync === 'behind' || g.sync === 'conflict'; }).length;
@@ -69,9 +250,9 @@ module.exports = function sync(theme, okc) {
         return (
             <Pane>
                 <Note>
-                    Three copies of every default branch, and they drift one way: a change lands where work goes,
-                    your fork is behind it, this host is behind your fork. Catching up is those two steps in that
-                    order, and this is where all of them are.
+                    Three gaps per repository and they close in one order: your fork behind the project it was
+                    forked from, your fork behind where its work goes, and this host behind your fork. Every card
+                    says where it stands on all three, and every press that closes one is here.
                 </Note>
                 {said ? <Notice kind={said.bad ? 'bad' : 'ok'} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
 
@@ -79,9 +260,11 @@ module.exports = function sync(theme, okc) {
                     <CardTitle>
                         <span>The workspace</span>
                         <Grow />
-                        {forksBehind ? <Badge kind="warn">{forksBehind + ' fork(s) behind'}</Badge> : null}
+                        {parentBehind ? <Badge kind="warn">{parentBehind + ' fork(s) behind their parent'}</Badge> : null}
+                        {forksBehind ? <Badge kind="warn">{forksBehind + ' behind where work goes'}</Badge> : null}
                         {hereBehind ? <Badge kind="warn">{hereBehind + ' behind here'}</Badge> : null}
-                        {!forksBehind && !hereBehind && oldest ? <Badge kind="ok">everything level</Badge> : null}
+                        {!parentBehind && !forksBehind && !hereBehind && oldest && forks
+                            ? <Badge kind="ok">everything level</Badge> : null}
                         <span className="muted">{oldest ? 'asked GitHub ' + ago(oldest) : 'not asked yet'}</span>
                     </CardTitle>
                     <div className="row" style={{ marginTop: '8px' }}>
@@ -101,6 +284,7 @@ module.exports = function sync(theme, okc) {
                     : <Stack>
                         {rows.map(function (r) {
                             var s = standingOf(r);
+                            var p = parentOf(r, forks);
                             var h = hereOf(r);
                             return (
                                 <Card key={r.repo}>
@@ -108,13 +292,29 @@ module.exports = function sync(theme, okc) {
                                         <Mono>{r.repo}</Mono>
                                         <span className="muted">{r.default ? ' ' + r.default : ''}</span>
                                         <Grow />
-                                        <Badge kind={s.fork.kind}>{'fork: ' + s.fork.word}</Badge>
+                                        {/* THE THREE GAPS IN THE ORDER THE
+                                            SENTENCE AT THE TOP NAMES THEM, so
+                                            reading left to right is reading a
+                                            change's way down to this host. */}
+                                        <Badge kind={p.kind}>{'parent: ' + p.word}</Badge>
+                                        <Badge kind={s.fork.kind}>{'work goes: ' + s.fork.word}</Badge>
                                         <Badge kind={h.kind}>{'here: ' + h.word}</Badge>
                                     </CardTitle>
                                     {s.why ? <CardSub><span className="muted">{s.why}</span></CardSub> : null}
                                     <div className="row" style={{ marginTop: '6px' }}>
-                                        <Button kind="ok" disabled={!!busy || !s.behind} onClick={function () { forkSync(r); }}
-                                            title={s.behind ? 'GitHub merges ' + r.behindTarget.on + ' ' + r.behindTarget.base + ' into your fork, one call' : 'nothing to sync from'}>
+                                        {/*---- ENABLED OFF THE AXIS IT ACTS ON
+
+                                            This read `s.behind` — the fork
+                                            against where work GOES — while the
+                                            press it fires merges from the
+                                            PARENT. Where those are the same
+                                            repository the button was dead on
+                                            every card in the workspace. */}
+                                        <Button kind="ok" disabled={!!busy || !p.behind} onClick={function () { forkSync(r); }}
+                                            title={p.behind
+                                                ? 'GitHub merges ' + p.from + ' ' + p.branch + ' into your fork, one call'
+                                                : p.asking ? 'still asking GitHub how far behind it is'
+                                                    : p.why ? p.why : 'already level with ' + (p.from || 'its parent')}>
                                             {busy === 'fork:' + r.repo ? 'syncing…' : 'Sync fork'}
                                         </Button>
                                         <Button disabled={!!busy || r.inStep === true} onClick={function () { pullHere(r); }}

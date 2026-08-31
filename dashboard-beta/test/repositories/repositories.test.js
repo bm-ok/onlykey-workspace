@@ -1306,7 +1306,23 @@ const BEHIND = {
     '/repos/anowner/arepo/issues': { status: 200, body: [] },
     '/repos/up/arepo': { status: 200, body: { default_branch: 'main' } },
     '/repos/up/arepo/pulls': { status: 200, body: [] },
-    '/repos/up/arepo/compare/main...anowner%3Amain': { status: 200, body: { behind_by: 1, ahead_by: 0 } }
+    '/repos/up/arepo/compare/main...anowner%3Amain': { status: 200, body: { behind_by: 1, ahead_by: 0 } },
+    //---- AND THE SAME GAP MEASURED AGAINST THE PARENT ---------------------
+    //
+    //TWO DIFFERENT QUESTIONS THAT LOOK ALIKE. The compare above is the fork
+    //against WHERE ITS WORK GOES, which is what the sweep records as
+    //`behindTarget`. These two are `repoForkBehind` — the fork against the
+    //project it was FORKED FROM, which is the gap merge-upstream actually
+    //closes and therefore the one `workspaceSync` picks its list from.
+    //
+    //IT ASKS BY SHA, WITH NO `owner:branch` SHORTHAND ANYWHERE. That shorthand
+    //names a repository by guessing it is called the same thing, and a renamed
+    //fork — `bm-ok/0c-coder-lib-agent` of `0c-coder/lib-agent` — makes it point
+    //at a different repository entirely, which GitHub answers. Here the names
+    //happen to match, so only a test that pins the SHAPE of the calls can hold
+    //the shorthand out.
+    '/repos/up/arepo/branches/main': { status: 200, body: { name: 'main', commit: { sha: 'bbbbbbb' } } },
+    '/repos/anowner/arepo/compare/bbbbbbb...main': { status: 200, body: { behind_by: 1, ahead_by: 0 } }
 };
 
 //---------------------------------------------------------------------------
@@ -1487,6 +1503,71 @@ test('a fork behind where its work goes is an errand: sync the fork', async () =
     assert.match(JSON.stringify(items[0]), /Sync fork/);
     assert.equal(items[0].where.pane, 'Sync', 'the errand does not send a person to the Sync pane');
     void state;
+});
+
+//---------------------------------------------------------------------------
+//THE DRY RUN: how far each fork is behind the project it came from.
+//
+//NOTHING MEASURED THIS GAP AT ALL. `behindTarget` measures the fork against
+//where its work GOES and is not computed when those are the same repository —
+//which is every repository in the workspace this was found in. So four forks
+//were weeks behind their parents, the pane said nothing, `Sync fork` was
+//disabled on every card, and the only way to discover any of it was to press
+//the one button that fixed it and then read a count.
+//---------------------------------------------------------------------------
+
+test('how far behind its parent is asked by sha, never by the owner:branch shorthand', async () => {
+    const { actions, asked } = await anApp(BEHIND, undefined, undefined, { settings: { read: async () => ({}) } });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const said = await actions.call('repoForkBehind', {});
+    const row = said.repos.find((r) => r.repo === 'repo-one');
+    assert.deepEqual(
+        { parent: row.parent, branch: row.branch, behind: row.behind, ahead: row.ahead, why: row.why },
+        { parent: 'up/arepo', branch: 'main', behind: 1, ahead: 0, why: undefined }
+    );
+    assert.equal(said.behind, 1);
+
+    //THE PARENT'S HEAD IS FETCHED AND THE COMPARE HAPPENS INSIDE THE FORK.
+    const mine = asked.filter((a) => a.startsWith('GET /repos/') && /repoForkBehind|branches\/main|compare\//.test(a));
+    assert.ok(mine.includes('GET /repos/up/arepo/branches/main'),
+        'it did not ask the parent for its head: ' + mine.join(' | '));
+    assert.ok(mine.includes('GET /repos/anowner/arepo/compare/bbbbbbb...main'),
+        'it did not compare by sha inside the fork: ' + mine.join(' | '));
+
+    //AND THE SHORTHAND IS NOT USED FOR THIS QUESTION. `owner:branch` names a
+    //repository by ASSUMING it is called the same thing on both sides, so on a
+    //renamed fork it silently compares the wrong two repositories — which is
+    //how three forks read as 6, 39 and 17 commits behind minutes after being
+    //synced level. `behindTarget` still asks its own way, so this is pinned to
+    //the compare that happens inside the fork rather than to the whole list.
+    assert.ok(!asked.includes('GET /repos/anowner/arepo/compare/main...up%3Amain'),
+        'repoForkBehind used the owner:branch shorthand');
+});
+
+test('a fork with no parent, and one with no GitHub remote, are rows with a reason rather than a throw', async () => {
+    const { actions } = await anApp(Object.assign({}, BEHIND, {
+        //NOT A FORK OF ANYTHING, which is `onlykey-testing` in the real
+        //workspace and was the row that mattered: it cannot be synced at all,
+        //and saying so on its own row is the difference between an answer and
+        //a stack trace.
+        '/repos/anowner/arepo': { status: 200, body: { fork: false, default_branch: 'main' } }
+    }), undefined, undefined, { settings: { read: async () => ({}) } });
+    await actions.call('repositoriesCheck', {});
+
+    const said = await actions.call('repoForkBehind', {});
+    assert.equal(said.behind, 0);
+
+    const one = said.repos.find((r) => r.repo === 'repo-one');
+    assert.match(one.why, /not a fork of anything this app knows about/);
+
+    //ONE ROW PER REPOSITORY, INCLUDING THE ONES THAT CANNOT BE ASKED. A dry run
+    //that stops at the first repository it cannot read tells you less than the
+    //press it is there to replace.
+    assert.deepEqual(said.repos.map((r) => r.repo).sort(), ['repo-one', 'repo-three', 'repo-two']);
+    assert.ok(said.repos.every((r) => r.why || typeof r.behind === 'number'),
+        'a row said neither how far behind it is nor why it could not be asked');
+    assert.equal(said.stuck, said.repos.filter((r) => r.why).length);
 });
 
 test('catching the workspace up syncs the forks that are behind first, then pulls here, then asks GitHub again', async () => {
