@@ -203,7 +203,13 @@ module.exports = function writer(theme, okc, remember) {
         var text = [typed, v && v.additions].filter(Boolean).join('\n\n---\n\n');
         var existing = v && v.existing && v.existing.count;
 
+        //A SELECT WITH NOTHING IN IT IS A CONTROL THAT LOOKS BROKEN. An empty
+        //dropdown gives a person nothing to read and nothing to press, and no
+        //way to tell it apart from one that failed to load — which is how this
+        //pane came to be reported as broken when it was merely empty. One
+        //unselectable line saying so costs nothing and answers the question.
         function lineOptions() {
+            if (!names.length) return [{ value: '', label: 'no lines named yet' }];
             return names.map(function (n) { return { value: n, label: n }; });
         }
 
@@ -264,7 +270,32 @@ module.exports = function writer(theme, okc, remember) {
                             ) : null}
                         </Head>
 
-                        {!pickFrom || !pickInto || pickFrom == pickInto ? (
+                        {/*---- THREE WAYS TO HAVE NO PAIR, AND THEY ARE NOT THE
+                            SAME ---------------------------------------------
+
+                            THIS SAID "Two different lines are needed" WHATEVER
+                            THE REASON, including the one where there are none
+                            at all. A workspace that has never named a line
+                            showed two empty dropdowns and a sentence telling
+                            somebody to pick from them — so the pane read as
+                            broken, which is exactly how it was reported.
+
+                            IT IS NOT BROKEN AND IT IS NOT USABLE, and the only
+                            thing standing between those two readings is saying
+                            which. Every other refusal in this app names what is
+                            missing and where it is fixed; this one did not. */}
+                        {!names.length ? (
+                            <Empty>
+                                No lines have been named in this workspace yet, so there is nothing to
+                                compare. A line is one branch per repository, held together under a name —
+                                name one on Repositories → Branches Lines, and a second to send it into.
+                            </Empty>
+                        ) : names.length < 2 ? (
+                            <Empty>
+                                Only one line is named here — “{names[0]}”. A pull request goes from one line
+                                into another, so there is nothing to send it to yet.
+                            </Empty>
+                        ) : !pickFrom || !pickInto || pickFrom == pickInto ? (
                             <Empty>Two different lines are needed to preview what a pull request between them would say.</Empty>
                         ) : failed ? (
                             <Empty bad>{failed}</Empty>
