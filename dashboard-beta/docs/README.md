@@ -1,5 +1,8 @@
 # Docs
 
+**New here? [What this dashboard is](what-is-the-dashboard.md)** — what it
+does, why it exists, and where a person stands in it.
+
 This folder is the app's wiki. Every page is a markdown file here, shown on
 the **Docs** tab, and edited from either side:
 
