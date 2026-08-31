@@ -168,11 +168,21 @@ async function anApp(answers, open, budget, extra) {
     await reposPlugin({
         app: { host: { actions } },
         log: { on: () => logger },
-        git: git_,
+        //THE REAL GIT, UNLESS A TEST IS ABOUT WHAT IS ASKED OF IT. The
+        //repositories here have their origin at a github.com URL, on purpose —
+        //turning a remote into owner/repo is the thing that would rot — and
+        //nothing can be FETCHED from one. A case about an action that fetches
+        //hands its own in and says what git answered; what git actually does
+        //with a real origin is ../git/writes.test.js, which builds a bare one.
+        git: (extra && extra.git) || git_,
         github: gh.github,
         workspace,
         state,
-        refs,
+        //THE REAL `refs`, UNLESS A TEST IS ABOUT WHAT IT REPORTED. It reads the
+        //repositories on disk here, which have no remote-tracking refs at all —
+        //nothing has ever been fetched into them — so a case about a branch that
+        //is only on origin has to say so.
+        refs: (extra && extra.refs) || refs,
         inbox: {
             source: (spec) => { sources.push(spec); return () => {}; },
             item: (kind, which, why, where2, more) => Object.assign({ kind, which, why, where: where2 }, more || {}),
@@ -1999,4 +2009,120 @@ test('but one pointed past its parent still refuses, and says why', async () => 
     const row = said.repos.find((r) => r.repo === 'repo-one');
     assert.equal(row.moved, false);
     assert.match(row.why, /can only sync a fork from its own immediate parent/);
+});
+
+//---------------------------------------------------------------------------
+//A BRANCH THAT IS ONLY ON ORIGIN.
+//
+//THERE WAS NO WAY TO BRING ONE DOWN. `catchUp` skips a branch with no local
+//copy — `if (!b.local || !b.remote) continue` — which is right for a
+//fast-forward, and meant a branch pushed from somewhere else could be seen on
+//the Repos tab, named, with its commit shown, and never fetched. The row's own
+//button was disabled and said "there is nothing here to fast-forward": true,
+//and it reads as "there is nothing here", which is not.
+//
+//WHAT GIT ACTUALLY DOES WITH A REAL ORIGIN is ../git/writes.test.js, which
+//builds a bare one. These are about what this action ASKS for, and the start
+//ref is the part that is invisible everywhere else.
+//---------------------------------------------------------------------------
+
+function aTakeApp(how) {
+    const it = how || {};
+    const asked = [];
+
+    return anApp(REPO_OK, undefined, undefined, {
+        settings: { read: async () => ({}) },
+        git: {
+            fetch: async (repo) => { asked.push('fetch ' + repo); return it.fetched === false
+                ? { fetched: false, why: 'origin refused' } : { fetched: true }; },
+            makeBranch: async (repo, name, from) => {
+                asked.push('makeBranch ' + repo + ' ' + name + ' ' + from);
+                return it.made === false
+                    ? { made: false, why: 'git would not' }
+                    : { made: true, at: 'b8918cec80f5feda50c24a0aec3d6fb914ea8481' };
+            }
+        },
+        refs: { of: async () => it.rows || {} }
+    }).then((app) => Object.assign(app, { asked }));
+}
+
+const ONLY_ON_ORIGIN = { 'a-branch': { branch: 'a-branch', local: null, remote: 'b8918cec' } };
+
+test('a branch only on origin is fetched and made here, cut from origin\'s copy', async () => {
+    const { actions, asked } = await aTakeApp({ rows: ONLY_ON_ORIGIN });
+
+    const said = await actions.call('repoTakeBranch', { repo: 'repo-one', branch: 'a-branch' });
+
+    assert.equal(said.made, true);
+    assert.equal(said.already, false);
+
+    //FETCHED FIRST, or there is no `refs/remotes/origin/<branch>` to cut from.
+    //And cut from THAT rather than from HEAD, which is the whole point: a
+    //branch made from whatever happens to be checked out would carry the name
+    //and none of the work.
+    assert.deepEqual(asked, [
+        'fetch repo-one',
+        'makeBranch repo-one a-branch refs/remotes/origin/a-branch'
+    ]);
+});
+
+test('one that is already here says so, and makes nothing', async () => {
+    //TWO PRESSES ON THE SAME ROW, or somebody who made it by hand in between.
+    //Neither is a failure, and neither should touch the branch that is there.
+    const { actions, asked } = await aTakeApp({
+        rows: { 'a-branch': { branch: 'a-branch', local: 'aaaaaaa', remote: 'b8918cec' } }
+    });
+
+    const said = await actions.call('repoTakeBranch', { repo: 'repo-one', branch: 'a-branch' });
+
+    assert.equal(said.already, true);
+    assert.equal(said.made, false);
+    assert.ok(!asked.some((a) => a.startsWith('makeBranch')), asked.join(' | '));
+    assert.match(said.note, /already here/);
+});
+
+test('a branch origin does not have is refused, and says where to look', async () => {
+    const { actions, asked } = await aTakeApp({ rows: {} });
+
+    await assert.rejects(
+        () => actions.call('repoTakeBranch', { repo: 'repo-one', branch: 'a-branch' }),
+        /Origin has no branch called "a-branch" in repo-one/
+    );
+    assert.ok(!asked.some((a) => a.startsWith('makeBranch')), 'it tried to make a branch from nothing');
+});
+
+test('a branch that is only HERE is refused too, rather than made twice', async () => {
+    //`local` WITH NO `remote` IS THE OTHER HALF of the row this exists for, and
+    //it is not this action's job: there is nothing on origin to bring down.
+    const { actions } = await aTakeApp({
+        rows: { 'a-branch': { branch: 'a-branch', local: 'aaaaaaa', remote: null } }
+    });
+
+    await assert.rejects(
+        () => actions.call('repoTakeBranch', { repo: 'repo-one', branch: 'a-branch' }),
+        /Origin has no branch called "a-branch"/
+    );
+});
+
+test('a fetch that fails stops it, because the start ref would be stale or absent', async () => {
+    const { actions, asked } = await aTakeApp({ rows: ONLY_ON_ORIGIN, fetched: false });
+
+    await assert.rejects(
+        () => actions.call('repoTakeBranch', { repo: 'repo-one', branch: 'a-branch' }),
+        /Could not fetch repo-one from origin: origin refused/
+    );
+    assert.deepEqual(asked, ['fetch repo-one'], 'it carried on after the fetch failed');
+});
+
+test('and it refuses what it cannot act on before it touches git', async () => {
+    const { actions, asked } = await aTakeApp({ rows: ONLY_ON_ORIGIN });
+
+    await assert.rejects(() => actions.call('repoTakeBranch', { branch: 'a-branch' }), /Say which repository/);
+    await assert.rejects(() => actions.call('repoTakeBranch', { repo: 'repo-one' }), /Say which branch/);
+    await assert.rejects(
+        () => actions.call('repoTakeBranch', { repo: 'nope', branch: 'a-branch' }),
+        /no repository called "nope"/
+    );
+
+    assert.deepEqual(asked, [], 'it fetched for a call it was going to refuse');
 });

@@ -42,6 +42,11 @@ module.exports = function repos(theme, okc) {
     //and `diverged` is a decision this app does not make.
     function canCatchUp(b) { return b.state == 'behind' || b.state == 'different'; }
 
+    //AND THE OTHER THING A ROW CAN NEED, which is not a fast-forward at all: a
+    //branch that exists on origin and has never been fetched here. It cannot be
+    //cut from, cannot be laid on a machine, and could only be looked at.
+    function canTake(b) { return b.state == 'only on origin'; }
+
     var STATE = {
         same: null,
         behind: { kind: 'warn', word: 'behind' },
@@ -58,6 +63,7 @@ module.exports = function repos(theme, okc) {
         if (b.state == 'ahead') return 'It is ahead of origin — there is nothing here to catch up to';
         if (b.state == 'diverged') return 'It and origin have both moved. This only fast-forwards, so it will not touch it';
         if (b.state == 'only here') return 'Origin has no branch by this name';
+        if (canTake(b)) return 'Bring ' + b.branch + ' here from origin — nothing you have open moves';
         return 'There is nothing here to fast-forward';
     }
 
@@ -104,6 +110,22 @@ module.exports = function repos(theme, okc) {
             setBusy(branch || '*');
             okc.call('repoSyncBranch', branch ? { repo: repo, branch: branch } : { repo: repo }).then(
                 function (x) { setBusy(null); q.again(); onMoved(x && x.note, x && x.moved ? null : 'warn'); },
+                function (e) { setBusy(null); onMoved(e.message, 'bad'); }
+            );
+        }
+
+        //---- AND A BRANCH THIS HOST HAS NOT GOT AT ALL --------------------
+        //
+        //A DIFFERENT ACT, SO A DIFFERENT CALL. Fast-forwarding moves a branch
+        //that is here; this makes one that is not. `repoSyncBranch` skips a
+        //branch with no local copy on purpose -- see `catchUp` -- so the row
+        //for a branch pushed from somewhere else had a disabled button saying
+        //"there is nothing here to fast-forward", which is true and reads as
+        //"there is nothing here", which is not.
+        function take(branch) {
+            setBusy(branch);
+            okc.call('repoTakeBranch', { repo: repo, branch: branch }).then(
+                function (x) { setBusy(null); q.again(); onMoved(x && x.note, x && x.made ? null : 'warn'); },
                 function (e) { setBusy(null); onMoved(e.message, 'bad'); }
             );
         }
@@ -155,10 +177,17 @@ module.exports = function repos(theme, okc) {
                                         THE USEFUL PART, and it differs per row —
                                         which is why the button stays and says
                                         why rather than going quiet. */}
-                                    <Button kind="small" disabled={!canCatchUp(b) || busy == b.branch}
+                                    {/* ONE BUTTON, TWO ACTS, AND THE ARROW SAYS
+                                        WHICH. `⟳` catches a branch up with
+                                        origin; `↓` brings one down that is not
+                                        here at all -- a row that showed a
+                                        branch, its commit, and no way to get
+                                        it. */}
+                                    <Button kind="small"
+                                        disabled={(!canCatchUp(b) && !canTake(b)) || busy == b.branch}
                                         title={whyNotCatchUp(b)}
-                                        onClick={function () { sync(b.branch); }}>
-                                        {busy == b.branch ? '…' : '⟳'}
+                                        onClick={function () { canTake(b) ? take(b.branch) : sync(b.branch); }}>
+                                        {busy == b.branch ? '…' : (canTake(b) ? '↓' : '⟳')}
                                     </Button>
                                 </React.Fragment>
                             }>

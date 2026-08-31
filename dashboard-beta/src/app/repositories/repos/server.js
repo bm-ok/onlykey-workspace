@@ -2848,6 +2848,88 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- A BRANCH THAT IS ONLY ON ORIGIN, BROUGHT HERE ------------------
+        //
+        //THERE WAS NO WAY TO DO THIS AT ALL. `catchUp` skips a branch it has no
+        //local copy of — `if (!b.local || !b.remote) continue` — which is right
+        //for a fast-forward and means a branch pushed from somewhere else could
+        //be SEEN on the Repos tab, named, with its commit shown, and never
+        //fetched. The row's own button was disabled and said "there is nothing
+        //here to fast-forward", which is true and reads as "there is nothing
+        //here", which is not.
+        //
+        //A SEPARATE ACTION AND NOT A CASE INSIDE `repoSyncBranch`. That one is
+        //what `workspaceSync` drives across every branch of every repository, so
+        //teaching it to create the missing ones would mean catching a workspace
+        //up quietly manufacturing a local branch for everything anybody has ever
+        //pushed. Bringing one down is a decision about one branch.
+        //
+        //`git branch`, NOT `checkout -b` — see makeBranch in ../../git/server.js.
+        //The working tree is not moved, because this app makes branches in
+        //repositories somebody may be sitting in.
+        undo.push(actions.define('repoTakeBranch', {
+            about: 'Make a local branch from one that is only on origin, so it can be cut from or worked on here',
+            takes: ['repo', 'branch'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                var branch = String(a.branch || '').trim();
+
+                if (!name) throw new Error('Say which repository.');
+                if (!branch) throw new Error('Say which branch to bring here.');
+
+                var found = await workspace.repos();
+                if (!found.some(function (r) { return r.name === name; })) {
+                    throw new Error('There is no repository called "' + name + '" here. This workspace has: '
+                        + found.map(function (r) { return r.name; }).join(', ') + '.');
+                }
+
+                //FETCHED FIRST, because the whole point is a branch this host
+                //has not got — and `refs/remotes/origin/<branch>` is only there
+                //to cut from once origin has been asked.
+                var got = await git.fetch(name);
+                if (!got.fetched) {
+                    throw new Error('Could not fetch ' + name + ' from origin: ' + (got.why || 'it did not say why'));
+                }
+
+                var rows = await refs.of(name);
+                var b = rows[branch];
+
+                if (!b || !b.remote) {
+                    throw new Error('Origin has no branch called "' + branch + '" in ' + name
+                        + '. What is here and on origin is on the Repos tab, and it was just asked again.');
+                }
+
+                //ALREADY HERE IS AN ANSWER, NOT A FAILURE. Two presses on the
+                //same row, or a branch somebody made by hand in the meantime,
+                //are both the ordinary way this gets called twice.
+                if (b.local) {
+                    return {
+                        repo: name, branch: branch, made: false, already: true,
+                        at: b.local, note: '"' + branch + '" is already here, at ' + String(b.local).slice(0, 7)
+                            + '. Use Catch up to bring it level with origin.'
+                    };
+                }
+
+                var said = await git.makeBranch(name, branch, 'refs/remotes/origin/' + branch);
+                if (!said.made && !said.already) {
+                    throw new Error('Could not make "' + branch + '" in ' + name + ': '
+                        + (said.why || 'git did not say why'));
+                }
+
+                log.on('git', name).good('brought "' + branch + '" down from origin at '
+                    + String(said.at || b.remote).slice(0, 7));
+
+                return {
+                    repo: name, branch: branch, made: true, already: false,
+                    at: said.at || b.remote,
+                    note: '"' + branch + '" is here now, at ' + String(said.at || b.remote).slice(0, 7)
+                        + ', tracking nothing — it was cut from origin\'s copy rather than checked out, '
+                        + 'so nothing you have open has moved.'
+                };
+            }
+        }));
+
         //WHERE A CHANGE FROM THIS REPOSITORY SHOULD GO, chosen once and stuck to.
         //
         //A FORK OF A FORK MAKES THIS A DECISION RATHER THAN A FACT — see the
