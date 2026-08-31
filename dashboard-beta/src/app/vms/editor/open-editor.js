@@ -389,15 +389,18 @@ module.exports = function openEditor(deps) {
 
             to.warn('the VS Code window on ' + it.remote + ' cannot reconnect — closing it and opening a new one');
 
-            return Promise.all(seen.windows.map(function (w) { return stale.close(w.pid); }))
+            //BY THE MACHINE, NOT BY THE PROCESS IDS `--status` GAVE. Those are
+            //renderers; the window belongs to the one VS Code process that owns
+            //every window there is. See ./stale-windows.js — it closes the
+            //window whose title carries this machine and leaves the rest alone.
+            return stale.close(it.remote)
                 .then(function (closed) {
-                    var stuck = closed.filter(function (c) { return !c.closed; });
-                    if (stuck.length) {
+                    if (!closed.closed) {
                         //SAID, AND STILL LAUNCHED. A window that would not close
                         //is worth knowing about, and refusing to open an editor
                         //over it would leave somebody with nothing.
-                        to.warn('could not close ' + stuck.length + ' of them: '
-                            + stuck.map(function (c) { return c.why; }).join('; '));
+                        to.warn('could not close it' + (closed.why ? ': ' + closed.why : '')
+                            + ' — reload that window yourself and press again');
                     }
 
                     //A MOMENT FOR IT TO GO. The launch that follows is aimed at

@@ -91,20 +91,75 @@ test('nothing said, and nothing asked about, are both answers rather than throws
 
 //---- and what it does with a process ---------------------------------------
 
-test('closing asks the window to close rather than killing it', () => {
-    //`taskkill` WITHOUT `/F` is the same as pressing the window's X. A window
-    //whose remote is gone has nothing it could save to that remote, but asking
-    //is still the difference between closing somebody's window and shooting it.
+test('it closes the WINDOW, not the process the pid belongs to', () => {
+    //`taskkill /PID <the pid --status gave>` WAS TRIED ON A REAL MACHINE AND
+    //REFUSED: "This process can only be terminated forcefully (with /F option)."
+    //Those pids are RENDERERS -- one per window, owning no window message loop
+    //-- and forcing one leaves the window there saying it terminated
+    //unexpectedly, which is a different dead window rather than an improvement.
+    //
+    //THE PROCESS THAT OWNS THE WINDOW OWNS ALL OF THEM. Enumerated on that same
+    //machine, the stale window's handle belonged to the main VS Code process,
+    //the one also holding the operator's own editor.
     const ran = [];
     const stale = makeStale({
         platform: 'win32',
-        exec: (file, argv, opts, done) => { ran.push([file].concat(argv).join(' ')); done(null, ''); }
+        exec: (file, argv, opts, done) => { ran.push({ file, argv }); done(null, 'okc-closed 1'); }
     });
 
-    return stale.close(24700).then((said) => {
-        assert.deepEqual(ran, ['taskkill /PID 24700']);
-        assert.ok(!ran.join(' ').includes('/F'), 'it killed the window instead of asking it to close');
+    return stale.close('okc-ok-diy1').then((said) => {
+        assert.equal(ran.length, 1);
+        assert.equal(ran[0].file, 'powershell');
+        assert.ok(!JSON.stringify(ran).includes('taskkill'),
+            'it went back to ending a process instead of closing a window');
         assert.equal(said.closed, true);
+        assert.equal(said.shut, 1);
+    });
+});
+
+test('and the script it runs closes only the window carrying that machine', () => {
+    const stale = makeStale({ platform: 'win32', exec: () => {} });
+    const text = stale.script('okc-ok-diy1');
+
+    //WM_CLOSE IS WHAT CLICKING THE X SENDS. VS Code then decides what to do
+    //about it, which is the difference between closing a window and shooting it.
+    assert.match(text, /PostMessage\(\$h,0x0010/);
+    assert.match(text, /\[SSH: okc-ok-diy1\]/);
+
+    //THE BRACKETS ARE THE WHOLE GUARD against okc-ok-diy1 matching
+    //okc-ok-diy10, and against a window with the name loose in its title.
+    assert.ok(!text.includes('Contains("okc-ok-diy1")'),
+        'it matches the bare name, which would take a window it was not asked about');
+});
+
+test('a name that is not a machine alias is refused before it reaches a script', () => {
+    //IT IS ABOUT TO BE PUT INSIDE A SCRIPT THAT RUNS ON THIS COMPUTER, so it is
+    //checked against what an alias can be rather than escaped.
+    const ran = [];
+    const stale = makeStale({
+        platform: 'win32',
+        exec: (file, argv, opts, done) => { ran.push(file); done(null, 'okc-closed 9'); }
+    });
+
+    return stale.close('okc"; Remove-Item C:/ -Recurse; "').then((said) => {
+        assert.equal(said.closed, false);
+        assert.deepEqual(ran, [], 'it ran something for a name that is not an alias');
+        assert.match(said.why, /not a machine alias/);
+    });
+});
+
+test('a script that runs and finds nothing has not closed anything', () => {
+    //SAYING IT HAD would send whatever comes next off looking in the wrong
+    //place: the window is still there and still holding the machine.
+    const stale = makeStale({
+        platform: 'win32',
+        exec: (file, argv, opts, done) => { done(null, 'okc-closed 0'); }
+    });
+
+    return stale.close('okc-ok-diy1').then((said) => {
+        assert.equal(said.closed, false);
+        assert.equal(said.shut, 0);
+        assert.match(said.why, /no window with that machine/);
     });
 });
 
@@ -114,9 +169,20 @@ test('and a close that fails is reported rather than thrown', () => {
         exec: (file, argv, opts, done) => { done(new Error('Access is denied.')); }
     });
 
-    return stale.close(24700).then((said) => {
+    return stale.close('okc-ok-diy1').then((said) => {
         assert.equal(said.closed, false);
         assert.match(said.why, /Access is denied/);
+    });
+});
+
+test('off Windows it says so rather than pretending', () => {
+    //THERE IS NO WINDOW HANDLE TO POST TO. The sentence somebody reads then
+    //tells them to close it themselves, which is the honest fallback.
+    const stale = makeStale({ platform: 'linux', exec: () => { throw new Error('should not run'); } });
+
+    return stale.close('okc-ok-diy1').then((said) => {
+        assert.equal(said.closed, false);
+        assert.match(said.why, /only wired up on Windows/);
     });
 });
 

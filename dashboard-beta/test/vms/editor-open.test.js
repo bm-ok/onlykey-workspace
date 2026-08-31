@@ -69,7 +69,11 @@ function editor(over) {
         //this assumed and still means: a new window.
         stale: {
             look: async () => staleSays,
-            close: async (pid) => { closed.push(pid); return { pid: pid, closed: true }; }
+            //BY THE MACHINE, NOT BY A PID. The pids `--status` gives are
+            //renderers, which cannot be closed and must not be forced; the
+            //window belongs to the one process that owns every VS Code window
+            //there is. See ../../src/app/vms/editor/stale-windows.js.
+            close: async (alias) => { closed.push(alias); return { alias: alias, closed: true, shut: 1 }; }
         },
         after: (ms, fn) => { const t = { ms, fn, live: true }; clock.push(t); return t; },
         clear: (t) => { if (t) t.live = false; },
@@ -291,7 +295,7 @@ test('a window whose connection is dead is closed, and a new one opened', async 
     const p = editor({ platform: 'linux', env: {} }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
     await settle();
 
-    assert.deepEqual(closed, [24700], 'the dead window was left where it was');
+    assert.deepEqual(closed, ['okc-ok-diy1'], 'the dead window was left where it was');
 
     //AND THE REPLACEMENT WAITS FOR IT TO GO. The launch is aimed at the host the
     //closing window still holds, which is the whole thing being avoided.
@@ -305,7 +309,7 @@ test('a window whose connection is dead is closed, and a new one opened', async 
     fire(1500);
     const r = await within('open()', p);
     assert.equal(r.window, 'new');
-    assert.deepEqual(r.closed, [{ pid: 24700, closed: true }]);
+    assert.deepEqual(r.closed, { alias: 'okc-ok-diy1', closed: true, shut: 1 });
 });
 
 test('a window that will not close is said, and the editor is opened anyway', async () => {
@@ -321,7 +325,7 @@ test('a window that will not close is said, and the editor is opened anyway', as
         platform: 'linux', env: {},
         stale: {
             look: async () => staleSays,
-            close: async (pid) => ({ pid: pid, closed: false, why: 'Access is denied.' })
+            close: async (alias) => ({ alias: alias, closed: false, shut: 0, why: 'Access is denied.' })
         }
     }).open({ dir: '/home/okc/workspace', remote: 'okc-ok-diy1' });
 

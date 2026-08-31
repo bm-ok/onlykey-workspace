@@ -120,28 +120,120 @@ module.exports = function staleWindows(deps) {
         });
     }
 
-    //CLOSED, NOT KILLED. `taskkill` without `/F` asks the window to close the
-    //way pressing its X does; `kill` sends TERM for the same reason. A window
-    //whose remote is gone has nothing it could save to that remote anyway, but
-    //asking is still the difference between closing somebody's window and
-    //shooting it.
-    function close(pid) {
+    //---- CLOSING THE WINDOW, WHICH IS NOT THE SAME AS ENDING A PROCESS -------
+    //
+    //`taskkill /PID <the pid --status gave>` WAS TRIED AND REFUSED:
+    //
+    //  ERROR: The process with PID 24700 could not be terminated.
+    //  Reason: This process can only be terminated forcefully (with /F option).
+    //
+    //THE PID FROM `--status` IS A RENDERER. Every VS Code window runs its own,
+    //and a renderer owns no window message loop for taskkill to knock on — so
+    //the polite form cannot work and the forceful one kills the renderer out
+    //from under a window, which leaves the window there saying it terminated
+    //unexpectedly. A different dead window is not an improvement.
+    //
+    //AND THE PROCESS THAT DOES OWN THE WINDOW OWNS ALL OF THEM. Enumerated on
+    //the machine this was found on, the stale window's handle belongs to pid
+    //8068 — the main VS Code process, the same one holding the operator's own
+    //editor. Closing THAT closes everything they have open.
+    //
+    //SO IT CLOSES THE WINDOW BY ITS HANDLE. `WM_CLOSE` to the one window whose
+    //title carries this machine's alias is exactly what clicking its X does:
+    //VS Code decides what to do about it, and every other window is untouched.
+    //
+    //ONLY THE TITLE DECIDES, and `[SSH: <alias>]` is how VS Code writes it —
+    //the brackets are what stop `okc-ok-diy1` matching `okc-ok-diy10`.
+    var WM_CLOSE = '0x0010';
+
+    //A NAME OUT OF THE SSH CONFIG, AND STILL NOT TRUSTED. It is about to be put
+    //inside a script that runs on this computer, so it is checked against what
+    //an alias can be rather than escaped — the same argument ../provision/
+    //scripts.js makes about a filename.
+    var SAFE = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
+
+    function script(alias) {
+        return [
+            'Add-Type @"',
+            'using System;',
+            'using System.Runtime.InteropServices;',
+            'using System.Text;',
+            'public class OkcWin {',
+            '  public delegate bool EnumProc(IntPtr h, IntPtr p);',
+            '  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);',
+            '  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);',
+            '  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);',
+            '  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);',
+            '}',
+            '"@',
+            '$shut = 0',
+            '$cb = [OkcWin+EnumProc]{ param($h,$l)',
+            '  $sb = New-Object System.Text.StringBuilder 512',
+            '  [void][OkcWin]::GetWindowText($h,$sb,512)',
+            '  $t = $sb.ToString()',
+            '  if ($t.Contains("[SSH: ' + alias + ']") -and [OkcWin]::IsWindowVisible($h)) {',
+            '    [void][OkcWin]::PostMessage($h,' + WM_CLOSE + ',[IntPtr]::Zero,[IntPtr]::Zero)',
+            '    $script:shut = $script:shut + 1',
+            '  }',
+            '  return $true',
+            '}',
+            '[void][OkcWin]::EnumWindows($cb,[IntPtr]::Zero)',
+            'Write-Output ("okc-closed " + $shut)'
+        ].join('\n');
+    }
+
+    //BASE64 UTF-16LE, WHICH IS WHAT `-EncodedCommand` TAKES. The script has
+    //quotes, braces and an `@"` here-string in it; handing that to a shell as a
+    //quoted argument is the backslash trap in another costume. Encoded, there is
+    //nothing left for anything to parse.
+    function encoded(text) {
+        return Buffer.from(String(text), 'utf16le').toString('base64');
+    }
+
+    function close(alias) {
+        var want = String(alias == null ? '' : alias).trim();
+
         return new Promise(function (resolve) {
             var done = false;
             var finish = function (v) { if (!done) { done = true; resolve(v); } };
 
-            var file = platform === 'win32' ? 'taskkill' : 'kill';
-            var argv = platform === 'win32' ? ['/PID', String(pid)] : [String(pid)];
+            if (!SAFE.test(want)) {
+                return finish({ alias: want, closed: false, shut: 0, why: '"' + want + '" is not a machine alias' });
+            }
+
+            //ONLY ON WINDOWS IS THERE A WINDOW HANDLE TO POST TO. Elsewhere this
+            //says so rather than pretending: the sentence somebody reads then
+            //tells them to close it themselves, which is the honest fallback and
+            //is what happened before any of this existed.
+            if (platform !== 'win32') {
+                return finish({
+                    alias: want, closed: false, shut: 0,
+                    why: 'closing a VS Code window from outside is only wired up on Windows'
+                });
+            }
 
             try {
-                exec(file, argv, { windowsHide: true, timeout: 15000 }, function (err) {
-                    finish({ pid: pid, closed: !err, why: err ? err.message : null });
-                });
-            } catch (e) { finish({ pid: pid, closed: false, why: e.message }); }
+                exec('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded(script(want))],
+                    { windowsHide: true, timeout: 30000 }, function (err, out) {
+                        var m = /okc-closed (\d+)/.exec(String(out || ''));
+                        var shut = m ? Number(m[1]) : 0;
+                        finish({
+                            alias: want,
+                            //IT DID SOMETHING ONLY IF A WINDOW WAS ACTUALLY
+                            //ASKED TO GO. A script that ran perfectly and found
+                            //nothing has not closed anything, and saying it had
+                            //would send the next step off looking in the wrong
+                            //place.
+                            closed: shut > 0,
+                            shut: shut,
+                            why: err ? err.message : (shut ? null : 'no window with that machine in its title')
+                        });
+                    });
+            } catch (e) { finish({ alias: want, closed: false, shut: 0, why: e.message }); }
         });
     }
 
-    return { look: look, close: close, read: read };
+    return { look: look, close: close, read: read, script: script };
 };
 
 module.exports.read = read;
