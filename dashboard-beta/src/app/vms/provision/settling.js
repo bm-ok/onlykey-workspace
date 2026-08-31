@@ -25,11 +25,6 @@ module.exports = function settling(deps) {
     var after = d.after || function (ms, fn) { return setTimeout(fn, ms); };
     var SETTLE = d.settleMs == null ? 5000 : d.settleMs;
 
-    //WHAT HAPPENS AFTER THE FIRST SNAPSHOT, if anything does. Injected
-    //rather than required: this module is about a machine settling, and a
-    //host that has no project half hands nothing in. See ./afterwards.js.
-    var afterBase = d.afterBase || null;
-
     //---- what the guest says about itself ----------------------------------
     //
     //AN INSTALL TALKS BACK OVER HTTP, because it has no agent yet — that is the
@@ -158,28 +153,7 @@ module.exports = function settling(deps) {
         ours.update(name, { baseSnapshot: what, snapshots: { [what]: null } });
 
         to.good('"' + what + '" is the point this machine will be returned to after every task');
-
-        //---- AND THE PROJECT'S TURN, IF THERE IS ONE --------------------
-        //
-        //HANDED OUT RATHER THAN DONE HERE. What comes next starts the machine
-        //again and runs a script on it over the channel, and this module knows
-        //about neither — it has a vbox and a register and that is deliberately
-        //all. See ./afterwards.js, which ../provision/server.js wires in.
-        //
-        //IT NEVER THROWS INTO THIS PATH. A machine with a base snapshot is a
-        //machine the queue can use; failing to set it up further is worth
-        //saying and is not worth losing the snapshot that just succeeded.
-        var next = { none: true };
-        if (afterBase) {
-            try { next = await afterBase(name); }
-            catch (e) {
-                to.warn('could not start its project setup: ' + e.message
-                    + ' — it has its snapshot, and the setup can be run later');
-                next = { failed: e.message };
-            }
-        }
-
-        return { name: name, baseSnapshot: what, next: next };
+        return { name: name, baseSnapshot: what };
     }
 
     return {

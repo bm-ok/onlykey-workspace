@@ -4,12 +4,6 @@ var makeSpec = require('./spec');
 var makeScripts = require('./scripts');
 var makeBuilding = require('./building');
 var makeSettling = require('./settling');
-var makeAfterwards = require('./afterwards');
-
-//THE ONE FUNCTION THAT SAYS WHAT A SNAPSHOT DOES TO A RECORD, borrowed
-//rather than repeated. ../../runners/machines owns it; a second copy of
-//`baseSnapshot: ... || title` here is exactly the drift it warns about.
-var makeSnapshotting = require('../../runners/machines/snapshotting');
 var makeInstalling = require('./installing');
 var makeRepairs = require('./repairs');
 var makeGuestApi = require('./guestapi');
@@ -232,23 +226,7 @@ async function plugin(imports, register) {
     //the moment it dials in. Nothing here is on the path that creates anything.
     //`imports.log.on` AND NOT `log.on`: `log` is already scoped to 'vm', and its
     //`.on` APPENDS — so the scoped one would tag every line 'vm','vm',<name>.
-    //---- THE PROJECT'S OWN TURN, AFTER THE FIRST SNAPSHOT ------------------
-    //
-    //WIRED HERE BECAUSE THIS IS WHERE THE PARTS MEET. ./settling.js has a vbox
-    //and a register and nothing else on purpose; the turn needs a channel to
-    //run a script over and the guest API's port to tell the machine where to
-    //fetch it from, and this plugin already consumes both.
-    var after = makeAfterwards({
-        vbox: vbox, ours: ours, channel: imports.channel, scripts: scripts,
-        recordFor: makeSnapshotting.recordFor,
-        baseUrl: imports.guestApi,
-        say: imports.log.on
-    });
-
-    var settle = makeSettling({
-        vbox: vbox, ours: ours, say: imports.log.on,
-        afterBase: function (name) { return after.beginAfterBase(name); }
-    });
+    var settle = makeSettling({ vbox: vbox, ours: ours, say: imports.log.on });
 
     //AND GETTING AN OPERATING SYSTEM ONTO ONE, which is an ORDER rather than a
     //set of commands — see ./installing.js. Every piece it needs is built above;
@@ -464,26 +442,6 @@ async function plugin(imports, register) {
                 } catch (e) {
                     log.warn('could not write the ssh config: ' + e.message
                         + ' — the machine is up, but `ssh ' + name + '` will not find it by name');
-                }
-
-                //---- AND WHETHER IT CAME BACK OWING SOMETHING -------------
-                //
-                //THE TURN AFTER THE FIRST SNAPSHOT IS PICKED UP HERE, not
-                //waited for. A machine that has been started to be set up
-                //arrives at this same door, and the debt is on its record —
-                //so an app restarted half way through the turn still finishes
-                //it, and nothing anywhere sits watching for a machine that
-                //might never come.
-                //
-                //BEFORE THE SNAPSHOT CHECK, because a machine owing a turn
-                //ALREADY HAS a base snapshot: `firstSnapshotIfItNeedsOne`
-                //would answer "already" and the debt would never be paid.
-                try {
-                    if (after.owed(ours.get(name))) return after.runFor(name);
-                } catch (e) {
-                    log.warn('could not set ' + name + ' up for this project: ' + e.message
-                        + ' — it has its first snapshot and still owes the rest');
-                    return Promise.resolve({ failed: e.message });
                 }
 
                 return settle.firstSnapshotIfItNeedsOne(name);

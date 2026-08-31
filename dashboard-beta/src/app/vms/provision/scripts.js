@@ -47,31 +47,6 @@ var STAGES = {
     extra: 'extra.sh',
     extraUser: 'extra-user.sh',
 
-    //---- AND THE PROJECT'S SECOND TURN, ON A MACHINE THAT HAS BOOTED -------
-    //
-    //THE PAIR ABOVE RUN DURING THE INSTALL, which is the wrong moment for some
-    //of what a project needs. `usermod -aG docker` and `-aG plugdev` do not
-    //apply until the next login — three separate scripts in this folder say so
-    //— so anything installed there that needs those groups is installed by a
-    //user who is not yet in them.
-    //
-    //THESE RUN AFTER THE FIRST SNAPSHOT, on a machine that has been started
-    //again and has dialled in. The groups are live, the network is the ordinary
-    //one, and there is a snapshot to fall back to if what they do is wrong.
-    //
-    //AND WHAT THEY DO IS KEPT IN A SECOND SNAPSHOT, which becomes the one the
-    //machine returns to. That is the point of the turn: a toolchain that takes
-    //half an hour to install is paid for once, at build, instead of by every
-    //task that is given the machine afterwards.
-    //
-    //THE APP CARRIES NEITHER FILE, exactly like the skills. What a machine
-    //needs in order to build somebody's project is that project's business, and
-    //this app does not know the name of one. A workspace with no such script
-    //gets the ordinary base snapshot and nothing else happens — see the 404
-    //that `fetch_stage` reports as "nothing to do for that".
-    afterSnapshot: 'after-snapshot.sh',
-    afterSnapshotUser: 'after-snapshot-user.sh',
-
     //WHAT A SUPERVISOR GETS INSTEAD, and it is the app's own rather than a
     //project's: Claude Code, and nothing else. A supervisor is a machine this
     //app knows the purpose of, so what it needs is not a project's business.
