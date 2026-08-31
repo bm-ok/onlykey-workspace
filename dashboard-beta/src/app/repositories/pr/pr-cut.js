@@ -31,9 +31,26 @@ module.exports = function cuts(theme, okc, remember, shell) {
                     return (
                         <tr key={p.repo}>
                             <th>{p.repo}</th>
+                            {/*---- THE FORK AND THE BRANCH ARE TWO FACTS -----
+
+                                `p.into || p.base` SHOWED WHICHEVER CAME FIRST,
+                                so wherever a destination fork was known the
+                                BRANCH it lands on was dropped — "into
+                                bm-ok/node-onlykey-emulator" and not a word
+                                about `master`.
+
+                                THAT IS THE HALF THAT CANNOT BE UNDONE. This
+                                table is read in the merge dialog, above a
+                                button whose own text says it is "a commit on a
+                                real default branch" — and which branch was the
+                                one thing it would not say. */}
                             <td>
                                 <div><Mono>{p.head || p.on || '?'}</Mono></div>
-                                <div className="sub muted">{'into '}<Mono>{p.into || p.base || '?'}</Mono></div>
+                                <div className="sub muted">
+                                    {'into '}
+                                    <Mono>{p.into || p.base || '?'}</Mono>
+                                    {p.into && p.base ? <span>{' '}<Mono>{p.base}</Mono></span> : null}
+                                </div>
                             </td>
                         </tr>
                     );
