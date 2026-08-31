@@ -21,6 +21,18 @@ its body is composed from what a person wrote plus the template blocks:
 `prTemplate` lists them; `prTemplateSet --id closes --on false` turns one
 off. `prTemplatePreview` shows the composed body before anything is cut.
 
+**Both panes draw where each pull request lands**, as one row per
+repository — the address, the branch and the commit each side is at,
+`repo → repo`. New PR Cut shows it while a cut is being composed; PR cuts
+shows it with a finger over **Send it**, which is the moment it matters
+most. A repository with no destination picked is marked there rather than
+discovered at the refusal. The merge dialog draws the same rows, and names
+the **branch** as well as the fork — a merge is a commit on a real default
+branch, and which branch was the one thing it would not say.
+
+New PR Cut carries one title for the whole cut, above tabs — one per
+repository the cut will open in — and only the body is per repository.
+
 Once cut, a cut **follows its branch**: `prCutRefresh` pushes the branch
 again and re-composes the description, and an accepting judgement of the
 branch does it by itself. Cutting the same pair again is a refresh, never a

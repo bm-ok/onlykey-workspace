@@ -1,9 +1,13 @@
 # Refresh the bootstrap tar
 
-`okc-bootstrap.tar` in the repository is what a fresh install starts from:
-every job, prompt, contract and skill, as readable files plus a manifest.
-Nothing about approvals is in it — everything imported arrives waiting to
-be read.
+`okc-bootstrap.tar` in the repository is what a fresh install starts from,
+and what a folder with no `.okc` in it is set up from: every job, prompt,
+contract and provisioning script, as readable files, plus a `library.json`
+manifest and the `.gitignore` that keeps a drawer out of git. Nothing about
+approvals is in it — everything imported arrives waiting to be read.
+
+It is the same layout a workspace's own drawer has, which is why there is
+no translation either way: a bundle is a `.okc` folder in a tar.
 
 It does not follow approvals by itself. After a skill is approved or a
 job is edited and approved, the tar is behind until somebody rewrites it.
@@ -12,8 +16,8 @@ job is edited and approved, the tar is behind until somebody rewrites it.
 
     node tools/okc.js bootstrapShip
 
-    wrote ...\dashboard-beta\okc-bootstrap.tar -- 153,600 bytes, 1 of 25 entries moved:
-      ~ skills/supervisor.md  (42,425 characters to 42,802)
+    wrote ...\dashboard-beta\okc-bootstrap.tar -- 163,840 bytes, 1 of 28 entries moved:
+      ~ provision/supervisor-skill.md  (42,425 characters to 42,802)
 
 It writes the same bytes the window's **as a file** button hands out onto
 the repository's tar — found one level above `dist/` on a development

@@ -44,8 +44,26 @@ tab, every task and every machine's clone is about the one that is open.
 - Reads are fingerprinted (ETag), so a repeat check is cheap; the hourly
   GitHub budget is kept back from, and a sweep stops early with room left
   so a press still works. `caches` shows what is being reused.
-- Per-workspace state (tasks, judgements, cuts, drafts) lives in the app's
-  data folder under the workspace's name, not in the repositories.
+- **Per-workspace state lives inside the workspace**, in a `.okc` folder
+  beside the repositories: tasks, judgements, cuts, drafts, the library,
+  the provisioning scripts, and the machine register. Copy the folder and
+  its state comes with it; delete the folder and nothing is orphaned in
+  appdata. What that costs is written down in `core/state/main.js` — the
+  machines and the artifacts go with the folder too.
+  What stays with **this computer** is the host's own: sign-ins, the
+  certificate authority, its ssh key, guards, and which workspace is open.
+- **A folder that has never been a workspace is set up as one.** With no
+  `.okc` in it, it is given the set this app shipped with — the jobs,
+  prompts, contracts and provisioning scripts from `okc-bootstrap.tar` —
+  and everything arrives unapproved, waiting to be read. A folder that
+  already has a drawer is left exactly alone.
+- **The drawer keeps itself out of git.** It sits beside the repositories,
+  not inside one, but that is a layout and one `git init` at the wrong
+  level makes it wrong — so a `.gitignore` is written into it naming what
+  is the host's: `machines.json`, which holds each machine's dial-in token
+  and the password its user boots as, the `cached-*` files, and which
+  machine this computer has open. Everything else in there is meant to be
+  kept, and is the half a second workspace can be started from.
 - **A new workspace is inert.** Every switch that arms this app follows the
   folder it was set for — watching GitHub, the supervisor waking itself,
   whose word counts, what is sent without being read, the drills — so a

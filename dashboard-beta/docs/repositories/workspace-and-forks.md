@@ -40,13 +40,35 @@ complete one.
 
 ## Behind, and said so
 
-Each sweep asks GitHub how far a fork's default branch is behind the
-repository its work goes to (one `compare` call, fingerprinted), and
-compares this host's local default with origin's head. Both become inbox
-errands the moment they are true — *fork behind where its work goes*, *this
-host behind origin* — because the step after a merge used to have no word
-anywhere but a note on the cut card. `repositories` carries them as
-`behindTarget` and `inStep`.
+There are **three** gaps, and they are not the same question:
+
+| gap | where it comes from | what closes it |
+|---|---|---|
+| fork behind **its parent** | `repoForkBehind`, asked at the press | *Sync fork* |
+| fork behind **where its work goes** | the sweep, as `behindTarget` | a pull request |
+| this host behind **your fork** | the sweep, as `inStep` | *Pull default here* |
+
+The sweep asks GitHub how far a fork's default is behind the repository its
+work **goes to** (one `compare` call, fingerprinted) and compares this
+host's local default with origin's head. Both become inbox errands the
+moment they are true — *fork behind where its work goes*, *this host behind
+origin* — because the step after a merge used to have no word anywhere but
+a note on the cut card.
+
+**The parent is a different repository, and is not on the sweep.**
+`behindTarget` is not computed at all when a repository's work goes to
+itself, which is the ordinary case for a workspace of personal forks — so
+it says nothing about how far behind the project a fork has drifted.
+`repoForkBehind` asks that, per repository, at the moment a press needs it,
+and it is what *Sync fork* is enabled from: merge-upstream always pulls
+from the **parent**, and enabling it from the other measure left the button
+off on every card in such a workspace, permanently.
+
+It is compared **by sha** rather than by `owner:branch`. That shorthand
+names a repository by assuming it is called the same thing on both sides,
+which is wrong for a renamed fork — `bm-ok/0c-coder-lib-agent` of
+`0c-coder/lib-agent` — and GitHub answers about a different repository
+rather than refusing.
 
 ## What is known, and how fresh
 

@@ -37,9 +37,10 @@ do none of it:
 | The drills | off, and the sandbox owner list is empty |
 
 Also per folder: the repositories and everything learnt about them, tasks,
-judgements, lines, PR cuts, drafts and what was sent, the jobs, the caches,
-and **everything the supervisor keeps** — its conversation, its todo list,
-its notebook and any skill it has proposed. A todo reading "#12 needs a
+judgements, lines, PR cuts, drafts and what was sent, the caches, **the
+machines**, **the whole library** — jobs, prompts, contracts and the
+provisioning scripts — and **everything the supervisor keeps**: its
+conversation, its todo list, its notebook and any skill it has proposed. A todo reading "#12 needs a
 judge" names a task that exists in one workspace and is somebody else's
 number in the next.
 
@@ -49,14 +50,34 @@ answer for the folder open now, under *What this workspace is armed to do*.
 
 ## What stays with this computer
 
-The machines, the keys and sign-ins, the guards, and the contract and prompt
-library. Those are facts about this installation rather than about the work,
-so they are there whichever folder is open.
+The keys and sign-ins, the guards, the certificate authority and this app's
+own ssh key, and which workspace is open. Those are facts about this
+installation rather than about the work, so they are there whichever folder
+is open.
 
-The supervisor's own state used to be on that list, and it was wrong: a
-second workspace opened with the first one's todo list waiting in it, and
-its conversation still on screen. The machine is one per host; what it was
+**The machines and the library used to be on that list and are not any
+more.** A machine belongs to the work it was built for: with one register
+per host, switching folders showed the machines the other one made, because
+nothing had ever asked which folder a machine belonged to. And a library
+laid out as files in the workspace **is** a bundle — which is what makes a
+second workspace something you can start from the first.
+
+The supervisor's own state was the same mistake found earlier: a second
+workspace opened with the first one's todo list waiting in it, and its
+conversation still on screen. The machine is one per host; what it was
 asked to do is about a folder.
+
+### What that costs, said plainly
+
+Deleting a workspace folder deletes its state — **including the machine
+register and the artifacts a task delivered**. For tasks, cuts and notes
+that is the point. For those two it is a real cost, taken deliberately for
+one property: a workspace has one name and it is the folder.
+
+A machine missing from the register is one this app will not touch, while
+it goes on running in VirtualBox. If that ever happens the way back is
+VirtualBox itself — the machines are still there under their own names, and
+a new register is written by making the workspace again.
 
 ## What happens on screen
 

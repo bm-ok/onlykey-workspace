@@ -11,6 +11,7 @@ as the window.
 - [Add a GitHub token and trust somebody](add-a-github-token-and-trust.md)
 - [Build a machine](build-a-machine.md)
 - [Sign a machine in to Claude](sign-in-a-machine.md)
+- [Work in a machine yourself](work-in-a-machine-yourself.md)
 - [Write and run a task](write-and-run-a-task.md)
 - [Hand an issue to the supervisor](hand-an-issue-to-the-supervisor.md)
 - [Send a drafted reply, close or review](send-a-drafted-reply.md)

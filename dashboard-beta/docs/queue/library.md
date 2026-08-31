@@ -36,8 +36,16 @@ can improve its own tools without ever running something nobody looked at.
 
 ## Where they live
 
-Per workspace, in the app's data folder; the repository holds a **seed**,
-`okc-bootstrap.tar`, that a fresh install starts from. See
+**In the workspace, in its `.okc` folder**, as readable files: `jobs/`,
+`prompts/`, `contracts/`, `provision/`, and a `library.json` naming them.
+Not in the app's data folder — copy the workspace and the library comes
+with it.
+
+A drawer laid out that way **is** a bundle, which is why there is no
+translation step: exporting one is tarring the folder, and importing one is
+writing the files. The repository holds a seed, `okc-bootstrap.tar`, and a
+folder with no `.okc` is set up from it — everything arriving unapproved,
+because a bundle carries no approvals. See
 [Refresh the bootstrap tar](../howto/refresh-the-bootstrap-tar.md).
 
 ## Panes

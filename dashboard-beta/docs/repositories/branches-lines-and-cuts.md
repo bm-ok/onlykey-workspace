@@ -10,6 +10,13 @@ default. It carries a **reason** — the app refuses to cut one without — and,
 when it was cut for a GitHub issue, the issue as a fact (`issue: {on,
 number}`). Both are recorded in the cut note and travel to the pull request.
 
+A branch that exists **only on origin** — pushed from somewhere else, or
+from a machine — can be brought here from **Repos → Branches**: the row
+carries a `↓` rather than a disabled refresh, and `repoTakeBranch --repo X
+--branch Y` is the same act. It fetches and cuts the branch from origin's
+copy with `git branch`, so nothing you have open moves. Until it is here it
+cannot be cut from, laid on a machine, or named in a line.
+
 **Branches Cut** is the board: every branch, who claims it (a machine
 working on it), what is on it, and whether it can be deleted. `branchDiff`
 shows one repository's changes on it whole; `branchArtifacts` what a task
@@ -22,6 +29,15 @@ against**: one branch per repository, under one name. Work is cut *from* a
 line; a change is compared *against* a line; a pull request is cut from one
 line *into* another. `branchAsLine` makes one out of a branch;
 `lineSave --name X --on {...}` names one from existing branches.
+
+**The branches do not have to be the same.** A line is a repository-to-
+branch map, so one repository can be on `5.7.0-modern-rewrite` and the rest
+on `master`, and it does not have to name every repository. **Name a line**
+(the `+` on Branches Lines) lists every repository with a dropdown of the
+branches that repository actually has, and *not in this line* is a real
+answer. **Start from** at the top fills every row in one go from a cut or
+from where the repositories are now — the common case is one press, and the
+rows are then there to correct.
 
 **Branches Lines** lists them with how in step each is with origin. A line
 that is *proposed* (`linePropose`) appears on the left of comparisons and
