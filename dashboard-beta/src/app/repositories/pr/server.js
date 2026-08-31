@@ -1279,8 +1279,24 @@ async function plugin(imports, register) {
                     var chose = row && row.target ? row.target : null;
                     var into = (chose && chose.on) || null;
 
+                    //THE COMMIT EACH SIDE IS AT, so the answer is enough on its
+                    //own to draw the pair. The window used to look these up in
+                    //`lines`, which meant only a pane that had loaded `lines`
+                    //could show them — and the pane where somebody presses Send
+                    //it had not.
+                    //
+                    //SHORT, BECAUSE IT IS READ AND NOT USED. It is there to
+                    //answer "the same commit I pushed?" at a glance, and a
+                    //forty-character sha answers that no better than seven.
+                    var at = null;
+                    var baseAt = null;
+                    try { at = await refs.sha(r.repo, r.head); } catch (e) { at = null; }
+                    try { baseAt = await refs.sha(r.repo, r.base); } catch (e) { baseAt = null; }
+
                     where.push({
                         repo: r.repo, branch: r.head, base: r.base, ahead: r.ahead,
+                        at: at ? String(at).slice(0, 7) : null,
+                        baseAt: baseAt ? String(baseAt).slice(0, 7) : null,
                         from: mine, into: into,
                         //WHY THERE IS NO DESTINATION, said here so the preview
                         //does not have to guess which of the two it is.

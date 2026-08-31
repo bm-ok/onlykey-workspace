@@ -30,6 +30,8 @@ var { useState, useEffect, useRef } = React;
 //---------------------------------------------------------------------------
 
 module.exports = function writer(theme, okc, remember) {
+    //THE SAME ROWS THE PR CUTS PANE DRAWS — see ./where-rows.js.
+    var WhereRows = require('./where-rows')(theme).WhereRows;
     var {
         Pane, Panel, Cols, Col, Stack, Head, Card, CardTitle, CardSub,
         Badge, Button, Skeleton, Empty, Note, Markdown, Form, Field, Notice, Views, Mono, Muted, ask, ago
@@ -203,49 +205,10 @@ module.exports = function writer(theme, okc, remember) {
         var text = [typed, v && v.additions].filter(Boolean).join('\n\n---\n\n');
         var existing = v && v.existing && v.existing.count;
 
-        //---- WHAT THE TWO NAMES ACTUALLY ARE --------------------------------
-        //
-        //"default branches" INTO "dashboard/setup" SAYS NOTHING. They are names
-        //somebody typed, and the pane asked for a decision about publishing on
-        //the strength of two of them. What is this? Where is it? Where is it
-        //going? None of it was on the screen, and all of it was already in
-        //hand.
-        //
-        //ONE CARD PER REPOSITORY, PER SIDE — the address, the branch, and the
-        //commit it is at. A line is one branch per repository; this is that
-        //sentence drawn rather than asserted.
-        //
-        //ONLY THE REPOSITORIES IN THE CUT. A line names all nine here and two
-        //of them carry work, so listing nine would bury the two that are about
-        //to become pull requests.
-        function hashOf(lineName, repo) {
-            var g = usable.filter(function (x) { return x.name === lineName; })[0];
-            var p = ((g && g.on) || []).filter(function (x) { return x.repo === repo; })[0];
-            return (p && p.at) || null;
-        }
+        //THE TWO SIDES OF THE CUT, DRAWN, live in ./where-rows.js — the pane
+        //that composes a cut and the pane that sends one both need it, and of
+        //two copies the one that drifts is the one nobody is looking at.
 
-        function sideCard(w, side) {
-            var addr = side === 'from' ? w.from : w.into;
-            var branch = side === 'from' ? w.branch : w.base;
-            var at = hashOf(side === 'from' ? pickFrom : pickInto, w.repo);
-
-            return (
-                <Card key={w.repo}>
-                    <CardTitle>
-                        {addr
-                            ? <Mono>{addr}</Mono>
-                            : <Badge kind="warn">nothing picked</Badge>}
-                    </CardTitle>
-                    <CardSub>
-                        <Mono>{branch}</Mono>
-                        {at ? <span>{' '}<Muted>{at}</Muted></span> : null}
-                        {side === 'into' && !addr
-                            ? <span>{' '}<Muted>{w.intoWhy}</Muted></span>
-                            : null}
-                    </CardSub>
-                </Card>
-            );
-        }
 
         //---- WHERE THE PULL REQUEST BEING READ WILL OPEN --------------------
         //
@@ -397,41 +360,7 @@ module.exports = function writer(theme, okc, remember) {
                     the commit each is at, which is the whole of what a line is.
                     A repository with no destination shows that here rather than
                     only in the tab below. */}
-                {v && (v.where || []).length ? (
-                    <React.Fragment>
-                        <Cols>
-                            <Col><Head><span>What is being sent</span></Head></Col>
-                            <Col thin />
-                            <Col><Head><span>Where each one lands</span></Head></Col>
-                        </Cols>
-
-                        {/*---- ONE ROW PER REPOSITORY, AND THE ARROW IN IT ---
-
-                            AS TWO COLUMNS WITH ONE ARROW BESIDE THEM, the arrow
-                            pointed at the pair rather than at a pair: it said
-                            the right-hand column comes from the left-hand one,
-                            and left somebody to line the rows up by eye.
-
-                            EACH ROW IS THE UNIT, because each row IS a pull
-                            request — this repository, at this commit, going
-                            onto that one. The arrow belongs between those two
-                            and nowhere else, and building it this way is also
-                            what keeps the pair level: they are siblings in one
-                            row rather than the nth item of two stacks that
-                            happen to be beside each other. */}
-                        <Stack>
-                            {(v.where || []).map(function (w) {
-                                return (
-                                    <Cols key={w.repo}>
-                                        <Col>{sideCard(w, 'from')}</Col>
-                                        <Col thin><Muted>→</Muted></Col>
-                                        <Col>{sideCard(w, 'into')}</Col>
-                                    </Cols>
-                                );
-                            })}
-                        </Stack>
-                    </React.Fragment>
-                ) : null}
+                {v ? <WhereRows where={v.where} /> : null}
 
                 <Cols>
                     <Col narrow>

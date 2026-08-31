@@ -3,6 +3,9 @@ var { useState, useEffect, useCallback } = React;
 
 module.exports = function cuts(theme, okc, remember, shell) {
     var StoryList = require('../story-list')(theme).StoryList;
+    //THE PAIR OF SIDES, drawn the same way New PR Cut draws it — see
+    //./where-rows.js. Both panes ask the same question of the same answer.
+    var WhereRows = require('./where-rows')(theme).WhereRows;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link, openOut,
@@ -599,6 +602,22 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                 </React.Fragment>
                                 : null}
                         </Panel>
+
+                        {/*---- WHAT IS ABOUT TO GO WHERE ------------------
+
+                            THE SAME ROWS New PR Cut DRAWS, and this is the
+                            pane where they matter more: there, somebody is
+                            composing; here, the button above this reads
+                            "Send it" and publishes to GitHub.
+
+                            IT WAS TWO NAMES AND A STATE WORD. Which
+                            repositories, at which commits, onto whose forks —
+                            none of it was on the screen where the decision is
+                            made, and all of it is on the answer this pane
+                            already asks for to compose the preview. */}
+                        {composed && !composed.asking && (composed.where || []).length
+                            ? <WhereRows where={composed.where} />
+                            : null}
 
                         <h2>The story <span className="muted">{on ? '— newest first' : ''}</span></h2>
                         {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
