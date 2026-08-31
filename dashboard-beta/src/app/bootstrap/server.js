@@ -371,9 +371,13 @@ async function plugin(imports, register) {
                     var into, name;
 
                     if (parts.length === 1) {
-                        if (parts[0] !== 'library.json') return;
+                        //TWO NAMES AT THE ROOT AND BOTH ARE SPELLED OUT. The
+                        //manifest, and the guard that keeps the drawer out of a
+                        //repository — see ../core/state/ignore.js. Anything else
+                        //at the root of a tar is not something this wrote.
+                        if (parts[0] !== 'library.json' && parts[0] !== '.gitignore') return;
                         into = drawer;
-                        name = 'library.json';
+                        name = parts[0];
                     } else if (parts.length === 2) {
                         if (!KEEP[parts[0]]) return;
                         if (safe(parts[1]) !== parts[1] || !parts[1]) return;
@@ -478,6 +482,20 @@ async function plugin(imports, register) {
             });
 
             files.push({ name: 'library.json', data: JSON.stringify(manifest, null, 2) + '\n' });
+
+            //---- AND THE GUARD THAT KEEPS A DRAWER OUT OF A REPOSITORY ------
+            //
+            //A workspace set up from this gets it on the way in, so it is
+            //protected from before it holds anything. ../core/state/main writes
+            //the same file whenever a drawer is made, which is what covers the
+            //workspaces that already exist — see ../core/state/ignore.js.
+            //
+            //NOT IN THE MANIFEST. `library.json` lists what a person is going to
+            //be asked to read and approve, and this is neither: it is a file the
+            //app puts there for git's benefit. Listing it would put a line in
+            //the Library pane for something nobody can approve or edit.
+            files.push({ name: '.gitignore', data: imports.state.IGNORE });
+
             return files;
         }
 

@@ -202,7 +202,7 @@ test('a workspace keeps its state inside itself, in .okc', async () => {
 
     assert.equal(doc.path, path.join(ws, '.okc', 'tasks.json'));
     assert.deepEqual(fs.readdirSync(ws), ['.okc']);
-    assert.deepEqual(fs.readdirSync(path.join(ws, '.okc')), ['tasks.json']);
+    assert.deepEqual(fs.readdirSync(path.join(ws, '.okc')), ['.gitignore', 'tasks.json']);
 
     //AND THE HOST'S DRAWER IS STILL THE HOST'S. Only what is ABOUT a folder
     //moved; the guards, the settings and the approval library have no folder to
@@ -210,4 +210,97 @@ test('a workspace keeps its state inside itself, in .okc', async () => {
     const mine = state.app.doc('settings');
     assert.ok(mine.path.startsWith(path.join(dir, 'state')),
         'the host drawer moved and should not have: ' + mine.path);
+
+    //---- AND THE HOST'S DRAWER DOES NOT GET THE GUARD ---------------------
+    //
+    //It is under appdata, where a .gitignore protects nothing and puzzles
+    //whoever finds it. `ready` makes both drawers and tells them apart by the
+    //folder's name — see ../../src/app/core/state/main.js.
+    assert.ok(!fs.existsSync(path.join(dir, 'state', '.gitignore')),
+        'the host drawer was given a .gitignore, which guards nothing there');
+});
+
+//---------------------------------------------------------------------------
+//AND THE DRAWER CANNOT BE COMMITTED IF IT EVER LANDS INSIDE A REPOSITORY.
+//
+//A drawer sits BESIDE the repositories, not within them — but that is a layout,
+//and one `git init` at the wrong level makes it wrong. `machines.json` carries
+//every machine's dial-in token and the password its user boots as, so the cost
+//of being wrong once is real. See ../../src/app/core/state/ignore.js.
+//---------------------------------------------------------------------------
+
+test('a drawer hides the host\'s half and keeps the workspace\'s', async () => {
+    const { state, dir } = aStore();
+    const ws = path.join(dir, 'guarded');
+    fs.mkdirSync(ws, { recursive: true });
+    state.follow(async () => ws);
+
+    (await state.here.doc('tasks')).write({ kept: true });
+
+    const at = path.join(ws, '.okc', '.gitignore');
+    assert.ok(fs.existsSync(at), 'a drawer was made with no .gitignore in it');
+
+    const rules = fs.readFileSync(at, 'utf8').split('\n')
+        .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+
+    //THE ONE THAT MUST BE THERE. `machines.json` is every machine's dial-in
+    //token and the password its user boots as; the rest of this list is tidiness
+    //and this line is the reason the file exists.
+    assert.ok(rules.includes('machines.json'),
+        'the drawer does not hide machines.json, which holds the machine tokens');
+
+    //A PATTERN, BECAUSE THE NAMES ARE BUILT. ../core/cached/server.js writes
+    //`cached-<whatever>`, so naming today's two would miss tomorrow's.
+    assert.ok(rules.includes('cached-*.json'),
+        'caches are named one by one, so a new one would be committed: ' + rules.join(' | '));
+
+    //AND NOT A BLANKET IGNORE. Most of a drawer is what somebody wants to keep —
+    //see ../../src/app/core/state/ignore.js. `*` here would hide the jobs, the
+    //prompts, the contracts and the record of what is being done, silently.
+    assert.ok(!rules.includes('*'),
+        'the drawer ignores everything, which hides the set a workspace is built from');
+
+    //THE GUARD ITSELF IS TRACKED, or a clone arrives with no guard at all and
+    //the first `add -A` there commits the tokens.
+    assert.ok(!rules.includes('.gitignore'),
+        'the guard ignores itself, so a clone of this would have no guard');
+});
+
+test('what a workspace is set up from is left trackable', async () => {
+    const { state, dir } = aStore();
+    const ws = path.join(dir, 'shared');
+    fs.mkdirSync(ws, { recursive: true });
+    state.follow(async () => ws);
+
+    (await state.here.doc('lines')).write({ kept: true });
+
+    const rules = fs.readFileSync(path.join(ws, '.okc', '.gitignore'), 'utf8').split('\n')
+        .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+
+    //NAMED ONE BY ONE, because each is a decision somebody made rather than
+    //something a sweep rebuilds. `repositories.json` is the argued one: it
+    //carries this host's probe results AND `target` — where work goes — and
+    //losing the second to hide the first is the wrong trade.
+    ['library.json', 'lines.json', 'cuts.json', 'landings.json',
+        'pr-template.json', 'repositories.json', 'tasks.json'].forEach((f) => {
+        assert.ok(!rules.includes(f), f + ' is hidden, and it is the workspace\'s own');
+    });
+});
+
+test('a drawer that already has one is left exactly as it is', async () => {
+    const { state, dir } = aStore();
+    const ws = path.join(dir, 'already');
+    fs.mkdirSync(path.join(ws, '.okc'), { recursive: true });
+
+    //SOMEBODY ELSE'S DECISION ABOUT THEIR OWN REPOSITORY. This is a guard rail,
+    //not a policy, so what is here already wins — overwriting it would be the
+    //app taking an argument it was not asked to have.
+    const mine = '# mine\n!keep-this\n';
+    fs.writeFileSync(path.join(ws, '.okc', '.gitignore'), mine);
+
+    state.follow(async () => ws);
+    (await state.here.doc('tasks')).write({ kept: true });
+
+    assert.equal(fs.readFileSync(path.join(ws, '.okc', '.gitignore'), 'utf8'), mine,
+        'it wrote over a .gitignore somebody had already put there');
 });

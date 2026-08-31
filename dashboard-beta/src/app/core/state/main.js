@@ -67,8 +67,14 @@ var path = require('path');
 //
 //A WORKSPACE ROOT IS NOT A REPOSITORY. It is the folder the repositories sit in as
 //siblings, so `.okc` lands beside them and inside none of them, and nothing here
-//is committed by accident. If that ever stops being true this has to be revisited:
-//a dotfolder inside a checkout is one somebody commits.
+//is committed by accident.
+//
+//THAT IS A LAYOUT AND A LAYOUT IS ONE `git init` AT THE WRONG LEVEL FROM BEING
+//WRONG, which is what the paragraph above used to say had to be revisited if it
+//ever stopped being true. It is revisited: `ready()` writes a `.gitignore` into
+//every workspace drawer it makes, ignoring everything including itself, so a
+//drawer that does end up inside a checkout cannot be committed by an `add -A`
+//nobody read. See ./ignore.js for what is in there worth that care.
 //
 //`here` IS NOTHING WHEN NOTHING IS OPEN, rather than a default drawer. A window
 //about nowhere must not be answered with the tasks of the last place — and a
@@ -129,6 +135,12 @@ async function plugin(imports, register) {
     //buys and what it costs.
     var HERE = require('./drawer');
 
+    //AND WHAT KEEPS IT OUT OF A REPOSITORY IF IT EVER ENDS UP INSIDE ONE.
+    //See ./ignore.js — it is written here because this is the one place a
+    //drawer is made, so every workspace gets it, not only the ones set up
+    //from the shipped bundle after today.
+    var IGNORE = require('./ignore');
+
     //MADE ONCE PER RUN, NOT ONCE PER CALL. mkdir on a directory that already
     //exists is cheap and is still a syscall, and this sits on the read path of
     //things a pane asks every few seconds — in the old app it showed up as the
@@ -137,6 +149,32 @@ async function plugin(imports, register) {
     function ready(dir) {
         if (!made[dir]) {
             fs.mkdirSync(dir, { recursive: true });
+
+            //---- AND THE GUARD, ON A WORKSPACE'S DRAWER ONLY ---------------
+            //
+            //`ready` MAKES BOTH DRAWERS and only one of them can end up in a
+            //repository. The app's own is under appdata, where a .gitignore
+            //would be a file that protects nothing and puzzles whoever finds
+            //it; matching on the folder's name is what tells them apart.
+            //
+            //ONCE PER RUN, ON THE SAME MEMOISED PATH, so this costs one
+            //`existsSync` per drawer per run rather than one per read.
+            //
+            //NEVER WRITTEN OVER. Somebody who has edited it has decided
+            //something about their own repository, and this is a guard rail
+            //rather than a policy to enforce.
+            //
+            //AND IT NEVER THROWS INTO A READ. A drawer that cannot take this
+            //file is one on a read-only disk or one somebody else owns, and
+            //neither is a reason for the pane asking for a machine list to
+            //fail. It is a guard that did not get installed, not a fault.
+            if (path.basename(dir) === HERE) {
+                try {
+                    var at = path.join(dir, '.gitignore');
+                    if (!fs.existsSync(at)) fs.writeFileSync(at, IGNORE);
+                } catch (e) { /* said above: a missing guard, not a failure */ }
+            }
+
             made[dir] = true;
         }
         return dir;
@@ -325,7 +363,12 @@ async function plugin(imports, register) {
             //that is not open yet — it is setting one up — and a second `.okc`
             //written down somewhere else is the one that stays behind on the day
             //this changes.
-            HERE: HERE
+            HERE: HERE,
+            //THE SAME CONSTANT SHAPE AS `HERE`, and published for the same
+            //reason: ../../bootstrap writes this file into a drawer it is
+            //setting up, and a stand-in answering null for it would ship a
+            //workspace with no guard and say nothing. See ./ignore.js.
+            IGNORE: IGNORE
         }
     });
 }

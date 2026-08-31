@@ -451,9 +451,11 @@ test('the whole set comes back as one file that this app can read again', async 
 
     assert.match(made.name, /\.tar$/);
     assert.ok(made.size > 0);
-    //THE MANIFEST AND EVERY BODY, which is 3 documents, 3 skills and the
-    //manifest itself.
-    assert.equal(made.files, 7);
+    //THE MANIFEST AND EVERY BODY, which is 3 documents, 3 skills, the manifest
+    //itself, and the guard that keeps a drawer out of a repository -- see
+    //../../src/app/core/state/ignore.js. The guard is in the bundle because a
+    //workspace set up from one is protected from before it holds anything.
+    assert.equal(made.files, 8);
 
     //READ BACK BY THE READER THIS APP ALREADY HAD. If these two ever disagree,
     //the app can produce something it cannot open.
@@ -463,6 +465,15 @@ test('the whole set comes back as one file that this app can read again', async 
     assert.ok(seen.entries.some((e) => e.name === 'contracts/rules.md'));
     assert.ok(seen.entries.some((e) => e.name === 'jobs/sweep.js'));
     assert.ok(seen.entries.some((e) => e.name === 'provision/judge-skill.md'));
+
+    //AND THE GUARD, so a workspace set up from this bundle cannot have its
+    //machine tokens committed by an `add -A` nobody read. It names what is the
+    //HOST's rather than ignoring everything — most of a drawer is what somebody
+    //wants to keep. See ../../src/app/core/state/ignore.js.
+    const guard = seen.entries.filter((e) => e.name === '.gitignore')[0];
+    assert.ok(guard, 'the bundle carries no .gitignore, so a workspace made from it has no guard');
+    assert.match(archiveOf().text(guard), /^machines\.json$/m,
+        'the guard does not hide machines.json, which is the file the tokens are in');
 });
 
 test('a file holds no more about approvals than a folder does', async () => {
@@ -596,8 +607,8 @@ test('shipping writes the tar and says what moved; shipping again writes nothing
 
     const first = await call('bootstrapShip', { to });
     assert.equal(first.wrote, true);
-    assert.equal(first.moved.added.length, 7, 'the whole set is new the first time');
-    assert.equal(first.moved.moved, 7);
+    assert.equal(first.moved.added.length, 8, 'the whole set is new the first time');
+    assert.equal(first.moved.moved, 8);
     assert.ok(fs.statSync(to).isFile());
 
     //THE SAME AGAIN IS A NO-OP, AND SAID: a tar that is rewritten identically

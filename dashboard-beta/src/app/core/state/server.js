@@ -18,6 +18,10 @@
 //and "there is nowhere to keep this" is one.
 
 var HERE = require('./drawer');
+//WHAT KEEPS A DRAWER OUT OF A REPOSITORY, published beside `HERE` and for
+//the same reason -- ../../bootstrap needs it and cannot require across the
+//two bundles. See ./ignore.js.
+var IGNORE = require('./ignore');
 
 plugin.consumes = ['app'];
 plugin.provides = ['state'];
@@ -66,7 +70,8 @@ async function plugin(imports, register) {
                 //difference that does not exist — and ../../bootstrap builds a
                 //path out of it, so null becomes "the path argument must be of
                 //type string" a long way from the cause.
-                HERE: HERE
+                HERE: HERE,
+                IGNORE: IGNORE
             }
         });
     }
