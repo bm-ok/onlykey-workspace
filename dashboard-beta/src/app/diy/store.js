@@ -170,6 +170,20 @@ module.exports = function makeStore(doc) {
         //authenticate. ../runners/guests holds the sealed thing.
         if (a.signIn !== undefined) next.signIn = clean(a.signIn) || null;
 
+        //WHETHER THE PRESS THAT TOOK THIS MACHINE ALSO TOOK IT OUT OF THE QUEUE.
+        //
+        //Kept so that ending the seat gives back exactly what the seat took and
+        //nothing else: a machine somebody kept back THEMSELVES, on the Runners
+        //tab, is still kept back when this lets go of it. Without somewhere to
+        //write that down the choice is between never giving it back — which is
+        //what happened, leaving a worker machine out of the queue for good after
+        //one DIY session — and handing back a decision this app never made.
+        //
+        //A BOOLEAN, THROUGH THE SAME GATE AS THE REST. This store copies named
+        //fields and drops anything else, which is why an unannounced key set by
+        //the press vanished between writing it and reading it back.
+        if (a.keptBack !== undefined) next.keptBack = a.keptBack === true;
+
         next.changedAt = new Date().toISOString();
 
         await write(now, now.items.map(function (x) { return x.id === id ? next : x; }));

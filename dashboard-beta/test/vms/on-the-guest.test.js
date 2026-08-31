@@ -50,8 +50,20 @@ function aMachine(how) {
         fs.mkdirSync(bin, { recursive: true });
 
         //A CLI THAT RECORDS WHAT IT WAS ASKED FOR AND CLAIMS TO HAVE DONE IT.
+        //
+        //AND COMPLAINS ON THE WAY OUT WHEN IT FAILS, the way a real one does. A
+        //stand-in that fails SILENTLY cannot tell a script that carries the
+        //reason home from one that throws it away — which is what this one did,
+        //while the host asserted "check that it can reach the marketplace" about
+        //every failure there had ever been. `installWhy: ''` is the other case:
+        //a failure that really does say nothing.
         const cli = path.join(bin, 'code-server-insiders');
-        fs.writeFileSync(cli, '#!/bin/sh\necho "$@" >> "$HOME/asked"\nexit ' + (it.installFails ? '1' : '0') + '\n');
+        const why = it.installWhy === undefined
+            ? 'getaddrinfo EAI_AGAIN marketplace.visualstudio.com' : it.installWhy;
+        const grumble = (it.installFails && why)
+            ? 'echo "Error while installing extensions:" >&2\necho "' + why + '" >&2\n' : '';
+        fs.writeFileSync(cli, '#!/bin/sh\necho "$@" >> "$HOME/asked"\n'
+            + grumble + 'exit ' + (it.installFails ? '1' : '0') + '\n');
         fs.chmodSync(cli, 0o755);
     }
 
@@ -164,7 +176,32 @@ test('an install that fails is said, and is still not a failure of the press', (
 
     const it = guest.said(out);
     assert.equal(it.done, false);
-    assert.match(it.why, /could not fetch it/);
+
+    //WHAT THE MACHINE SAID, NOT WHAT THE HOST ASSUMED IT MEANT. This asserted
+    //"could not fetch it" — a sentence nobody had read off the machine, because
+    //the script ran the install with `>/dev/null 2>&1` and discarded the one
+    //fact needed to act on a failure. It sent the only investigation there was
+    //into the network, when the machine may equally have been out of disk,
+    //holding a lock, or refusing the extension as incompatible with that build.
+    assert.match(it.why, /EAI_AGAIN marketplace/,
+        'the reason the machine gave did not come back: ' + it.why);
+
+    //AND WHICH SERVER BUILD WAS ASKED, because after an editor upgrade there can
+    //be several under there and "it failed" means a different thing for each.
+    assert.match(String(it.cli), /code-server-insiders$/, 'it did not say which CLI it used');
+});
+
+test('a failure that says nothing is reported as saying nothing, rather than as a guess', () => {
+    //THE HONEST ANSWER TO SILENCE. It failed and gave no reason, and that is
+    //worth saying as itself rather than filling in with the likeliest story —
+    //which is how "check that it can reach the marketplace" came to be printed
+    //in the voice of a diagnosis for a failure nobody had looked at.
+    const home = aMachine({ hasServer: true, installFails: true, installWhy: '' });
+
+    const it = guest.said(run(guest.installing(WANT), home));
+    assert.equal(it.done, false);
+    assert.match(it.why, /gave no reason/);
+    assert.doesNotMatch(it.why, /marketplace/, 'it invented a cause for a silent failure');
 });
 
 test('and it exits 0 whatever happened, because the caller is mid-press', () => {

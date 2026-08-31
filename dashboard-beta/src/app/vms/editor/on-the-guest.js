@@ -109,10 +109,36 @@ function installing(what, how) {
         '# `code-server-*`, NOT `remote-cli/code-*`. The remote-cli one talks to a',
         '# RUNNING window through VSCODE_IPC_HOOK_CLI and does nothing without it;',
         '# this one is the standalone manager and installs with no window at all.',
-        'if "$CLI" --install-extension "$WANT" >/dev/null 2>&1; then',
+        '#',
+        '# WHICH ONE IT FOUND, said out loud. There can be several server builds',
+        '# under there after an editor has been upgraded, and "it failed" means',
+        '# something different depending on which of them was asked.',
+        'echo ' + SAYS + '-cli "$CLI"',
+        '',
+        '# AND WHAT IT SAID WHEN IT WOULD NOT.',
+        '#',
+        '# THIS THREW THE ERROR AWAY -- `>/dev/null 2>&1` -- and the host then',
+        '# ASSERTED a cause it had never read: "check that it can reach the',
+        '# marketplace". That is a guess printed in the voice of a diagnosis, and',
+        '# it is the reason a failure here could not be acted on: the one fact',
+        '# needed to fix it was discarded at the moment it was produced.',
+        'if OUT=$("$CLI" --install-extension "$WANT" 2>&1); then',
         '  echo ' + SAYS + ' installed',
         'else',
         '  echo ' + SAYS + ' failed',
+        '  # THE LAST FEW LINES ONLY. The reason is at the end, and a whole stack',
+        '  # of them is a wall that gets scrolled past. Each is prefixed so the',
+        '  # host can pick them out of everything else on the channel.',
+        '  # THE `echo` TERMINATES THE LAST LINE, and it is not decoration.',
+        '  # `printf %s` writes no trailing newline, and `read` returns false on a',
+        '  # final line without one -- so the loop body never ran for it and the',
+        '  # last message was dropped. The reason a tool gives is on its LAST line',
+        '  # far more often than not, so what came back was the preamble and never',
+        '  # the fault. `printf` rather than `echo "$OUT"` so a backslash in the',
+        '  # message survives being repeated.',
+        '  { printf %s "$OUT"; echo; } | tail -n 6 | while IFS= read -r line; do',
+        '    echo ' + SAYS + '-why "$line"',
+        '  done',
         'fi',
         'exit 0'
     ].join('\n');
@@ -135,10 +161,45 @@ function said(output) {
                 + 'install with yet. Opening it again once the window is up will do it.'
         };
     }
+    //WHAT IT SAID, NOT WHAT WE ASSUME IT MEANT. This used to answer "check that
+    //it can reach the marketplace" for every failure there has ever been — a
+    //sentence nobody had read off the machine, offered as though somebody had.
+    //It sent the one real investigation this had into the network, when the
+    //machine may equally have been out of disk, holding a lock, or refusing an
+    //extension it considered incompatible with that server build.
     if (word === 'failed') {
-        return { done: false, why: 'the machine could not fetch it — check that it can reach the marketplace' };
+        var why = reasons(output);
+        return {
+            done: false,
+            why: why.length
+                ? why.join(' / ')
+                //STILL NOT A GUESS. It failed and said nothing, which is worth
+                //saying as itself.
+                : 'it would not install and gave no reason',
+            cli: cliOf(output)
+        };
     }
     return { done: false, why: null };
+}
+
+//THE LINES THE GUEST SENT BACK, in order. Each was prefixed on the machine so
+//they can be told apart from anything else that shared the channel.
+function reasons(output) {
+    var out = [];
+    var re = new RegExp(SAYS + '-why (.*)', 'g');
+    var m;
+    while ((m = re.exec(String(output || '')))) {
+        var line = String(m[1]).trim();
+        if (line) out.push(line);
+    }
+    return out;
+}
+
+//WHICH SERVER BUILD WAS ASKED. After an editor upgrade there can be several,
+//and "it failed" means something different depending on which one.
+function cliOf(output) {
+    var m = new RegExp(SAYS + '-cli (\\S+)').exec(String(output || ''));
+    return m ? m[1] : null;
 }
 
 module.exports = { installing: installing, said: said, SAYS: SAYS, WAIT_SECONDS: WAIT_SECONDS };

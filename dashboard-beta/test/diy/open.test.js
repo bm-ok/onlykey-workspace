@@ -208,9 +208,16 @@ test('from cold it does all five, in order', async () => {
     //THE ORDER IS THE CLAIM. Laying the workspace before the machine has
     //dialled in has nothing to talk to; lending the sign-in before the
     //workspace puts a credential on a machine that may still fail to set up.
+    //
+    //AND IT IS FIVE, WHICH IS WHAT THIS TEST HAS ALWAYS BEEN CALLED. It asserted
+    //six: a `vmForTasks` keeping a machine back from a queue that would never
+    //have taken it. `beta-diy1` is tagged `diy` and nothing else, and the last
+    //rule in ../../src/app/queue/policy refuses a machine that has not been told
+    //what it is for — so the keep-back protected nothing and left a standing
+    //"kept back" on the Runners tab that nobody could account for.
     assert.deepEqual(
         called.filter((c) => c !== 'credentialsHeld' && c !== 'branchBoard' && c !== 'guests'),
-        ['vmForTasks', 'vmStart', 'vmAwait', 'vmWorkspace', 'guestLend', 'editor.open']
+        ['vmStart', 'vmAwait', 'vmWorkspace', 'guestLend', 'editor.open']
     );
 
     assert.equal(said.machine, 'beta-diy1');
@@ -221,7 +228,66 @@ test('from cold it does all five, in order', async () => {
     //AND IT SAYS WHAT IT DID. A press that performs five acts on real machines
     //and answers "ok" is one nobody can check afterwards.
     assert.ok(said.did.length >= 5, said.did.join(' | '));
+    assert.doesNotMatch(said.note, /kept beta-diy1 back/,
+        'a machine the queue could never take was still kept back from it');
+});
+
+//---- and the machine the queue COULD have taken ----------------------------
+//
+//THE KEEP-BACK IS NOT DELETED, IT IS ASKED FOR. `diy` plus `worker` is a machine
+//the queue will pick up, and rolling it back to base under somebody sitting in
+//it with an editor open is the afternoon this protects.
+//---------------------------------------------------------------------------
+
+test('a machine the queue would take IS kept back, and gets given back when it is cleared', async () => {
+    vms = { 'beta-diy1': VM({ tags: ['diy', 'worker'] }) };
+
+    const actions = await anApp();
+    const it = await start(actions);
+
+    const said = await actions.call('diyOpen',
+        { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+
+    assert.ok(called.includes('vmForTasks'),
+        'a worker machine was taken for a seat and left in the queue: ' + called.join(' | '));
     assert.match(said.note, /kept beta-diy1 back/);
+
+    //AND IT COMES BACK. `vmForTasks` was called in one place and never undone,
+    //so a worker machine borrowed once for DIY was out of the queue for good —
+    //visible only as an orange badge on another tab.
+    //ASLEEP FIRST, because `diyClear` refuses a running machine -- rolling it
+    //back then would discard whatever claude refreshed along with the disk.
+    await actions.call('diySleep', { id: it.id, _fromTest: true });
+
+    called = [];
+    await actions.call('diyClear', { id: it.id, _fromTest: true });
+
+    assert.ok(called.includes('vmForTasks'),
+        'clearing the seat did not give the machine back to the queue: ' + called.join(' | '));
+});
+
+test('a machine somebody kept back themselves is left kept back', async () => {
+    //NOT THIS APP'S DECISION TO UNDO. Somebody pressed Release on the Runners
+    //tab; a seat that never took that away must not hand it back.
+    vms = { 'beta-diy1': VM({ tags: ['diy', 'worker'], forTasks: false }) };
+
+    const actions = await anApp();
+    const it = await start(actions);
+
+    await actions.call('diyOpen',
+        { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+
+    //It was already out, so the press had nothing to do about it.
+    assert.ok(!called.includes('vmForTasks'),
+        'it kept back a machine that was already kept back');
+
+    await actions.call('diySleep', { id: it.id, _fromTest: true });
+
+    called = [];
+    await actions.call('diyClear', { id: it.id, _fromTest: true });
+
+    assert.ok(!called.includes('vmForTasks'),
+        'clearing handed the queue a machine this seat never took from it');
 });
 
 test('the second press does nothing but open it', async () => {

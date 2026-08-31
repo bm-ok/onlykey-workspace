@@ -29,6 +29,14 @@
 var makeStore = require('./store');
 var guestEditor = require('../vms/editor/on-the-guest');
 
+//WHETHER THE QUEUE COULD EVER TAKE A MACHINE, asked of the file that owns the
+//question. `takesQueuedWork` is worker-or-judge and says out loud that DIY is
+//deliberately not on the list -- "adding `diy` here would quietly undo the
+//reason the role exists". Writing that test out again here would be a second
+//spelling of it, and it would go wrong in the direction that costs somebody
+//their afternoon.
+var roles = require('../vms/ours/roles');
+
 //WHAT MAKES THIS EDITOR WORTH OPENING. A DIY machine exists so somebody can run
 //their own claude session in it, and the VS Code half of that is one extension —
 //which runs on the MACHINE, not on this desktop. Named once, here, rather than
@@ -570,11 +578,43 @@ async function plugin(imports, register) {
                 await actions.call('vmSnapshotRestore', { name: it.machine, title: live.baseSnapshot });
                 did.push('rolled it back to "' + live.baseSnapshot + '"');
 
+                //---- AND THE QUEUE GETS BACK WHAT THIS SEAT TOOK ------------
+                //
+                //`vmForTasks` WAS CALLED ONCE AND NEVER UNDONE. Opening a seat
+                //kept the machine back from the queue and nothing anywhere gave
+                //it back, so a worker machine borrowed once for DIY was out of
+                //the queue for good — visible only as an orange "kept back" on
+                //another tab, on a machine that looked idle and was.
+                //
+                //HERE AND NOT IN `diySleep`, which is the distinction that
+                //matters: asleep, the work is still on the disk and the queue
+                //rolling it back would take somebody's afternoon. Cleared, the
+                //machine is at its base snapshot holding nothing, so there is
+                //nothing left to protect.
+                //
+                //ONLY WHAT THIS SEAT TOOK. `keptBack` was written when the press
+                //did it, so a machine somebody kept back themselves on the
+                //Runners tab is still kept back afterwards — undoing that would
+                //be this app overruling a decision it was never asked about.
+                if (it.keptBack) {
+                    try {
+                        await actions.call('vmForTasks', { name: it.machine, enabled: true });
+                        did.push('let the queue have it again');
+                    } catch (e) {
+                        //NOT WORTH FAILING A CLEAR FOR. The machine is already
+                        //rolled back and the sign-in is already home; refusing
+                        //to finish over this would leave the seat holding a
+                        //machine it has no use for.
+                        to.warn('could not give ' + it.machine + ' back to the queue: ' + e.message
+                            + ' — "Let the queue use it" on the Runners tab does the same thing');
+                    }
+                }
+
                 //AND THE SEAT LETS GO OF IT. The machine is clean and holds
                 //nothing of this piece of work, so keeping its name here would
                 //hold it out of the pool for a seat that has no claim on it any
                 //more — see `freeIn`, which reads exactly this.
-                await store.change(it.id, { machine: null, signIn: null });
+                await store.change(it.id, { machine: null, signIn: null, keptBack: false });
                 did.push('released it back into the diy pool');
 
                 return {
@@ -836,9 +876,37 @@ async function plugin(imports, register) {
                 //this one out of the pool" and changes nothing else, and it is
                 //what ../ui/banners/trouble.js already reads to stop calling a
                 //machine somebody is using idle.
-                if (vm.forTasks !== false) {
-                    await actions.call('vmForTasks', { name: name, enabled: false });
-                    did.push('kept ' + name + ' back from the queue');
+                //---- AND ONLY WHEN THE QUEUE COULD ACTUALLY TAKE IT ---------
+                //
+                //A MACHINE TAGGED ONLY `diy` IS ALREADY OUT. The last rule in
+                //../queue/policy refuses a machine that "has not been told what
+                //it is for" — the queue picks which sign-in to hand over from a
+                //worker or judge tag, and an unlabelled box gets none. So this
+                //protected nothing on the machine it was written for, and left
+                //a standing orange "kept back" on the Runners tab beside a
+                //button offering to let the queue use it — which would not have
+                //put it in the queue either, because it still has no role.
+                //
+                //A MACHINE CAN BE BOTH, and that is why this is a question
+                //rather than a deletion. `diy` plus `worker` is a machine the
+                //queue would take, and there the keep-back is the only thing
+                //stopping it being rolled back to base under somebody who is
+                //sitting in it with an editor open.
+                //
+                //AND WHAT WAS TAKEN IS WRITTEN DOWN, because it has to be given
+                //back. `vmForTasks` was called in exactly one place in this file
+                //and never undone, so a worker machine used once for DIY stayed
+                //out of the queue for good. The seat remembers that THIS press
+                //kept it back, so ending the seat can hand back what it took and
+                //nothing else — somebody who kept a machine back themselves, on
+                //the Runners tab, still finds it kept back afterwards.
+                var keptBack = false;
+                if (roles.takesQueuedWork(vm)) {
+                    if (vm.forTasks !== false) {
+                        await actions.call('vmForTasks', { name: name, enabled: false });
+                        did.push('kept ' + name + ' back from the queue');
+                        keptBack = true;
+                    }
                 }
 
                 //---- 4. UP, AND ACTUALLY THERE ------------------------------
@@ -912,10 +980,32 @@ async function plugin(imports, register) {
                 //WRITTEN AFTER, NOT BEFORE. A press that fell over at step four
                 //should not leave the piece of work claiming a sign-in that was
                 //never lent.
-                var kept = await store.change(it.id, { machine: name, signIn: signIn || undefined });
+                var kept = await store.change(it.id, {
+                    machine: name,
+                    signIn: signIn || undefined,
+                    //ONLY WHEN THIS PRESS DID IT. Written even when false, so a
+                    //second press on a seat that once kept a machine back does
+                    //not leave the seat still claiming a debt it has paid.
+                    keptBack: keptBack
+                });
 
                 to.good('opened "' + it.title + '"');
 
+                //---- AND WHETHER CLAUDE IS ACTUALLY IN IT --------------------
+                //
+                //`openEditor` HAS ANSWERED THIS ALL ALONG and this threw it
+                //away. The extension install failed on a freshly built machine,
+                //said so on its own answer and in the log, and the banner over
+                //this press read "...then opened /home/okc/workspace on
+                //okc-ok-diy1." — a complete and cheerful account of a press that
+                //had half worked. The next thing that happened was VS Code
+                //saying the extension is disabled in this workspace, with
+                //nothing on this screen to connect the two.
+                //
+                //IT IS THE REASON FOR THE PRESS, not a detail of it. Opening an
+                //editor on a machine with no Claude in it is most of a press and
+                //not the point of one, which is what the note in `openEditor`
+                //already says — so it goes in the sentence somebody reads.
                 return {
                     id: it.id,
                     title: it.title,
@@ -924,8 +1014,15 @@ async function plugin(imports, register) {
                     signIn: kept.signIn,
                     opened: opened.opened,
                     on: opened.on,
+                    claude: opened.claude,
                     did: did,
                     note: did.join(', then ') + '.'
+                        + (opened.claude
+                            ? ' Claude is in it: ' + opened.claude + '.'
+                            : ' Claude is NOT in it'
+                                + (opened.claudeWhy ? ' — ' + opened.claudeWhy : '')
+                                + '. The editor is open either way, and the extension runs in the remote host,'
+                                + ' so the one on this desktop is not the one that window uses.')
                 };
             }
         }));
@@ -1090,6 +1187,14 @@ async function plugin(imports, register) {
                     //quietly half-worked is the shape of every bug in this file
                     //so far.
                     claude: extension.done ? extension.why : false,
+
+                    //AND WHY NOT, WHICH IS THE HALF THAT TRAVELS. `claude:false`
+                    //says a press half worked and leaves whoever reads it with
+                    //nowhere to go; the reason came off the machine — see
+                    //../vms/editor/on-the-guest.js, which no longer throws it
+                    //away — so it is carried to whatever is going to say so.
+                    claudeWhy: extension.done ? null : extension.why,
+                    claudeCli: extension.cli || null,
 
                     note: 'VS Code was asked to open ' + folder + ' on ' + m.alias
                         + ' (' + m.user + '@' + m.address + ').'
