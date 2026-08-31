@@ -29,7 +29,7 @@ const records = require('../../src/app/vms/ours/records');
 //when it is wrong.
 //---------------------------------------------------------------------------
 
-let kept, called, vms, guests;
+let kept, called, vms, guests, seatWhenOpening;
 
 function doc() {
     return Promise.resolve({
@@ -66,6 +66,7 @@ const VM = (over) => Object.assign({
 beforeEach(() => {
     kept = null;
     called = [];
+    seatWhenOpening = null;
     vms = { 'beta-diy1': VM() };
     guests = [
         { name: 'diy-b1', role: 'diy', has: true, holder: null },
@@ -130,7 +131,19 @@ async function anApp() {
     await diyPlugin({
         app: { host: { actions } },
         log: { on: () => ({ info: () => {}, good: () => {}, warn: () => {}, bad: () => {} }) },
-        editor: { open: async (it) => { called.push('editor.open'); return { opened: it.dir, on: it.remote, using: 'code' }; } },
+        //WHAT THE SEAT SAID AT THE MOMENT THE EDITOR WAS LAUNCHED. Opening is
+        //the slow step — it waits on the guest for VS Code to push a server, up
+        //to three minutes — so what is written down BEFORE it is what the pane
+        //has to work from for all of that time.
+        editor: {
+            open: async (it) => {
+                called.push('editor.open');
+                seatWhenOpening = kept && kept.items
+                    ? JSON.parse(JSON.stringify(kept.items.filter((x) => x.machine || x.signIn)))
+                    : [];
+                return { opened: it.dir, on: it.remote, using: 'code' };
+            }
+        },
         ssh: {
             ensure: () => ({}), writeConfig: () => 'ssh_config', ensureInclude: () => ({ added: false }),
             readingOf: (vm) => ({ name: vm.name, address: '10.0.0.2', user: 'okc', alias: 'okc-' + vm.name, usesOurKey: true })
@@ -230,6 +243,33 @@ test('from cold it does all five, in order', async () => {
     assert.ok(said.did.length >= 5, said.did.join(' | '));
     assert.doesNotMatch(said.note, /kept beta-diy1 back/,
         'a machine the queue could never take was still kept back from it');
+});
+
+//---- what the seat says while the slow step is still going ------------------
+//
+//OPENING IS THE SLOW STEP AND THE SEAT USED TO BE WRITTEN AFTER IT. It waits on
+//the guest for VS Code to push its server — up to three minutes, and the whole
+//three when a rollback has wiped the server and no window comes to replace it.
+//
+//FOR ALL OF THAT TIME the machine was taken and the credential was lent and the
+//seat recorded NEITHER. The pane read the only diy sign-in as held by "another
+//machine" — it was this seat's own, which it could not know — greyed the button
+//out, and advised taking the sign-in back, which is the one thing that would
+//have made it worse.
+//----------------------------------------------------------------------------
+
+test('the machine and the sign-in are written down before the editor is opened', async () => {
+    const actions = await anApp();
+    const it = await start(actions);
+
+    await actions.call('diyOpen',
+        { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+
+    assert.ok(seatWhenOpening, 'the editor was never opened, so this proves nothing');
+    assert.equal(seatWhenOpening.length, 1,
+        'the seat claimed neither the machine nor the sign-in while the editor was being opened');
+    assert.equal(seatWhenOpening[0].machine, 'beta-diy1');
+    assert.equal(seatWhenOpening[0].signIn, 'diy-b1');
 });
 
 //---- and the machine the queue COULD have taken ----------------------------

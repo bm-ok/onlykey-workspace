@@ -194,11 +194,31 @@ function said(output) {
 
     if (word === 'installed') return { done: true, why: 'installed it on the machine' };
     if (word === 'already-there') return { done: true, why: 'already there' };
+    //AND THAT IT MAY NEVER COME, which is not the same as "it is slow".
+    //
+    //THE SEQUENCE THIS WAS FOUND IN, and every step of it is a button here:
+    //open the editor, put the machine to sleep, clear it back to base, open it
+    //again. A rollback wipes the server, and the window from before is left
+    //pointing at a machine that no longer exists in that state. What was
+    //observed is that no server arrived at all and this waited its full three
+    //minutes; closing that window and pressing again worked immediately.
+    //
+    //WHY IS NOT CLAIMED HERE. `--new-window` is already passed — see
+    //./open-editor.js — so "it focused the old window instead of connecting" is
+    //ruled out, and what actually stops the connection is not established. The
+    //sentence says what was seen and what fixed it, and stops there: a guess in
+    //the voice of a diagnosis is the thing this whole file was rewritten to
+    //remove.
+    //
+    //SAID AT ALL BECAUSE THE GUEST CANNOT TELL. From the machine, "still
+    //downloading" and "nothing is coming" are the same absent directory.
     if (word === 'no-server') {
         return {
             done: false,
             why: 'VS Code had not finished putting its server on the machine, so there was nothing to '
-                + 'install with yet. Opening it again once the window is up will do it.'
+                + 'install with yet. If a window for this machine was open from before it was slept or '
+                + 'cleared, close it and press again — that has been seen to stop a server arriving at '
+                + 'all. Otherwise opening it again once the window is up will do it.'
         };
     }
     //WHAT IT SAID, NOT WHAT WE ASSUME IT MEANT. This used to answer "check that

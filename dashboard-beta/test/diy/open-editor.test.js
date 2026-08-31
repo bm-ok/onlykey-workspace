@@ -471,5 +471,19 @@ test('a machine with no server yet is told what to do about it', async () => {
 
     await anEditor(actions);
 
-    assert.ok(said.some((l) => /Opening it again once the window is up/.test(l)), said.join(' | '));
+    assert.ok(said.some((l) => /opening it again once the window is up/i.test(l)), said.join(' | '));
+
+    //AND THAT IT MAY NEVER COME AT ALL. Open the editor, sleep the machine,
+    //clear it back to base, open again — every step a button here — and no
+    //server arrived at all; closing the leftover window and pressing again
+    //worked at once. From the guest that is indistinguishable from a slow
+    //download, so the sentence has to carry the thing to check.
+    //
+    //WHAT IS ASSERTED IS THE ADVICE, NOT A MECHANISM. Why the connection does
+    //not happen is not established — `--new-window` is already passed, so the
+    //obvious explanation is ruled out — and a test that pinned a cause would be
+    //pinning a guess.
+    assert.ok(said.some((l) => /slept or cleared/i.test(l)),
+        'it does not mention the window left over from before the machine was cleared, which is the '
+            + 'case that never resolves itself: ' + said.join(' | '));
 });

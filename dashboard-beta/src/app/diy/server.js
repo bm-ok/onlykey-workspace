@@ -965,6 +965,38 @@ async function plugin(imports, register) {
                     did.push('lent it ' + signIn);
                 }
 
+                //---- AND WHAT IT NOW REMEMBERS, AS SOON AS IT IS TRUE ---------
+                //
+                //WRITTEN AFTER THE LEND AND BEFORE THE EDITOR, which is a
+                //correction to where this used to sit rather than a change of
+                //mind. The rule it was written for still holds — a press that
+                //fell over before lending must not leave the seat claiming a
+                //sign-in it never got — but the LEND is the act that makes it
+                //true. Opening an editor afterwards does not make a credential
+                //any more lent than it already is.
+                //
+                //IT SAT BELOW `openEditor` AND THAT STEP CAN TAKE THREE MINUTES.
+                //It waits on the guest for VS Code to push its server, so on a
+                //machine just rolled back — no server, and a VS Code window from
+                //a previous press that focuses instead of reconnecting, so none
+                //is ever coming — the whole wait runs. For all of it the machine
+                //was taken and the credential was lent and the seat recorded
+                //NEITHER.
+                //
+                //WHAT THAT LOOKED LIKE was the pane saying "all lent out" and
+                //"your diy sign-in is out on another machine" — about the seat's
+                //own machine, which it could not recognise because the seat did
+                //not claim it — with the button disabled and advice to take the
+                //sign-in back, which is precisely the wrong thing to do.
+                var kept = await store.change(it.id, {
+                    machine: name,
+                    signIn: signIn || undefined,
+                    //ONLY WHEN THIS PRESS DID IT. Written even when false, so a
+                    //second press on a seat that once kept a machine back does
+                    //not leave the seat still claiming a debt it has paid.
+                    keptBack: keptBack
+                });
+
                 //---- 7. AND OPEN IT -----------------------------------------
                 //
                 //A CLEAN ARGUMENT OBJECT. `openEditor` refuses a press that came
@@ -974,20 +1006,6 @@ async function plugin(imports, register) {
                 //decision rather than something inherited.
                 var opened = await actions.call('openEditor', { name: name });
                 did.push('opened ' + opened.opened + ' on ' + opened.on);
-
-                //---- AND WHAT IT NOW REMEMBERS ------------------------------
-                //
-                //WRITTEN AFTER, NOT BEFORE. A press that fell over at step four
-                //should not leave the piece of work claiming a sign-in that was
-                //never lent.
-                var kept = await store.change(it.id, {
-                    machine: name,
-                    signIn: signIn || undefined,
-                    //ONLY WHEN THIS PRESS DID IT. Written even when false, so a
-                    //second press on a seat that once kept a machine back does
-                    //not leave the seat still claiming a debt it has paid.
-                    keptBack: keptBack
-                });
 
                 to.good('opened "' + it.title + '"');
 
