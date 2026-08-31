@@ -571,13 +571,25 @@ function Part({ children, right }) {
 //facts, and is styled as one.
 function PartWhy({ children }) { return <div className="group-why">{children}</div>; }
 
-function Kv({ children }) { return <table className="kv"><tbody>{children}</tbody></table>; }
+//`roomy` IS FOR A TABLE WHOSE ROWS ARE TWO LINES: a name, and under it where it
+//came from or where it is going. Plain `Kv` sets one line against the next with
+//no room and no indent, so the pair reads as one sentence that wrapped.
+//
+//IT IS A PROP RATHER THAN A CLASS ON THE PANE. Three panes drew this table by
+//writing `className="kv where"` themselves, which is the one thing panes are not
+//to do — a misspelt class here has no error, renders, and looks nearly right.
+function Kv({ children, roomy }) {
+    return <table className={'kv' + (roomy ? ' where' : '')}><tbody>{children}</tbody></table>;
+}
 function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}</td></tr>; }
+
+//The second line of a `roomy` row: indented under the first, and quieter.
+function KvSub({ children }) { return <div className="sub muted">{children}</div>; }
 
 module.exports = {
     setGuardCheck, guardsChanged, useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted, Quoted,
     Badge, Badges, Chips, Chip, Views,
     Button, Toggle, Plus, Cog, Finder, Sorter, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut, setOpener
+    Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, KvSub, Part, PartWhy, Group, Head, Act, ago, openOut, setOpener
 };

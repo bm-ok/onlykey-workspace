@@ -40,7 +40,7 @@ var { useState, useEffect, useCallback } = React;
 
 module.exports = function sync(theme, okc) {
     var { Pane, Panel, Stack, TitleRow, Grow, Card, CardTitle, CardSub, Badge, Badges,
-        Button, Empty, Note, Notice, Skeleton, Mono, Muted, ago, ask } = theme;
+        Button, Empty, Note, Notice, Skeleton, Mono, Muted, Kv, KvRow, KvSub, ago, ask } = theme;
 
     //---- WHAT A SYNC WOULD DO, ROW BY ROW, BEFORE IT DOES IT ---------------
     //
@@ -57,41 +57,94 @@ module.exports = function sync(theme, okc) {
     function ForkRows({ rows }) {
         if (!rows || !rows.length) return null;
         return (
-            <table className="kv where"><tbody>
+            <Kv roomy>
                 {rows.map(function (r) {
                     return (
-                        <tr key={r.repo}>
-                            <th>{r.repo}</th>
-                            <td>
-                                {r.why
-                                    ? <div className="sub muted">{r.why}</div>
-                                    : <React.Fragment>
-                                        <div>
-                                            <Mono>{r.branch}</Mono>{' '}
-                                            <Badge kind={r.behind ? 'warn' : 'ok'}>
-                                                {r.behind ? r.behind + ' behind' : 'level'}
-                                            </Badge>
-                                            {/* AHEAD IS NOT A PROBLEM AND IS THE
-                                                WHOLE STORY on a fork a cut just
-                                                merged into — it says the work is
-                                                there, which is why there is
-                                                nothing to pull down. */}
-                                            {r.ahead ? <span>{' '}<Muted>{r.ahead + ' ahead'}</Muted></span> : null}
-                                        </div>
-                                        <div className="sub muted">{'from ' + r.parent}</div>
-                                    </React.Fragment>}
-                            </td>
-                        </tr>
+                        <KvRow key={r.repo} label={r.repo}>
+                            {r.why
+                                ? <KvSub>{r.why}</KvSub>
+                                : <React.Fragment>
+                                    <div>
+                                        <Mono>{r.branch}</Mono>{' '}
+                                        <Badge kind={r.behind ? 'warn' : 'ok'}>
+                                            {r.behind ? r.behind + ' behind' : 'level'}
+                                        </Badge>
+                                        {/* AHEAD IS NOT A PROBLEM AND IS THE
+                                            WHOLE STORY on a fork a cut just
+                                            merged into — it says the work is
+                                            there, which is why there is
+                                            nothing to pull down. */}
+                                        {r.ahead ? <span>{' '}<Muted>{r.ahead + ' ahead'}</Muted></span> : null}
+                                    </div>
+                                    <KvSub>{'from ' + r.parent}</KvSub>
+                                </React.Fragment>}
+                        </KvRow>
                     );
                 })}
-            </tbody></table>
+            </Kv>
         );
     }
 
+    //---- AND THE OTHER HALF OF THE PRESS ----------------------------------
+    //
+    //THE FORK TABLE WAS THE WHOLE DRY RUN, and "Catch up everything" is two
+    //acts, not one: forks on GitHub, then a fetch into the working tree on this
+    //computer. The second half was a sentence with a count in it while the first
+    //had a row per repository — so the half that touches the files somebody has
+    //open was the half described in the least detail.
+    //
+    //BOTH COMMITS, BECAUSE "behind" ON ITS OWN IS NOT CHECKABLE. `head` is what
+    //is checked out here and `upstreamHead` is what the fork is at; a person who
+    //wants to know what is about to arrive can read the two and go and look.
+    function HereRows({ rows }) {
+        if (!rows || !rows.length) return null;
+        var at = function (s) { return s ? String(s).slice(0, 7) : '?'; };
+        return (
+            <Kv roomy>
+                {rows.map(function (r) {
+                    var h = hereOf(r);
+                    return (
+                        <KvRow key={r.repo} label={r.repo}>
+                            <div>
+                                <Mono>{r.default || 'default branch'}</Mono>{' '}
+                                <Badge kind={h.kind}>{h.word}</Badge>
+                            </div>
+                            <KvSub>
+                                {r.inStep === false
+                                    ? 'at ' + at(r.head) + ' → ' + at(r.upstreamHead)
+                                    : 'at ' + at(r.head)}
+                            </KvSub>
+                        </KvRow>
+                    );
+                })}
+            </Kv>
+        );
+    }
+
+    //---- WHERE ITS WORK GOES, WHICH IS NOT A QUESTION ABOUT BEING A FORK ----
+    //
+    //THIS LED WITH `!r.fork` AND ANSWERED "not a fork". True of
+    //`onlykey-testing`, and an answer to the other question: its work goes to
+    //`bm-ok/onlykey-testing`, which is its own remote, so it sends work to
+    //itself exactly as all eight of its neighbours do. The badge said otherwise
+    //and the badge is labelled "work goes".
+    //
+    //`behindTarget` IS NULL FOR THREE DIFFERENT REASONS and only one of them is
+    //"it sends work to itself" — see where it is built: nothing picked, the
+    //target IS this repository, or the target's default branch could not be
+    //read. Read off the target rather than inferred from the absence, so the
+    //three stop collapsing into whichever sentence was written first.
     function standingOf(r) {
         var bt = r.behindTarget || null;
-        if (!r.fork) return { fork: { word: 'not a fork', kind: 'muted' }, behind: 0 };
-        if (!bt) return { fork: { word: 'sends work to itself', kind: 'muted' }, behind: 0 };
+        var to = (r.target && r.target.on) || null;
+        var self = r.remote && r.remote.owner ? r.remote.owner + '/' + r.remote.repo : null;
+
+        //NOWHERE PICKED IS NOT "LEVEL". A repository with no target cannot open
+        //a pull request at all, which is worth saying rather than leaving as a
+        //quiet muted word among eight that mean everything is fine.
+        if (!to) return { fork: { word: 'nowhere picked', kind: 'warn' }, behind: 0 };
+        if (self && to === self) return { fork: { word: 'sends work to itself', kind: 'muted' }, behind: 0 };
+        if (!bt) return { fork: { word: 'goes to ' + to + ', not compared', kind: 'muted' }, behind: 0 };
         if (bt.why) return { fork: { word: 'could not compare', kind: 'warn' }, behind: 0, why: bt.why };
         if (bt.behind > 0) return { fork: { word: bt.behind + ' behind ' + bt.on, kind: 'warn' }, behind: bt.behind };
         return { fork: { word: 'level with ' + bt.on + (bt.ahead ? ' (' + bt.ahead + ' ahead)' : ''), kind: 'ok' }, behind: 0 };
@@ -180,22 +233,45 @@ module.exports = function sync(theme, okc) {
             return withRows(function (rows, blind) {
                 var moving = rows.filter(function (r) { return r.behind > 0; });
                 var behindHere = (repos.state && (repos.state.repos || []).filter(function (r) { return r.inStep === false; })) || [];
+                //TWO SECTIONS, BECAUSE IT IS TWO ACTS. One happens on GitHub and
+                //touches nothing on this computer; the other is a fetch into the
+                //working tree here. Told as one list they read as one act with
+                //some detail, and the half that changes files on this machine
+                //was the half with no rows under it.
                 return ask({
                     title: 'Catch the whole workspace up?',
+                    wide: true,
                     plain: [
-                        blind
-                            ? 'GitHub could not be asked how far each fork is behind, so what follows is what '
-                                + 'the press does rather than what it would do here.'
-                            : moving.length
-                                ? 'On GitHub: ' + moving.map(function (r) { return r.repo + ' (' + r.behind + ')'; }).join(', ')
-                                    + ' pulled up from their parents. Every other fork is level and is left alone.'
-                                : 'On GitHub: nothing. Every fork this app can ask about is already level with its parent.',
-                        behindHere.length
-                            ? 'Here: ' + behindHere.length + ' default branch(es) fetched and fast-forwarded — '
-                                + behindHere.map(function (r) { return r.repo; }).join(', ') + '. Only fast-forwarded, never merged.'
-                            : 'Here: nothing to fetch — every default branch is already at its fork’s commit.',
-                        'Forks first, then this host, or this host would fast-forward to a fork that is itself behind.',
-                        <ForkRows key="forks" rows={rows} />
+                        'Forks first, then this host — the other way round and this host fast-forwards onto a '
+                            + 'fork that is itself behind.',
+                        {
+                            heading: 'GitHub: fork sync',
+                            body: (
+                                <div>
+                                    <p>{blind
+                                        ? 'GitHub could not be asked how far each fork is behind, so what follows '
+                                            + 'is what the press does rather than what it would do here.'
+                                        : moving.length
+                                            ? moving.map(function (r) { return r.repo + ' (' + r.behind + ')'; }).join(', ')
+                                                + ' pulled up from their parents. Every other fork is level and is left alone.'
+                                            : 'Nothing. Every fork this app can ask about is already level with its parent.'}</p>
+                                    <ForkRows rows={rows} />
+                                </div>
+                            )
+                        },
+                        {
+                            heading: 'Remote → local',
+                            body: (
+                                <div>
+                                    <p>{behindHere.length
+                                        ? behindHere.length + ' default branch(es) fetched from your fork and '
+                                            + 'fast-forwarded. Only fast-forwarded, never merged, so nothing you have '
+                                            + 'here is rewritten.'
+                                        : 'Nothing to fetch — every default branch here is already at its fork’s commit.'}</p>
+                                    <HereRows rows={(repos.state && repos.state.repos) || []} />
+                                </div>
+                            )
+                        }
                     ].filter(Boolean),
                     confirm: 'Catch it up',
                     onYes: function () { setBusy('*'); setSaid(null); return tell(okc.call('workspaceSync', {})); }
@@ -209,18 +285,36 @@ module.exports = function sync(theme, okc) {
                 var w = mine[0] || null;
                 return ask({
                     title: 'Pull ' + r.repo + ' up from its parent?',
+                    wide: true,
                     plain: [
-                        blind || !w
-                            ? 'GitHub could not be asked how far this fork is behind, so what follows is what '
-                                + 'the press does rather than what it would do here.'
-                            : w.why
-                                ? 'It cannot be pulled up: ' + w.why
-                                : w.behind
-                                    ? 'GitHub merges ' + w.parent + ' ' + w.branch + ' into your fork — '
-                                        + w.behind + ' commit(s), in one call.'
-                                    : 'It is already level with ' + w.parent + ', so this would change nothing.',
-                        'Nothing here is touched — this host is behind until it is pulled, and pulling is separate.',
-                        <ForkRows key="forks" rows={mine} />
+                        {
+                            heading: 'GitHub: fork sync',
+                            body: (
+                                <div>
+                                    <p>{blind || !w
+                                        ? 'GitHub could not be asked how far this fork is behind, so what follows '
+                                            + 'is what the press does rather than what it would do here.'
+                                        : w.why
+                                            ? 'It cannot be pulled up: ' + w.why
+                                            : w.behind
+                                                ? 'GitHub merges ' + w.parent + ' ' + w.branch + ' into your fork — '
+                                                    + w.behind + ' commit(s), in one call.'
+                                                : 'It is already level with ' + w.parent + ', so this would change nothing.'}</p>
+                                    <ForkRows rows={mine} />
+                                </div>
+                            )
+                        },
+                        {
+                            heading: 'Remote → local',
+                            body: (
+                                <div>
+                                    <p>Nothing. This press only moves the fork on GitHub — the copy here stays
+                                        where it is, and is a commit further behind afterwards than it was before.</p>
+                                    <HereRows rows={((repos.state && repos.state.repos) || [])
+                                        .filter(function (x) { return x.repo === r.repo; })} />
+                                </div>
+                            )
+                        }
                     ].filter(Boolean),
                     confirm: w && w.behind ? 'Pull it up' : 'Sync it anyway',
                     onYes: function () {

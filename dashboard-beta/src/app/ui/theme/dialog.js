@@ -166,6 +166,55 @@ function startingValues(fields) {
 
 //---- one dialog ----------------------------------------------------------
 
+//---- WHAT THIS DOES, IN SECTIONS WHEN IT IS MORE THAN ONE THING -----------
+//
+//`plain` STARTED AS A LIST OF SENTENCES, then grew nodes, then tables. A dry
+//run for a press that does two different things — one on GitHub, one in the
+//working tree on this computer — arrived as a single undifferentiated bullet
+//list with two tables loose in it, and nothing said which table went with which
+//half. The label is the part that makes it readable, and it was the part there
+//was no way to write.
+//
+//A STRING IS STILL A BULLET AND A NODE IS STILL A WIDE ONE, so every caller
+//that never asks for a section renders exactly as it did. An entry of
+//`{ heading, body }` closes the current list, writes a heading, and puts its
+//body under it — the same heading the dialog already uses for "What this does",
+//because a second style of heading in one box is a second thing to learn.
+function Plain({ items }) {
+    var out = [];
+    var bullets = [];
+
+    function flush(key) {
+        if (!bullets.length) return;
+        out.push(<ul key={'u' + key}>{bullets}</ul>);
+        bullets = [];
+    }
+
+    items.forEach(function (p, i) {
+        //A SECTION IS AN OBJECT THAT IS NOT AN ELEMENT. React elements are
+        //objects too, so the test has to be `isValidElement` and not `typeof` —
+        //without it every <ForkRows/> in a `plain` becomes an empty heading.
+        if (p && typeof p === 'object' && !React.isValidElement(p) && p.heading) {
+            flush(i);
+            out.push(<div className="dlg-heading" key={'h' + i}>{p.heading}</div>);
+            if (p.body) out.push(<div key={'b' + i}>{p.body}</div>);
+            return;
+        }
+        bullets.push(typeof p === 'string'
+            ? <li key={i}>{p}</li>
+            //A node is allowed where a sentence is.
+            : <li key={i} className="wide">{p}</li>);
+    });
+    flush('end');
+
+    return (
+        <div>
+            <div className="dlg-heading">What this does</div>
+            {out}
+        </div>
+    );
+}
+
 function Dialog({ id, spec }) {
     var tabs = spec.tabs && spec.tabs.length ? spec.tabs : null;
     var [openTab, setOpenTab] = useState(0);
@@ -279,19 +328,9 @@ function Dialog({ id, spec }) {
 
                 {/* THE MIDDLE IS THE ONLY PART THAT SCROLLS. */}
                 <div className="dlg-body">
-                    {plain && plain.filter(Boolean).length ? (
-                        <div>
-                            <div className="dlg-heading">What this does</div>
-                            <ul>
-                                {plain.filter(Boolean).map(function (p, i) {
-                                    //A node is allowed where a sentence is.
-                                    return typeof p == 'string'
-                                        ? <li key={i}>{p}</li>
-                                        : <li key={i} className="wide">{p}</li>;
-                                })}
-                            </ul>
-                        </div>
-                    ) : null}
+                    {plain && plain.filter(Boolean).length
+                        ? <Plain items={plain.filter(Boolean)} />
+                        : null}
 
                     {/* WHAT IS ABOUT TO GO OUT, WHERE IT CAN BE READ FIRST.
                         For the acts whose whole risk is the CONTENT rather than
@@ -404,4 +443,9 @@ function Dialogs() {
 //`Field` IS EXPORTED BECAUSE FORMS EXIST OUTSIDE DIALOGS. A pane that asks for
 //a value in place -- a note, an address, a search that is more than one box --
 //should draw it the same way the gate does, not nearly the same way.
-module.exports = { ask, Dialogs, Field };
+//`Plain` IS EXPORTED FOR THE TEST AND FOR NO OTHER REASON. It is under every
+//dialog in the app and no dialog can be opened from the command line — the
+//drills that press buttons are off for a real workspace — so the only way to
+//run it rather than read it is to render it directly. See
+//test/ui/dialog-plain.test.js.
+module.exports = { ask, Dialogs, Field, Plain };
