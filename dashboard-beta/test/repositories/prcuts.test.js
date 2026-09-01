@@ -217,6 +217,66 @@ test('a person at the window may land, and merged is reported per repository', a
     assert.match(said.note, /not mergeable/);
 });
 
+//A SECOND PRESS ON A PART-LANDED CUT ONLY TOUCHES WHAT IS STILL OUT.
+//
+//This is the shape a cut is actually in when somebody comes back to it: three
+//of four went in, the fourth had a conflict, they fixed it and pressed Merge
+//again. Re-merging the three would be a PUT against a pull request that is
+//already closed, and GitHub would answer 405 -- so the note would read PARTLY
+//IN about a cut that had just fully landed, which is the alarm going off at
+//the moment the thing works.
+//
+//ASSERTED ON WHAT WAS SENT, not on what came back. A stand-in that answered
+//"already merged" to the extra calls would let a version that merges all four
+//pass this, and the calls are the thing being ruled out.
+test('a second press merges only what is still open', async () => {
+    const { actions, asked } = await anApp({
+        landings: { 'a -> b': { source: 'a', target: 'b', pulls: [
+            { repo: 'one', number: 1, into: 'anowner/one' },
+            { repo: 'two', number: 2, into: 'anowner/two' },
+            { repo: 'three', number: 3, into: 'anowner/three' },
+            { repo: 'four', number: 4, into: 'anowner/four' }
+        ] } },
+        answers: {
+            //THREE ALREADY IN. GitHub says `state: closed` with a `merged_at`,
+            //which is the pair that has to be read together.
+            'GET /repos/anowner/one/pulls/1': { status: 200, body: { number: 1, state: 'closed', merged_at: '2026-09-01T17:03:00Z', html_url: 'u' } },
+            'GET /repos/anowner/two/pulls/2': { status: 200, body: { number: 2, state: 'closed', merged_at: '2026-09-01T17:03:00Z', html_url: 'u' } },
+            'GET /repos/anowner/three/pulls/3': { status: 200, body: { number: 3, state: 'closed', merged_at: '2026-09-01T17:03:00Z', html_url: 'u' } },
+            //AND THE ONE THAT CONFLICTED, now fixed and mergeable.
+            'GET /repos/anowner/four/pulls/4': { status: 200, body: { number: 4, state: 'open', mergeable: true, mergeable_state: 'clean', html_url: 'u' } },
+            'PUT /repos/anowner/four/pulls/4/merge': { status: 200, body: { merged: true, sha: 'deadbee' } }
+        }
+    });
+
+    const said = await actions.call('prCutLand', { source: 'a', target: 'b' });
+
+    const merges = asked.filter((q) => q.method === 'PUT' && /\/merge$/.test(q.at));
+    assert.deepEqual(merges.map((q) => q.at), ['/repos/anowner/four/pulls/4/merge'],
+        'the three that are already in must not be merged a second time');
+
+    assert.equal(said.landed, 1);
+    assert.deepEqual(said.merged.map((d) => d.repo), ['four']);
+    assert.doesNotMatch(said.note, /PARTLY IN/, 'the cut is fully in now');
+});
+
+//AND WHEN THERE IS NOTHING LEFT, THE PRESS SAYS SO RATHER THAN MERGING.
+test('a cut that is entirely merged is not merged again', async () => {
+    const { actions, asked } = await anApp({
+        landings: { 'a -> b': { source: 'a', target: 'b', pulls: [
+            { repo: 'one', number: 1, into: 'anowner/one' }
+        ] } },
+        answers: {
+            'GET /repos/anowner/one/pulls/1': { status: 200, body: { number: 1, state: 'closed', merged_at: '2026-09-01T17:03:00Z', html_url: 'u' } }
+        }
+    });
+
+    const said = await actions.call('prCutLand', { source: 'a', target: 'b' });
+    assert.deepEqual(asked.filter((q) => q.method === 'PUT'), []);
+    assert.deepEqual(said.merged, []);
+    assert.match(said.note, /Already landed/);
+});
+
 //---------------------------------------------------------------------------
 //2. MERGED IS NOT CLOSED.
 //
