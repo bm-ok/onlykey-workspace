@@ -6,6 +6,10 @@ module.exports = function cuts(theme, okc, remember, shell) {
     //THE PAIR OF SIDES, drawn the same way New PR Cut draws it — see
     //./where-rows.js. Both panes ask the same question of the same answer.
     var WhereRows = require('./where-rows')(theme).WhereRows;
+    //WILL IT GO IN, AND DID IT ALREADY -- both were asked of fields that
+    //were not set. ./mergeability.js, where they can be tested.
+    var merge = require('./mergeability');
+    var isMerged = merge.isMerged, goesIn = merge.goesIn;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link, openOut,
@@ -76,6 +80,23 @@ module.exports = function cuts(theme, okc, remember, shell) {
     function state(c) {
         if (c.draft) return { kind: 'warn', word: 'written, not sent' };
         if (c.landed) return { kind: 'ok', word: 'landed' };
+
+        //A CUT WITH A STUCK PULL REQUEST IN IT IS NOT "1 open".
+        //
+        //`1 open` is what this said about a cut whose last pull request could
+        //not be merged at all, which reads as "nearly there" and is the one
+        //case where it is not. The list is where somebody looks to decide what
+        //to pick up, so the word has to survive being read from there.
+        var stuck = merge.stuck(c.pulls);
+        if (stuck.length) {
+            return {
+                kind: 'bad',
+                word: stuck.length === (c.open || 0)
+                    ? (stuck.length === 1 ? 'will not merge' : stuck.length + ' will not merge')
+                    : stuck.length + ' of ' + c.open + ' will not merge'
+            };
+        }
+
         if (c.open) return { kind: '', word: c.open + ' open' };
         if (c.of) return { kind: c.merged ? 'warn' : 'bad', word: c.merged + ' of ' + c.of + ' merged' };
         return { kind: 'muted', word: 'nothing was opened' };
@@ -102,15 +123,26 @@ module.exports = function cuts(theme, okc, remember, shell) {
 
     //---- the right column --------------------------------------------------
 
+    //A PULL REQUEST CARRIES TWO BADGES, and they answer different questions:
+    //where it got to (open, merged, closed) and whether it would go in.
+    //
+    //THE APP KNEW THE SECOND ONE AND DID NOT SAY IT. `mergeable` has been on
+    //the answer all along, so a cut with a conflict in it read "open --
+    //reviews: 0 approved, 0 changes requested" and was indistinguishable from
+    //one that would merge cleanly. It was found by pressing Merge, watching
+    //three of four go in, and reading the fourth on GitHub. See
+    //./mergeability.js for what the words mean.
     function Pull({ p }) {
-        var kind = p.merged ? 'ok' : p.state == 'closed' ? 'bad' : p.draft ? 'warn' : '';
-        var word = p.merged ? 'merged' : p.state == 'closed' ? 'closed without merging' : p.draft ? 'draft on GitHub' : 'open';
+        var kind = isMerged(p) ? 'ok' : p.state == 'closed' ? 'bad' : p.draft ? 'warn' : '';
+        var word = isMerged(p) ? 'merged' : p.state == 'closed' ? 'closed without merging' : p.draft ? 'draft on GitHub' : 'open';
+        var go = goesIn(p);
         return (
             <Card>
                 <CardTitle>
                     <Mono>{p.repo}</Mono>
                     {p.number ? <Mono>{'#' + p.number}</Mono> : null}
                     <Badge kind={kind}>{word}</Badge>
+                    {go ? <Badge kind={go.kind}>{go.word}</Badge> : null}
                     {/* GITHUB'S ANSWER TO "IS IT REVIEWED", read off the pull
                         request rather than remembered here. Silent when GitHub
                         would not say, which is not the same as nobody having
@@ -261,7 +293,7 @@ module.exports = function cuts(theme, okc, remember, shell) {
         });
 
         var on = all.filter(function (c) { return idOf(c) == picked; })[0] || null;
-        var openPulls = on ? (on.pulls || []).filter(function (p) { return p.number && !p.merged && p.state == 'open'; }) : [];
+        var openPulls = on ? (on.pulls || []).filter(function (p) { return p.number && p.state == 'open'; }) : [];
 
         function tell(p) {
             return p.then(
@@ -305,10 +337,43 @@ module.exports = function cuts(theme, okc, remember, shell) {
         }
 
         function land(c) {
-            var open = (c.pulls || []).filter(function (p) { return p.number && !p.merged && p.state == 'open'; });
+            var open = (c.pulls || []).filter(function (p) { return p.number && p.state == 'open'; });
+
+            //---- WHICH OF THEM WOULD ACTUALLY GO IN -----------------------
+            //
+            //THE PRESS IS ALL-OR-NOTHING AND THE OUTCOME WAS NOT. Merging a
+            //cut of four with one conflict in it merges three and leaves one,
+            //and this dialog said "merged into <target>, on GitHub, now" about
+            //all four. The part that cannot be undone happens to the three; the
+            //fourth is still sitting there afterwards, and the cut is half
+            //landed, which is the exact state this app exists to make visible.
+            //
+            //SAID BEFORE THE PRESS, because after it the damage is that the two
+            //halves of one change are in different places.
+            var stuck = merge.stuck(open);
+            var unknown = merge.unknown(open);
+
             ask({
-                title: open.length > 1 ? 'Merge all ' + open.length + ' pull requests in this cut?' : 'Merge this pull request?',
+                title: stuck.length
+                    ? (stuck.length === open.length
+                        ? 'None of these will merge'
+                        : 'Merge the ' + (open.length - stuck.length) + ' that will go in?')
+                    : open.length > 1 ? 'Merge all ' + open.length + ' pull requests in this cut?' : 'Merge this pull request?',
                 plain: [
+                    stuck.length
+                        ? stuck.map(function (p) {
+                            return p.repo + ' #' + p.number + ' — ' + merge.why(p);
+                        }).join('; ') + '. GitHub will refuse '
+                            + (stuck.length === 1 ? 'that one' : 'those')
+                            + ', and the rest of the cut goes in without '
+                            + (stuck.length === 1 ? 'it' : 'them')
+                            + ' — leaving this change in two places until it is fixed.'
+                        : null,
+                    unknown.length
+                        ? 'GitHub has not worked out whether ' + unknown.map(function (p) {
+                            return p.repo + ' #' + p.number;
+                        }).join(', ') + ' can be merged. It answers that in the background; read the cut again in a moment.'
+                        : null,
                     open.map(function (p) { return p.repo + ' #' + p.number; }).join(', ') + ' — merged into ' + c.target + ', on GitHub, now.',
                     'This is the one thing here that cannot be undone from this window: it is a commit on a real default branch. Reverting it afterwards is a change of its own.',
                     'Afterwards your forks and this host may be behind — Repositories → Sync says where every repository stands and catches them up, in that order.',

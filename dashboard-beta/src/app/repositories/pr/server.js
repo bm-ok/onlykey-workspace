@@ -312,7 +312,22 @@ async function plugin(imports, register) {
             //still out this is the only thing on the row that says whether
             //anybody has touched it since it was opened.
             updated: body.updated_at || null,
+            //---- WHETHER IT WOULD GO IN, AND WHY NOT --------------------
+            //
+            //`mergeable` IS THREE-VALUED AND THE THIRD ONE MATTERS. GitHub
+            //computes it in the background: a pull request read moments after
+            //it was opened answers `null`, meaning "not worked out yet", which
+            //is NOT "it is fine". Anything that treats null as clean says a
+            //conflicted cut is ready, once, at the moment somebody is most
+            //likely to press Merge.
+            //
+            //`mergeable_state` IS THE REASON. `dirty` is a real conflict,
+            //`behind` is a base that moved under it, `blocked` is a check or a
+            //review it is waiting on, `unstable` is a check that failed and
+            //does not block. "It will not merge" is one word for four
+            //different afternoons.
             mergeable: body.mergeable == null ? null : !!body.mergeable,
+            mergeableState: body.mergeable_state || null,
             //THE COMMIT, THE AUTHOR'S NUMBER, AND THE REPOSITORY IT IS ON.
             //Dropped until now, and a review needs all three: it is pinned to a
             //commit, GitHub refuses one from the pull request's own author, and
