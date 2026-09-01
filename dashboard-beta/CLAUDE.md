@@ -69,11 +69,14 @@ out, because that is the question it kept getting mistaken for the other one. A
 pane that compiles perfectly and draws nothing is a pane that compiles. Whether
 it WORKS comes from the window: `okc.js show`, `okc.js capture`, `npm run walk`.
 
-**`npm run build` and `npm run build-prod` are the PACKAGED build.** They are not
-a compile check — they are slower, they clear and fill `dist/`, and `build-prod`
-goes on to nwjc and stages `build/app`. Reaching for one to find out whether the
-source parses is the drift this file already warns about, one rung down: 90
-seconds and a rebuilt package to answer what `npm run check` answers in five.
+**`npm run build-prod` is the PACKAGED build.** It is not a compile check — it
+is slower, it clears and fills `dist/`, and it goes on to nwjc and stages
+`build/app`. Reaching for it to find out whether the source parses is the drift
+this file already warns about, one rung down: 90 seconds and a rebuilt package
+to answer what `npm run check` answers in five.
+
+`npm run build` no longer builds anything. It echoes that sentence back at you
+and exits, because it was reached for so often as a compile check.
 
 Roughly: 5 seconds versus 90. Reaching for build+restart on a UI change is an
 hour a day of nothing.
