@@ -47,6 +47,16 @@ module.exports = function repos(theme, okc) {
     //cut from, cannot be laid on a machine, and could only be looked at.
     function canTake(b) { return b.state == 'only on origin'; }
 
+    //AND THE SAME DEAD END POINTING THE OTHER WAY: work that exists on this
+    //host and nowhere else. `only here` has never been pushed; `ahead` was
+    //pushed once and has moved since. Both are one act -- send it -- and it is
+    //the one a DIY machine leaves you needing, because that lane pushes to THIS
+    //host rather than to GitHub.
+    //
+    //THE THREE ARE MUTUALLY EXCLUSIVE, which is what lets one button carry all
+    //of them: a branch cannot be behind origin and absent from it at once.
+    function canPush(b) { return b.state == 'only here' || b.state == 'ahead'; }
+
     var STATE = {
         same: null,
         behind: { kind: 'warn', word: 'behind' },
@@ -62,7 +72,11 @@ module.exports = function repos(theme, okc) {
         if (b.state == 'same') return 'Already the same commit as origin';
         if (b.state == 'ahead') return 'It is ahead of origin — there is nothing here to catch up to';
         if (b.state == 'diverged') return 'It and origin have both moved. This only fast-forwards, so it will not touch it';
-        if (b.state == 'only here') return 'Origin has no branch by this name';
+        if (canPush(b)) {
+            return b.state == 'ahead'
+                ? 'Push ' + b.branch + ' to origin — it has moved since it was last pushed'
+                : 'Push ' + b.branch + ' to origin — it is only on this computer';
+        }
         if (canTake(b)) return 'Bring ' + b.branch + ' here from origin — nothing you have open moves';
         return 'There is nothing here to fast-forward';
     }
@@ -130,6 +144,39 @@ module.exports = function repos(theme, okc) {
             );
         }
 
+        //---- AND SENDING ONE UP, WHICH LEAVES THIS COMPUTER ------------------
+        //
+        //BEHIND THE GATE, because it publishes. A branch on origin is visible
+        //to anybody who can see that repository, and no other act on this row
+        //leaves the machine at all -- fast-forwarding and fetching both only
+        //move what is here.
+        //
+        //NOT A PULL REQUEST, and the dialog says so twice. "Push it somewhere
+        //safe" and "ask somebody to merge this" are different sizes of act, and
+        //the second needs a judgement first.
+        function push(b) {
+            var was = b.state == 'ahead';
+            ask({
+                title: 'Push "' + b.branch + '" to origin?',
+                plain: [
+                    was
+                        ? 'It is on origin already and has moved since — this brings origin up to what is here.'
+                        : 'It exists on this computer and nowhere else. This puts a copy on your remote.',
+                    'It goes to origin, which for a fork is your own remote. Nothing is opened and nobody is '
+                        + 'asked to look at it: this is a branch being kept somewhere other than one disk.'
+                ],
+                cost: 'It becomes visible to anyone who can see ' + repo + ' on GitHub.',
+                confirm: 'Push it',
+                onYes: function () {
+                    setBusy(b.branch);
+                    return okc.call('repoPushBranch', { repo: repo, branch: b.branch }).then(
+                        function (x) { setBusy(null); q.again(); onMoved(x && x.note, x && x.pushed ? null : 'warn'); },
+                        function (e) { setBusy(null); onMoved(e.message, 'bad'); throw e; }
+                    );
+                }
+            });
+        }
+
         if (q.error && !q.state) return <Panel><Note kind="bad">{q.error}</Note></Panel>;
         if (!q.state) return <Panel><Skeleton rows={4} /></Panel>;
 
@@ -184,10 +231,16 @@ module.exports = function repos(theme, okc) {
                                         branch, its commit, and no way to get
                                         it. */}
                                     <Button kind="small"
-                                        disabled={(!canCatchUp(b) && !canTake(b)) || busy == b.branch}
+                                        disabled={(!canCatchUp(b) && !canTake(b) && !canPush(b)) || busy == b.branch}
                                         title={whyNotCatchUp(b)}
-                                        onClick={function () { canTake(b) ? take(b.branch) : sync(b.branch); }}>
-                                        {busy == b.branch ? '…' : (canTake(b) ? '↓' : '⟳')}
+                                        onClick={function () {
+                                            if (canPush(b)) return push(b);
+                                            if (canTake(b)) return take(b.branch);
+                                            return sync(b.branch);
+                                        }}>
+                                        {busy == b.branch ? '…'
+                                            : canPush(b) ? '↑'
+                                                : canTake(b) ? '↓' : '⟳'}
                                     </Button>
                                 </React.Fragment>
                             }>

@@ -117,7 +117,11 @@ async function anApp(opts) {
         workspace: { dir: async () => ALPHA, repos: async () => [{ name: 'one' }] },
         state,
         settings: { allowed: async () => o.testing || { allowed: false, why: 'The drills are switched off.' } },
-        refs,
+        //THE REAL `refs`, UNLESS A TEST IS ABOUT WHAT IT REPORTED. It is built
+        //over the stub git above, which reports no branches at all -- fine for
+        //every case about cutting, and no use to one about a branch that only
+        //this host has. Such a case says what refs answered.
+        refs: o.refs || refs,
         //THE INBOX, KEPT RATHER THAN STUBBED AWAY. `source()` hands back the
         //`waiting` function so a test can ask it what it would raise — which is
         //the only way to see this source at all, since the pane that shows it is
@@ -811,4 +815,85 @@ test('and one that was closed unmerged is a decision, not an errand', async () =
 
     const source = sources.find((s) => /out and not merged/.test(s.name));
     assert.deepEqual(await source.waiting(), [], 'a cut everything was closed on is still on the list');
+});
+
+//---------------------------------------------------------------------------
+//WORK THAT EXISTS ON ONE DISK.
+//
+//A branch pushed to no remote showed on Repos → Branches as *only here*, with
+//its commit, and a disabled button reading "Origin has no branch by this name"
+//-- true, and read as "there is nothing to do", when the thing to do is send it.
+//
+//IT IS THE CASE A DIY MACHINE LEAVES YOU IN. That lane pushes to THIS host
+//rather than to GitHub, on purpose, so an afternoon's work lives on one disk
+//until somebody says otherwise -- and saying otherwise meant opening a pull
+//request, which needs a judgement and asks somebody to merge it.
+//
+//THE ACTION IS HERE AND ITS BUTTON IS NOT. ../repos may not consume `keys` --
+//there is a test in ./repositories.test.js that fails the moment it does -- so
+//the act lives with the credential and the pane calls it by name.
+//---------------------------------------------------------------------------
+
+const sent = (app) => app.pushes.map(
+    (p) => p.repo + ' ' + p.branch + ' helper=' + (p.opts && p.opts.helper ? 'yes' : 'no'));
+
+const onlyHere = { 'a-branch': { branch: 'a-branch', local: 'aaaaaaa', remote: null } };
+
+test('a branch that is only here is pushed to origin, with the credential', async () => {
+    const app = await anApp({ refs: { of: async () => onlyHere } });
+
+    const said = await app.actions.call('repoPushBranch', { repo: 'one', branch: 'a-branch' });
+
+    assert.equal(said.pushed, true);
+    //THE CREDENTIAL GOES STRAIGHT TO GIT and is never read by the action. That
+    //it was GIVEN one is the part worth pinning: a push with no helper fails
+    //against a private repository and passes against a public one, so a version
+    //that dropped it would work on the machine it was written on.
+    assert.deepEqual(sent(app), ['one a-branch helper=yes']);
+});
+
+test('one already on origin at the same commit is left alone', async () => {
+    //PUSHING IT AGAIN WOULD SUCCEED AND CHANGE NOTHING, and reporting that as
+    //"pushed" is how somebody stops believing the word.
+    const app = await anApp({
+        refs: { of: async () => ({ 'a-branch': { branch: 'a-branch', local: 'aaaaaaa', remote: 'aaaaaaa' } }) }
+    });
+
+    const said = await app.actions.call('repoPushBranch', { repo: 'one', branch: 'a-branch' });
+
+    assert.equal(said.already, true);
+    assert.equal(said.pushed, false);
+    assert.deepEqual(sent(app), [], 'it pushed a branch that was already there');
+});
+
+test('but one that has MOVED since it was pushed is sent again', async () => {
+    const app = await anApp({
+        refs: { of: async () => ({ 'a-branch': { branch: 'a-branch', local: 'bbbbbbb', remote: 'aaaaaaa' } }) }
+    });
+
+    assert.equal((await app.actions.call('repoPushBranch', { repo: 'one', branch: 'a-branch' })).pushed, true);
+    assert.equal(app.pushes.length, 1, 'it treated a moved branch as already there');
+});
+
+test('a branch this host does not have is refused before anything is pushed', async () => {
+    const app = await anApp({ refs: { of: async () => ({}) } });
+
+    await assert.rejects(
+        () => app.actions.call('repoPushBranch', { repo: 'one', branch: 'a-branch' }),
+        /no branch called "a-branch" in one on this host/
+    );
+    assert.deepEqual(sent(app), []);
+});
+
+test('and it refuses what it cannot act on before it touches git', async () => {
+    const app = await anApp({ refs: { of: async () => onlyHere } });
+
+    await assert.rejects(() => app.actions.call('repoPushBranch', { branch: 'a-branch' }), /Say which repository/);
+    await assert.rejects(() => app.actions.call('repoPushBranch', { repo: 'one' }), /Say which branch/);
+    await assert.rejects(
+        () => app.actions.call('repoPushBranch', { repo: 'nope', branch: 'a-branch' }),
+        /no repository called "nope"/
+    );
+
+    assert.deepEqual(sent(app), [], 'it pushed for a call it was going to refuse');
 });

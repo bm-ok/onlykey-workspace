@@ -1498,6 +1498,107 @@ async function plugin(imports, register) {
             };
         }
 
+        //---- AND THE OTHER DIRECTION: A BRANCH ONLY THIS HOST HAS -----------
+        //
+        //THE SAME DEAD END, POINTING THE OTHER WAY. A branch pushed to no
+        //remote showed on the Repos tab as *only here*, with its commit, and a
+        //disabled button reading "Origin has no branch by this name" — true,
+        //and read as "there is nothing to do", when the thing to do is send it.
+        //
+        //WORK THAT EXISTS IN ONE PLACE IS THE CASE THIS MATTERS FOR. A DIY
+        //machine pushes to THIS host, not to GitHub — that is the whole point
+        //of the lane — so what somebody spent an afternoon on lives on one
+        //disk until they say otherwise. There was no way to say otherwise
+        //without opening a pull request, which is a much larger act and needs a
+        //judgement first.
+        //
+        //THE CREDENTIAL IS NOT LOOKED AT HERE. `envForPush()` and
+        //`credentialHelper` come from ../../keys and go straight to git; this
+        //file could not say what is in either.
+        //
+        //IT PUSHES TO `origin` AND NOWHERE ELSE, which for a fork is the
+        //person's own remote. Nothing here chooses a destination — that is
+        //`where work goes`, and it is a question for a pull request rather than
+        //for keeping a branch safe.
+        //
+        //---- WHY IT IS HERE AND NOT WITH ITS PANE --------------------------
+        //
+        //THE BUTTON IS ON Repos → Branches and this action is not, which breaks
+        //the ordinary rule that an action goes where its pane is. It has to.
+        //../repos DOES NOT CONSUME `keys` AND MUST NOT: its layering claim is
+        //that a pane can get GitHub data without knowing a credential exists —
+        //not "does not currently read one", CANNOT — and there is a test that
+        //fails the moment `keys` appears in its `consumes`.
+        //
+        //Adding it there was tried first and that test caught it. So the act
+        //lives with the credential, in the plugin that already pushes branches,
+        //and the pane calls it by name like any other action.
+        undo.push(actions.define('repoPushBranch', {
+            about: 'Push a branch to origin, so work that only exists here is somewhere else too',
+            takes: ['repo', 'branch'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                var branch = String(a.branch || '').trim();
+
+                if (!name) throw new Error('Say which repository.');
+                if (!branch) throw new Error('Say which branch to push.');
+
+                var found = await workspace.repos();
+                if (!found.some(function (r) { return r.name === name; })) {
+                    throw new Error('There is no repository called "' + name + '" here. This workspace has: '
+                        + found.map(function (r) { return r.name; }).join(', ') + '.');
+                }
+
+                var rows = await refs.of(name);
+                var b = rows[branch];
+
+                if (!b || !b.local) {
+                    throw new Error('There is no branch called "' + branch + '" in ' + name
+                        + ' on this host, so there is nothing to push.');
+                }
+
+                //ALREADY THERE AND AT THE SAME COMMIT IS AN ANSWER. Pushing it
+                //again would succeed and change nothing, and saying "pushed"
+                //about that is how somebody stops believing the word.
+                if (b.remote && String(b.remote) === String(b.local)) {
+                    return {
+                        repo: name, branch: branch, pushed: false, already: true, at: b.local,
+                        note: '"' + branch + '" is already on origin at ' + String(b.local).slice(0, 7)
+                            + ', at the same commit as here.'
+                    };
+                }
+
+                var env = keys.github.envForPush();
+                var helper = keys.github.credentialHelper;
+
+                var sent = await git.push(name, branch, { env: env, helper: helper });
+                if (!sent.pushed) {
+                    throw new Error('Could not push "' + branch + '" in ' + name + ': '
+                        + (sent.why || 'git did not say why'));
+                }
+
+                //ASKED AGAIN RATHER THAN ASSUMED. What origin has after a push
+                //is a fact about origin, and the row this answer redraws is the
+                //one that says whether the two match.
+                var now = (await refs.of(name))[branch] || {};
+
+                //`log` IS ALREADY SCOPED TO 'git' IN THIS PLUGIN — see the top of
+                //the file. Scoping it again is what the version of this written
+                //for ../repos did, and it threw.
+                log.good(name + ': pushed "' + branch + '" to origin at '
+                    + String(now.remote || b.local).slice(0, 7));
+
+                return {
+                    repo: name, branch: branch, pushed: true, already: false,
+                    at: now.remote || b.local,
+                    note: '"' + branch + '" is on origin now, at '
+                        + String(now.remote || b.local).slice(0, 7) + '. It is a branch on your remote and '
+                        + 'nothing else — no pull request was opened and nothing was asked of anybody.'
+                };
+            }
+        }));
+
         undo.push(actions.define('prCutRefresh', {
             about: 'Push a line again and bring every open pull request cut from it up to the branch as it now stands. '
                 + 'Nothing is opened; a cut that is already live follows its branch',
