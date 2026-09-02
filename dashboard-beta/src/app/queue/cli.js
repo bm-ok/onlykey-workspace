@@ -18,6 +18,28 @@ function fit(s, n) {
     return (t.length > n ? t.slice(0, n - 2) + '…' : t).padEnd(n);
 }
 
+//HOW LONG AGO, SPELLED THE WAY ../core/cron/cli.js SPELLS IT — the queue IS one
+//of that plugin's timers, so `okc crons` and `okc queueState` are two views of
+//the same clock and should not describe it in two dialects.
+//
+//COPIED RATHER THAN SHARED, AND THAT IS THE CONVENTION HERE. No `cli.js` in this
+//app requires anything: they are plain modules the walk in tools/okc.js loads one
+//at a time, precisely so the command line can answer with no plugin graph behind
+//it. Reaching into another plugin's printer would be the first exception, to
+//borrow six lines of arithmetic. What must not be duplicated is a DECISION, and
+//"seconds are smaller than minutes" is not one.
+function ago(at) {
+    if (!at) return null;
+    var then = Date.parse(at);
+    if (!then) return String(at);
+
+    var s = Math.round(Math.max(0, Date.now() - then) / 1000);
+    if (s < 60) return s + 's ago';
+    var m = Math.round(s / 60);
+    if (m < 60) return m + 'm ago';
+    return Math.round(m / 60) + 'h ago';
+}
+
 module.exports = {
     print: {
         tasks: function (said) {
@@ -52,8 +74,25 @@ module.exports = {
 
             //WHOSE CLOCK IS RUNNING, AND WHETHER IT IS — two different facts,
             //and this host can own the tick and have it switched off.
+            //
+            //`startedBy` IS `{by, at}` AND NOT A NAME, which this printed as
+            //`[object Object]` for as long as it has existed. ./server.js builds
+            //it from `clock.since()`, which answers both halves — WHO started the
+            //queue and WHEN — because "it is running" and "somebody started it
+            //eight hours ago and went home" are the same word and different
+            //situations.
+            //
+            //IT LOOKED LIKE A NAME, WHICH IS WHY IT SURVIVED. ../core/cron's own
+            //`job.startedBy` IS a plain string; this field borrowed the name and
+            //not the shape, and string concatenation has no undefined-name error
+            //to catch that with — the same class of quiet failure as a misspelt
+            //CSS class, in the one place nobody photographs.
+            var startedBy = said.startedBy || null;
+            var startedWhen = startedBy && ago(startedBy.at);
             out.push('  ' + (said.ticking ? 'running' : 'stopped')
-                + (said.startedBy ? ' — started ' + said.startedBy : '')
+                + (startedBy && startedBy.by
+                    ? ' — started by ' + startedBy.by + (startedWhen ? ', ' + startedWhen : '')
+                    : '')
                 //`every` ALREADY READS AS A SENTENCE — "15s" — because the
                 //action worked it out from the clock rather than from a number
                 //written twice. Reformatting it here would be the second copy.

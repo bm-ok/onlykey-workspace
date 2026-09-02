@@ -63,7 +63,36 @@ const curlAuth = () => ['--cacert', CA, '-u', VM + ':' + TOKEN, '-sS', '--max-ti
 // one into every task's archive, in a folder whose whole purpose is to be kept
 // for a long time. A machine is handed a credential on the way up and it is
 // taken back on the way down, and that path is the only one it should have.
-const NOT_THESE = ['--exclude=.credentials.json', '--exclude=*.lock', '--exclude=shell-snapshots']
+//
+// AND NOT `backups`, WHICH IS CLAUDE'S OWN RECOVERY COPY OF A FILE THAT IS NOT
+// IN HERE. `.claude.json` lives BESIDE `~/.claude` in $HOME, so it is not
+// archived and never was; the machine comes up from a base snapshot that
+// predates it, and Claude makes a backup of the missing file into
+// `~/.claude/backups/` on the way past.
+//
+// LEFT IN, IT COMPOUNDS. The backup rides home in the archive, is restored onto
+// the next machine, and that run adds another -- one per run, for the life of a
+// branch cut, in a folder whose whole purpose is to be kept for a long time. Two
+// runs had already made two.
+//
+// AND IT PRINTS A FRIGHTENING SENTENCE AT THE TOP OF EVERY CONTINUATION:
+// "Claude configuration file not found at /home/okc/.claude.json -- a backup
+// file exists". Nothing is wrong; it says that BECAUSE a backup was restored
+// next to a file that was never kept. A first run prints nothing, which is how
+// this was found. The cost is not the noise: it is that the next time a resumed
+// run really does fail, this is the first thing in its log and it looks like the
+// reason.
+//
+// NOTHING IS LOST BY DROPPING IT. On these machines the file is 84 bytes of
+// `firstStartTime` and `firstStartVersion` -- no account, no token, nothing a
+// conversation is carried by. Same class as the two below it: churn that belongs
+// to the machine, not memory that belongs to the work.
+const NOT_THESE = [
+    '--exclude=.credentials.json',
+    '--exclude=*.lock',
+    '--exclude=shell-snapshots',
+    '--exclude=backups'
+]
 
 function rememberedByThisTask () {
   if (!BASE || !VM || !TOKEN) return null
