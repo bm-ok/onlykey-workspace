@@ -1042,6 +1042,123 @@ async function plugin(imports, register) {
         + 'do what needs doing if anything does, and reply to the person with supervisorSays. '
         + 'One message, two or three sentences. If there is nothing to do, say that instead.';
 
+    //=======================================================================
+    //TEACHING IT WHAT THIS PROJECT IS.
+    //=======================================================================
+    //
+    //A SUPERVISOR WAKES KNOWING NOTHING ABOUT THE CODEBASE IT IS MANAGING, and
+    //that is the design rather than a gap — it cannot read code, so everything it
+    //believes about one, a judge told it. On a project nobody has bootstrapped it
+    //has been told nothing, and it has to decide what work to ask for anyway.
+    //
+    //THE WAY OUT WAS ALWAYS A PERSON TYPING THE SAME PROMPT. Same words every
+    //time, and nobody remembers what they should be — so it went untyped, and the
+    //supervisor managed a project it knew nothing about.
+    //
+    //IT IS A BRIEF, NOT A SCRIPT. What it actually does is its own to decide;
+    //this says what is wanted and the skill already says how each verb works. An
+    //app that commissioned the judgement itself and handed over the findings
+    //would prove less and teach it nothing about its own tools.
+    //
+    //NOT ON ../supervisor/allowed.js. A supervisor asking to bootstrap itself is
+    //the one caller this is not for: it is the press that starts it, from
+    //somebody who has just opened a project.
+    var LEARN = [
+        'Learn what this project is, and write what you learn into your memory. You have not been told '
+            + 'anything about this codebase yet, and you cannot read it yourself.',
+        '',
+        'Ask for ONE judgement of the default line under the job `investigate-the-codebase`. One is enough: '
+            + 'its prompt surveys every repository in the workspace, a paragraph each, and it is written for '
+            + 'somebody in exactly your position — it opens by saying that whoever reads it cannot see the code.',
+        '',
+        'Then `memorySet` a note saying you are waiting on it, so the next waking knows what you already '
+            + 'asked for and does not ask again.',
+        '',
+        'When it finishes you will be woken. Read it with `judgementFindings` and write what you learned '
+            + 'into your memory — one entry per repository under its own name, and separate entries for how '
+            + 'they relate to each other and how the thing is built and run. Write them for somebody who was '
+            + 'not there, because next waking that is you.',
+        '',
+        'Then say what you now know with `supervisorSays`, in a few sentences, and stop. Do not queue any '
+            + 'work off the back of this: knowing what a project is does not tell you what it needs, and '
+            + 'that is the next conversation rather than this one.'
+    ].join('\n');
+
+    undo.push(actions.define('supervisorLearn', {
+        about: 'Teach the supervisor what this project is: it commissions a survey, reads it, and writes what it learns into its memory',
+        needs: 'workspace',
+        run: async function (args) {
+            var a = args || {};
+
+            //REFUSED WITH ITS OWN SENTENCE. `supervisorState` already works out
+            //whether it can run and says why in words somebody can act on — "it
+            //is switched off, and it is holding no credential". A second
+            //explanation written here would be a second thing to keep true.
+            var how = await actions.call('supervisorState', {});
+            if (!how.there) throw new Error(how.note);
+            if (!how.ready) {
+                //PUNCTUATED WHERE THE OTHER SENTENCE ENDS, because `why` is a
+                //clause rather than a sentence — "it is switched off, and it is
+                //holding no credential" — and joining it raw ran the two
+                //together with no stop between them.
+                throw new Error('The supervisor cannot run, so there is nothing to teach: '
+                    + String(how.why || 'it is not ready').replace(/[.\s]*$/, '') + '. '
+                    + 'Waking it starts it and gives it a sign-in, but it needs a machine that can come up.');
+            }
+
+            //---- AND THE ONE PREREQUISITE THAT IS NOT A MACHINE ---------------
+            //
+            //THIS TAKES SEVERAL WAKINGS AND ONLY THE FIRST IS THIS PRESS. It asks
+            //for a judgement and stops; what brings it back is ../queue waking it
+            //when that judgement finishes, and ../queue only does that while
+            //`supervisorWakes` is on.
+            //
+            //OFF, IT LOOKS EXACTLY LIKE A BUTTON THAT DID NOTHING. The judgement
+            //is commissioned, the supervisor stops, and nothing ever reads the
+            //answer — with no error anywhere, because nothing failed.
+            //
+            //SO IT IS TURNED ON HERE AND SAID OUT LOUD. It is the honest
+            //prerequisite of anything spanning wakings, and what it means is the
+            //setting's own sentence: the supervisor may start a machine and spend
+            //tokens without being asked again.
+            var was = false;
+            try { was = (await imports.settings.read()).supervisorWakes === true; }
+            catch (e) { was = false; }
+            if (!was) await imports.settings.write({ supervisorWakes: true });
+
+            //THE BRIEF GOES IN AS THE PERSON, because that is what it is: this
+            //press is somebody asking for something, and it belongs in the
+            //conversation where they will see they asked.
+            //
+            //AND SAYING IT IS THE WAKING. `chatSay` wakes it itself, always —
+            //that gate was deliberately removed, because "somebody typing a
+            //sentence and pressing send has already asked". So there is no
+            //`supervisorWake` here.
+            //
+            //THERE WAS ONE, AND A TEST CAUGHT IT: two wakings for one press,
+            //racing each other, the second folded into the first by `alsoWake`
+            //if the timing went one way and starting a second turn if it went the
+            //other. Asking twice for one thing is the fault `chatSay`'s own note
+            //warns about — "a second opinion about the same thing, and the two
+            //would drift".
+            var said = await actions.call('chatSay', { text: LEARN });
+
+            return {
+                machine: how.name,
+                woke: !!(said && said.woke),
+                //SAID, NOT SILENT. Turning on self-waking is a real change to what
+                //this host does on its own, and a press that did it without saying
+                //so is a press somebody would not have made knowingly.
+                wakesItself: true,
+                turnedOnWaking: !was,
+                note: (was ? '' : 'Self-waking was off and is now on — the supervisor may start a machine '
+                    + 'and spend tokens on its own, which is what lets this carry on across wakings. ')
+                    + 'It has been asked to survey the project and write what it learns into its memory. '
+                    + 'That takes a judge run and several wakings; watch it fill up on Supervisor → Memory.'
+            };
+        }
+    }));
+
     undo.push(actions.define('supervisorWake', {
         about: 'Wake the supervisor: one turn of its model, reading what changed and answering',
         takes: ['name', 'why'],

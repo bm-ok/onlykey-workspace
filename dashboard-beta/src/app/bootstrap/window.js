@@ -245,7 +245,111 @@ function makeBootstrap(theme, okc) {
                         <Empty>{state.note}</Empty>
                     )}
                 </Panel>
+
+                {/*---- AND THE OTHER HALF OF SETTING A PROJECT UP -------------
+
+                    THE TWO PANELS ABOVE ARE WHAT A PROJECT IS TAUGHT: the
+                    contracts, prompts, jobs and skills work runs under. This is
+                    what the SUPERVISOR knows about this particular codebase, and
+                    it is empty on a project nobody has bootstrapped.
+
+                    IT CANNOT READ THE CODE. That is the design rather than a gap
+                    — everything it believes about a codebase, a judge told it —
+                    so on a new project it has been told nothing and has to decide
+                    what work to ask for anyway.
+
+                    THE WAY OUT WAS A PERSON TYPING THE SAME PROMPT EVERY TIME,
+                    which is a thing nobody remembers the wording of. */}
+                <Learn />
             </Pane>
+        );
+    }
+
+    //---- WHAT THE SUPERVISOR KNOWS, AND THE PRESS THAT STARTS IT -----------
+    //
+    //ITS OWN COMPONENT because it reads two things this pane does not —
+    //`supervisorState` for whether the press can work at all, and `memory` for
+    //what it already knows. Folding those into the panel above would make the
+    //bundle read three actions before it could draw the two that are about
+    //bundles.
+    function Learn() {
+        var { state: how } = okc.use('supervisorState', {}, 20000);
+        var { state: mem, again: readMemory } = okc.use('memory', {}, 20000);
+        var [said, setSaid] = useState(null);
+
+        var knows = mem ? (mem.memory || []).length : null;
+        var ready = how ? how.ready === true : false;
+
+        function learn() {
+            ask({
+                title: 'Teach the supervisor what this project is?',
+                plain: [
+                    'It will ask for one judgement of this workspace under "investigate the codebase" — a '
+                        + 'survey rather than a review, a paragraph per repository — read what comes back, and '
+                        + 'write what it learned into its memory.',
+                    'That is a judge run and several wakings. It is not instant, and nothing else is queued '
+                        + 'by it.',
+                    //THE PREREQUISITE, IN THE SETTING'S OWN WORDS, AND SAID EVERY
+                    //TIME. It is turned on by the action because the bootstrap
+                    //stalls silently without it, and a press that changes what
+                    //this host does unasked has to say so BEFORE it is made.
+                    //
+                    //NOT CONDITIONAL ON WHETHER IT IS ALREADY ON. That was written
+                    //first as `how.wakesItself === false`, reading a field
+                    //`supervisorState` does not answer with — so the condition was
+                    //dead and always took one branch. The sentence is true either
+                    //way: it says what WILL happen if the setting is off.
+                    'If self-waking is off it will be switched on: the supervisor may then start a '
+                        + 'machine and spend tokens on its own. That is what carries this across wakings '
+                        + '— without it, it asks for the survey and never reads the answer.'
+                ],
+                confirm: 'Teach it',
+                onYes: function () {
+                    return okc.call('supervisorLearn', {}).then(
+                        function (r) { setSaid({ text: (r && r.note) || 'Asked.' }); readMemory(); },
+                        function (e) { setSaid({ bad: true, text: e.message }); throw e; }
+                    );
+                }
+            });
+        }
+
+        return (
+            <Panel>
+                {said ? <Notice kind={said.bad ? 'bad' : 'ok'} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
+
+                <CardTitle>
+                    {'What the supervisor knows about this project'}{' '}
+                    {knows === null
+                        ? null
+                        : knows
+                            ? <Badge kind="ok">{knows + ' remembered'}</Badge>
+                            : <Badge kind="warn">nothing yet</Badge>}
+                </CardTitle>
+                <CardSub>
+                    It cannot read the code — everything it believes about this codebase, a judge told it. On
+                    a project nobody has bootstrapped it has been told nothing, and it manages the worker and
+                    the judge anyway.
+                </CardSub>
+
+                {/* DISABLED WITH THE REASON SHOWING, rather than offered and then
+                    refused. `supervisorState` already says why in words somebody
+                    can act on, so it is passed through rather than restated. */}
+                {ready
+                    ? <Button kind="ok" onClick={learn}>Teach it about this project</Button>
+                    : (
+                        <div>
+                            <Button disabled>Teach it about this project</Button>
+                            <Note kind="warn">{how
+                                ? (how.there ? how.note : how.note)
+                                : 'asking whether the supervisor can run…'}</Note>
+                        </div>
+                    )}
+
+                {knows
+                    ? <Note>Already been taught something. Pressing this again asks for a fresh survey; what
+                        it already knows is not thrown away, and it may change its mind about any of it.</Note>
+                    : null}
+            </Panel>
         );
     }
 

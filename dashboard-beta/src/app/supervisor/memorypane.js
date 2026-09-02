@@ -153,13 +153,25 @@ module.exports = function memoryPane(theme, okc, remember) {
                     ) : null}
                 </Panel>
 
-                {!rows.length
-                    ? <Empty>{all.length
-                        ? 'Nothing in that state.'
-                        : 'Nothing remembered yet. The supervisor writes here itself, at the head of a waking '
-                            + 'and whenever it works something out that the next waking would otherwise have to '
-                            + 'work out again.'}</Empty>
-                    : (
+                {/* THE EMPTY STATE IS THE ACTION'S, NOT THIS PANE'S — and this
+                    drew both, one above the other, saying "Nothing remembered
+                    yet" twice.
+
+                    THE SAME STUTTER AS ../artifact/handedback.js, made the same
+                    way and within hours of fixing it there: a sentence written
+                    where the pane is, over an answer that already carries one.
+                    `memory` says what nothing-remembered MEANS and where entries
+                    come from; it is below as `state.note`, and it is the better
+                    of the two because it names `memorySet`.
+
+                    WHAT IS LEFT HERE IS THE ONE THE ACTION CANNOT WRITE: an
+                    empty FILTER is a different answer from an empty memory, and
+                    the action does not know a chip is pressed. */}
+                {!rows.length && all.length
+                    ? <Empty>Nothing in that state.</Empty>
+                    : null}
+
+                {rows.length ? (
                         <Stack>
                             {rows.map(function (r) {
                                 return (
@@ -193,7 +205,7 @@ module.exports = function memoryPane(theme, okc, remember) {
                                 );
                             })}
                         </Stack>
-                    )}
+                ) : null}
 
                 <Note>{state.note}</Note>
             </Pane>
