@@ -1,12 +1,12 @@
-//what ../../test/runners/sessions-keying.test.js has to be able to catch.
+//what ../../test/worker/sessions-keying.test.js has to be able to catch.
 //
 //EVERY BREAK BELOW EITHER HANDS ONE PIECE OF WORK ANOTHER'S CONVERSATION, or
 //leaves a worker obeying instructions that were given to a task that is over —
 //which is the fault this whole file exists for, and which reads as a worker
 //misbehaving when it is a worker obeying.
 module.exports = {
-    file: 'src/app/runners/sessions/keying.js',
-    test: 'test/runners/sessions-keying.test.js',
+    file: 'src/app/worker/sessions/keying.js',
+    test: 'test/worker/sessions-keying.test.js',
     breaks: [
         //---- who keeps a conversation -------------------------------------
 

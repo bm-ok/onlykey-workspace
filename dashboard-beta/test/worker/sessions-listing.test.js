@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const plugin = require('../../src/app/runners/sessions/server');
+const plugin = require('../../src/app/worker/sessions/server');
 
 //---------------------------------------------------------------------------
 //WHAT WORKERS REMEMBER, JOINED TO THE BOARD THAT NO LONGER HAS ALL OF IT.
@@ -56,7 +56,12 @@ function aWorld(over) {
             },
             archive: { store: () => ({ list: () => [], read: () => null, has: () => false, everything: () => [] }) },
             whatIsOn: { whatIsOn: () => null },
-            guestApi: { api: () => () => {} }
+            guestApi: { api: () => () => {} },
+            //THE DOOR THE ANNOUNCEMENT IS REGISTERED AT, owned by
+            //src/app/runners/runs. Stubbed to hand back an undo the way the real
+            //one does, because the plugin pushes it onto the same list it tears
+            //everything else down with.
+            briefings: { says: () => () => {} }
         }
     };
 }
@@ -103,7 +108,7 @@ test('the board is asked for by name, not consumed as a service', async () => {
     assert.ok(w.did.asked.includes('tasks'), 'it did not ask the table for the board');
 
     const src = require('node:fs').readFileSync(
-        require('node:path').join(__dirname, '..', '..', 'src', 'app', 'runners', 'sessions', 'server.js'), 'utf8');
+        require('node:path').join(__dirname, '..', '..', 'src', 'app', 'worker', 'sessions', 'server.js'), 'utf8');
     const consumes = /plugin\.consumes\s*=\s*\[([^\]]*)\]/.exec(src)[1];
     assert.equal(/['"]queue['"]/.test(consumes), false,
         'sessions now consumes queue — queue/server.js says nothing does, and that is what keeps it acyclic');

@@ -23,7 +23,7 @@ const JUDGEMENT = {
 //tests the stub.
 //
 //It hid for a long time because of where it is asked: ../runs catches and
-//carries on with a poorer prompt, and ../sessions turns a null into a 204. What
+//carries on with a poorer prompt, and ../../src/app/worker/sessions turns a null into a 204. What
 //it cost is the rule in src/app/repositories/gitserve — a judgement may not push
 //to the thing it was asked to read — which asks this and could only ever throw.
 function on(opts) {

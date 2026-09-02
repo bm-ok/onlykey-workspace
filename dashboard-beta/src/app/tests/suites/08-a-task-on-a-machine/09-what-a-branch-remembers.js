@@ -38,7 +38,7 @@ const { scratch, aLine } = require('../../helpers')
 // beside it, and is why this file would not load.
 //
 // WRITTEN DOWN HERE, AND PINNED SOMEWHERE THAT FAILS IF IT MOVES.
-// `test/runners/sessions-keying.test.js` asserts the whole constant —
+// `test/worker/sessions-keying.test.js` asserts the whole constant —
 // `{ worker: true, judge: false }` — so flipping the default breaks that test
 // loudly rather than quietly changing what this drill expects. A value copied
 // out of the app is only safe while something says the two agree.

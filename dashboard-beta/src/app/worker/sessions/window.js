@@ -12,9 +12,17 @@ var { useState } = React;
 //the only place a conversation that has gone somewhere you do not want it
 //carrying on from can be stopped.
 //
-//OVER THERE IT IS A SUB-TAB OF RUNNERS, because what a worker remembered is a
-//fact about a runner. The beta shell has one flat bar and no sub-tabs, so it
-//sits next to Machines instead and is ordered to land beside it.
+//OVER THERE IT IS A SUB-TAB OF RUNNERS, and this port put it next to Machines
+//for that reason alone. THAT WAS THE WRONG FACT TO FILE IT UNDER. What is
+//shown here is not about a runner: a runner is rolled back between jobs and
+//keeps nothing, and ../keying.js will not give a judge a memory at all —
+//`REMEMBERS = { worker: true, judge: false }`. So it is the WORKER's, and it
+//sits under Worker, after the board of what that worker has done and before the
+//chains it is run under.
+//
+//THE SAME MISFILING THE SIGN-INS HAD before they moved to Keys: a thing was put
+//where it is USED rather than where it belongs, and both are true sentences,
+//which is what makes the mistake so easy to defend.
 //
 //ONE CALL, AND DELIBERATELY NO SECOND ONE. `sessions` returns
 //{sessions[], bytes, where, note} whole; `inside` is a summary read out of the
@@ -43,11 +51,13 @@ async function plugin(imports, register) {
     //deleting the answer to "what happened", and the question always gets asked
     //later than the deletion.
     //
-    //The second press, the one behind "Yes, forget it", is guarded rather than
-    //the first: arming it shows what is about to go, which is reading.
+    //SO IT TAKES TWO PRESSES, and the split is which one is the decision. The
+    //first arms it and shows what is about to go, which is only reading; "Yes,
+    //forget it" is the one that destroys something, and it is drawn as a danger
+    //rather than dressed up as an ordinary button.
 
 
-    shell.pane({ tab: 'Runners', name: 'Claude Sessions', order: 50, Component: makeSessions(theme, okc, shell) });
+    shell.pane({ tab: 'Worker', name: 'Claude Sessions', order: 15, Component: makeSessions(theme, okc, shell) });
 
     await register(null, {});
 }

@@ -1,12 +1,12 @@
-//what ../../test/runners/sessions-storing.test.js has to be able to catch.
+//what ../../test/worker/sessions-storing.test.js has to be able to catch.
 //
 //THE FIRST GROUP IS THE ONE THAT MATTERS. An unsealed credential written into a
 //folder whose whole purpose is to be kept for a long time is not a bug that
 //announces itself — it is a file sitting quietly in a drawer, and the only
 //moment anything can stop it is before the write.
 module.exports = {
-    file: 'src/app/runners/sessions/storing.js',
-    test: 'test/runners/sessions-storing.test.js',
+    file: 'src/app/worker/sessions/storing.js',
+    test: 'test/worker/sessions-storing.test.js',
     breaks: [
         //---- what may never be kept ----------------------------------------
 

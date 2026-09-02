@@ -30,22 +30,45 @@ var makeJobOrder = require('./joborder');
 //`vmSessions` and `vmSessionTail` are the OTHER half of following a run — what
 //the agent said, rather than what its process printed. Both are worth having and
 //they answer different questions: a crash before the agent ever started thinking
-//appears here and nowhere in a transcript. Those two are ../sessions'.
+//appears here and nowhere in a transcript. Those two are HERE, at the bottom of
+//this file — they came from the memory plugin when it went to ../../worker, and
+//this paragraph is why: the machine is what they are about.
 //---------------------------------------------------------------------------
 
 plugin.consumes = ['app', 'log', 'dispatch', 'ours', 'channel', 'secret',
     //FOR `vmDispatch` ONLY, and each for one question:
     //  whatIsOn        whether this is a continuation, and of what
-    //  sessions        where that conversation is filed, and what it must be told
     //  vbox, guestApi  where a guest hands an artifact back to
     //  repoWorkspaces  whether `--folder` is a path on the machine or on this host
-    'whatIsOn', 'sessions', 'vbox', 'guestApi', 'repoWorkspaces',
+    'whatIsOn', 'vbox', 'guestApi', 'repoWorkspaces',
     //AND FOR `jobRun`:
     //  library   the job, the prompt and the contract, each with its approval
     //  queue     the task a job may be run for
     //  judge     the judgement it may be run for instead
     'library', 'queue', 'judge'];
-plugin.provides = [];
+
+//---- AND WHAT ANYBODY ELSE HAS TO SAY IN FRONT OF A BRIEF -----------------
+//
+//`briefings` IS A DOOR THIS OPENS RATHER THAN A SERVICE IT TAKES, and the
+//direction is the whole reason it exists. This file used to consume `sessions`
+//to read one sentence out of it — what a worker is told when it is handed a
+//conversation begun by other work — which made the dispatcher of BOTH lanes
+//depend on one of the two things it dispatches. A judge does not keep a memory
+//at all, so half of what this file does was downstream of a plugin that has
+//nothing to say about it.
+//
+//SO IT ASKS INSTEAD. Whoever has something to put in front of a brief registers
+//it, this collects what they say and puts it there. ../../worker/sessions is the
+//only one today. Same shape as ../../inbox's sources and ../../permissions'
+//rules: the plugin that owns a fact declares it at the door that acts on it.
+//
+//THERE ARE TWO PATHS TO A WORKER and this is what makes both of them carry it.
+//The first version of the continuation warning was written into `vmDispatch`
+//alone, where it never once fired — a task with a JOB never touches
+//`vmDispatch`, and every task in the drill that found the problem had one. Both
+//paths go through `announce` below, and a contributor cannot be added to one of
+//them by accident.
+plugin.provides = ['briefings'];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
@@ -53,7 +76,36 @@ async function plugin(imports, register) {
 
     var dispatch = imports.dispatch;
     var channel = imports.channel;
-    var sessions = imports.sessions;
+
+    //---- WHO HAS SOMETHING TO SAY, AND WHAT IT COMES TO ------------------
+    //
+    //EACH ONE IS WRAPPED SEPARATELY. A contributor that throws is a contributor
+    //that said nothing, not a dispatch that fails: refusing to give work out
+    //because a note about it could not be composed would stop the work for the
+    //sake of describing it. That was already true when this read the memory
+    //folder directly, and it stays true for whatever registers next.
+    //
+    //JOINED WITH A BLANK LINE BETWEEN, so two contributors do not run into one
+    //sentence. Empty answers drop out rather than leaving a gap.
+    var saying = [];
+    function briefings(said) {
+        saying.push(said);
+        return function () {
+            var at = saying.indexOf(said);
+            if (at >= 0) saying.splice(at, 1);
+        };
+    }
+    async function announce(doing) {
+        if (!doing) return null;
+        var parts = [];
+        for (var i = 0; i < saying.length; i++) {
+            try {
+                var one = await saying[i](doing);
+                if (one) parts.push(String(one));
+            } catch (e) { /* a brief that could not be annotated is still the brief */ }
+        }
+        return parts.length ? parts.join('\n\n') : null;
+    }
 
     var asking = makeAsking({
         ours: imports.ours,
@@ -129,15 +181,15 @@ async function plugin(imports, register) {
                 //the brief — and refusing to dispatch because the memory folder
                 //could not be read would stop work over a note about it.
                 //
-                //See ../sessions/keying.js for what it says and why it lives
-                //there rather than here: this is one of TWO paths to a worker,
-                //and writing the words at this end is how the first version of
-                //it never once fired.
+                //See ../../worker/sessions/keying.js for what it says and why it
+                //lives there rather than here: this is one of TWO paths to a
+                //worker, and writing the words at this end is how the first
+                //version of it never once fired. `announce` is the join both
+                //paths go through — see `briefings` at the top of this file.
                 var task = String(a.task);
                 try {
                     var doing = await imports.whatIsOn(a.name);
-                    var kept = doing ? await sessions.get(sessions.keyFor(doing)) : null;
-                    task = makeBriefing.briefWith(sessions.announcement(doing, kept), task);
+                    task = makeBriefing.briefWith(await announce(doing), task);
                 } catch (e) { /* a brief that could not be annotated is still the brief */ }
 
                 //---- AND WHETHER ITS WORKER CAN AUTHENTICATE AT ALL ---------
@@ -345,7 +397,7 @@ async function plugin(imports, register) {
                 //THIS IS THE PATH THE FIRST VERSION MISSED. It was written into
                 //vmDispatch alone, where it never once fired: a task with a JOB
                 //never touches vmDispatch, and every task in the drill that
-                //found the problem has one. See ../sessions/keying.js.
+                //found the problem has one. See ../../worker/sessions/keying.js.
                 if (work && work.brief) {
                     try {
                         var doing = {
@@ -354,8 +406,7 @@ async function plugin(imports, register) {
                             uid: work.uid,
                             item: work
                         };
-                        var kept = await sessions.get(sessions.keyFor(doing));
-                        var said = sessions.announcement(doing, kept);
+                        var said = await announce(doing);
                         if (said) {
                             work = Object.assign({}, work, {
                                 brief: makeBriefing.briefWith(said, work.brief)
@@ -721,8 +772,84 @@ async function plugin(imports, register) {
                 };
             }
         }));
+
+        //---- WHAT THE AGENT ON IT SAID, AS OPPOSED TO WHAT IT PRINTED -----
+        //
+        //THESE TWO CAME FROM ../../worker/sessions WHEN A WORKER'S MEMORY WENT
+        //THERE, and the split is the point rather than a tidy-up. Two different
+        //things were called "sessions": what a machine is writing RIGHT NOW, and
+        //what a worker keeps between the machines it passes through. The second
+        //outlives every box it touches and belongs to the worker; the first is a
+        //fact about a box that is dialled in, which is what this whole file is
+        //the door for.
+        //
+        //So they are here, beside `vmRuns` and `vmRunOutput`, and this file's own
+        //header already said where they belonged: the OTHER half of following a
+        //run. A crash before the agent ever started thinking appears in the run
+        //output and nowhere in a transcript, and an agent that is thinking in
+        //circles appears in the transcript and nowhere in the output. Both are
+        //asked of one machine, through one gate, with one rule about who may ask.
+        //---- THE SESSIONS ON A MACHINE, RIGHT NOW -------------------------
+        undo.push(actions.define('vmSessions', {
+            about: 'The Claude sessions on a machine, newest first',
+            takes: ['name'],
+            run: async function (args) {
+                var name = (args || {}).name;
+                asking.reachable(name, 'its sessions cannot be read');
+
+                var r = await channel.run(name, dispatch.sessionCommand('list'),
+                    { what: 'reading its claude sessions', timeout: 60000 });
+                return dispatch.sessionAnswer(r.output);
+            }
+        }));
+
+        //---- WHAT ONE HAS DONE SINCE YOU LAST LOOKED ----------------------
+        //
+        //A DELTA, AND THE BOOKMARK IS THE POINT. `since` is a line number in the
+        //transcript and comes back as `bookmark`; pass it in next time. A
+        //watcher that re-reads from the top spends its whole context
+        //re-deriving what it already reported, which for a task running an hour
+        //is most of it.
+        //
+        //Only what is worth reporting: what it ran, what it wrote, what it was
+        //asked, and the lines of a result that carry a verdict. A tool result is
+        //tens of kilobytes and almost none of it is news.
+        undo.push(actions.define('vmSessionTail', {
+            about: "What a machine's Claude session has done since a bookmark",
+            takes: ['name', 'session', 'since', 'limit'],
+            run: async function (args) {
+                var a = args || {};
+                asking.reachable(a.name, 'its session cannot be read');
+
+                var which = a.session == null ? '' : String(a.session);
+                var since = a.since == null ? 0 : Number(a.since);
+                var limit = a.limit == null ? 40 : Number(a.limit);
+
+                var r = await channel.run(a.name, dispatch.sessionCommand('tail', [which, since, limit]),
+                    { what: 'reading its session', timeout: 120000 });
+                var out = dispatch.sessionAnswer(r.output);
+
+                //THE REFUSAL NAMES WHAT IT COULD HAVE READ INSTEAD. Asking for a
+                //session that is not there is nearly always a stale id, and the
+                //list is the answer to the question behind the mistake.
+                if (!out.ok) {
+                    throw new Error(out.error + (out.sessions
+                        ? ' — ' + out.sessions.map(function (s) {
+                            return String(s.id).slice(0, 8) + ' (' + (s.title || 'untitled') + ')';
+                        }).join(', ')
+                        : ''));
+                }
+                return out;
+            }
+        }));
     }
 
-    await register(null, { onDestroy: function () { while (undo.length) undo.pop()(); } });
+    await register(null, {
+        //ONE METHOD, AND IT HANDS BACK HOW TO STOP SAYING IT. A plugin that goes
+        //away takes its sentence with it, the same as every other registration
+        //in this app.
+        briefings: { says: briefings },
+        onDestroy: function () { while (undo.length) undo.pop()(); }
+    });
 }
 module.exports = plugin;

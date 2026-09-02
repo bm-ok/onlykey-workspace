@@ -5,57 +5,70 @@ var looking = require('./looking');
 var makeStoring = require('./storing');
 var makeGuestApi = require('./guestapi');
 
-//../runs OWNS THE TWO GATES, and this asks the same two. Both are under
-//../, the same way ../../repositories/repos reaches ../branches — a rule
-//that decides who may ask something of a machine is one rule, and a second copy
-//of it here is how the two come to disagree about a machine that is off.
-var makeAsking = require('../runs/asking');
-
 //---------------------------------------------------------------------------
-//WHAT A WORKER SAID, AND WHAT IT KEEPS BETWEEN MACHINES.
+//WHAT A WORKER KEEPS BETWEEN MACHINES.
 //
-//TWO DIFFERENT THINGS UNDER ONE NAME, and they are worth separating before
-//reading further:
+//A MEMORY, NOT A TRANSCRIPT, and the two were one plugin until this moved here.
+//The distinction is what decided where each half went:
 //
-//  a session ON a machine     the transcript Claude is writing right now, in
-//                             the guest's own `~/.claude`. Read live, over the
-//                             channel, as a DELTA with a bookmark. Nothing here
-//                             stores it.
-//  a session KEPT here        the archive of that folder, handed back at the end
-//                             of a run and filed by SUBJECT so the next piece of
-//                             work on the same branch picks the conversation up.
+//  a session ON a machine     what Claude is writing right now, in the guest's
+//                             own `~/.claude`. Read live over the channel, as a
+//                             delta with a bookmark. That is a fact about a
+//                             MACHINE and it stayed with the machines —
+//                             `vmSessions` and `vmSessionTail`, now in
+//                             ../../runners/runs, the door for everything else
+//                             asked of a box that is dialled in.
+//  a session KEPT here        the archive of that folder, handed back when a run
+//                             ends and filed by SUBJECT, so the next piece of
+//                             work on the same branch cut picks the
+//                             conversation up. That outlives every machine it
+//                             passes through, and it is the WORKER's.
 //
-//The first is what `vmSessions` and `vmSessionTail` read. The second is what
-//./storing.js keeps and ./keying.js decides the shape of.
+//AND ONLY A WORKER HAS ONE. ./keying.js refuses a judge outright — a judge that
+//remembers the last four readings of the same line is a judge with an opinion
+//formed before it looked. So this belongs under the tab named after the thing
+//that keeps one, next to the board of what it has done, rather than under the
+//boxes it is lent.
 //
-//---- and what a continuation is TOLD --------------------------------------
+//---- IT ASKS TO BE REACHED; IT IS NOT REACHED INTO ------------------------
 //
-//./keying.js's `announcement`, which is the reason this plugin blocks the two
-//dispatch actions rather than merely accompanying them. A worker handed a
-//conversation from a different piece of work is a worker still obeying
-//instructions that ended with that work — measured, not supposed. It has to be
-//said at the one place both paths to a worker pass through, and that is here.
+//Nothing consumes this. It registers at three doors owned elsewhere and each
+//registration is the same shape as ../../inbox's sources and ../../permissions'
+//rules — the plugin that OWNS a fact declares it, at the door that will act on
+//it:
+//
+//  guestApi.api(...)      the two verbs a machine on a run reaches over https
+//  briefings.says(...)    what a continuation is told, in front of its brief
+//  actions.define(...)    what a person at the command line may ask
+//
+//../../runners/runs used to consume this for the announcement alone, which made
+//the dispatcher of BOTH lanes depend on one of the two things it dispatches. It
+//asks its contributors now, and this is one.
+//
+//THE ANNOUNCEMENT IS ./keying.js's AND HAS TO BE SAID AT THE JOIN. A worker
+//handed a conversation begun by different work is a worker still obeying
+//instructions that ended with that work — measured, not supposed. Both paths to
+//a worker pass through `briefings`, which is why registering there rather than
+//writing the words at either end is what makes it fire at all: the first
+//version of it was written into one path and never once ran.
 //---------------------------------------------------------------------------
 
 //`whatIsOn` and `guestApi` ARE FOR THE GUEST DOOR ONLY — ./guestapi.js. This is
 //`whatIsOn`'s second reader, and the reason it is a plugin of its own rather
 //than something the queue keeps: the machine asking here may be running a task
 //or a judgement, and only the join between the two boards can say which.
-plugin.consumes = ['app', 'log', 'ours', 'channel', 'dispatch', 'state', 'archive',
-    'whatIsOn', 'guestApi'];
-plugin.provides = ['sessions'];
+//
+//`ours` IS NOT FOR REACHING A MACHINE — it is read to find which sign-in a
+//machine is holding, because a worker naming its own identity would be a worker
+//choosing which one to bill.
+plugin.consumes = ['app', 'log', 'ours', 'state', 'archive',
+    'whatIsOn', 'guestApi', 'briefings'];
+plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
 
-    var channel = imports.channel;
-    var dispatch = imports.dispatch;
     var archive = imports.archive;
-
-    var asking = makeAsking({
-        ours: imports.ours,
-        connected: channel.connected
-    });
 
     //---- LOOKING INSIDE ONE, ONCE, ON THE WAY IN --------------------------
     //
@@ -113,62 +126,6 @@ async function plugin(imports, register) {
     var undo = [];
 
     if (actions) {
-        //---- THE SESSIONS ON A MACHINE, RIGHT NOW -------------------------
-        undo.push(actions.define('vmSessions', {
-            about: 'The Claude sessions on a machine, newest first',
-            takes: ['name'],
-            run: async function (args) {
-                var name = (args || {}).name;
-                asking.reachable(name, 'its sessions cannot be read');
-
-                var r = await channel.run(name, dispatch.sessionCommand('list'),
-                    { what: 'reading its claude sessions', timeout: 60000 });
-                return dispatch.sessionAnswer(r.output);
-            }
-        }));
-
-        //---- WHAT ONE HAS DONE SINCE YOU LAST LOOKED ----------------------
-        //
-        //A DELTA, AND THE BOOKMARK IS THE POINT. `since` is a line number in the
-        //transcript and comes back as `bookmark`; pass it in next time. A
-        //watcher that re-reads from the top spends its whole context
-        //re-deriving what it already reported, which for a task running an hour
-        //is most of it.
-        //
-        //Only what is worth reporting: what it ran, what it wrote, what it was
-        //asked, and the lines of a result that carry a verdict. A tool result is
-        //tens of kilobytes and almost none of it is news.
-        undo.push(actions.define('vmSessionTail', {
-            about: "What a machine's Claude session has done since a bookmark",
-            takes: ['name', 'session', 'since', 'limit'],
-            run: async function (args) {
-                var a = args || {};
-                asking.reachable(a.name, 'its session cannot be read');
-
-                var which = a.session == null ? '' : String(a.session);
-                var since = a.since == null ? 0 : Number(a.since);
-                var limit = a.limit == null ? 40 : Number(a.limit);
-
-                var r = await channel.run(a.name, dispatch.sessionCommand('tail', [which, since, limit]),
-                    { what: 'reading its session', timeout: 120000 });
-                var out = dispatch.sessionAnswer(r.output);
-
-                //THE REFUSAL NAMES WHAT IT COULD HAVE READ INSTEAD. Asking for a
-                //session that is not there is nearly always a stale id, and the
-                //list is the answer to the question behind the mistake.
-                if (!out.ok) {
-                    throw new Error(out.error + (out.sessions
-                        ? ' — ' + out.sessions.map(function (s) {
-                            return String(s.id).slice(0, 8) + ' (' + (s.title || 'untitled') + ')';
-                        }).join(', ')
-                        : ''));
-                }
-                return out;
-            }
-        }));
-    }
-
-    if (actions) {
         //---- WHAT IS KEPT, AND WHOSE IT IS --------------------------------
         //
         //A SESSION OUTLIVES THE TASK IT BELONGS TO, deliberately: a task that
@@ -177,7 +134,7 @@ async function plugin(imports, register) {
         //two lists and the join is allowed to fail on one side — an orphan is a
         //row, not a gap.
         //
-        //THE BOARD IS ASKED FOR BY NAME rather than consumed. ../../../queue
+        //THE BOARD IS ASKED FOR BY NAME rather than consumed. ../../queue
         //says of itself that nothing consumes it, "so none of these can be a
         //cycle — which is worth saying out loud, because an unresolved name
         //takes down the whole graph". Making this the first consumer would spend
@@ -314,29 +271,36 @@ async function plugin(imports, register) {
     }));
     undo.push(stopServing);
 
+    //---- AND WHAT A CONTINUATION IS TOLD, IN FRONT OF ITS BRIEF -----------
+    //
+    //SAID AT THE JOIN, WHICH IS WHY THIS IS A REGISTRATION. There are two paths
+    //to a worker — `vmDispatch` and `jobRun` — and the first version of this
+    //warning was written into one of them, where it never once fired: a task
+    //with a JOB never touches `vmDispatch`, and every task in the drill that
+    //found the problem had one. ../../runners/runs asks its contributors on both
+    //paths, so a warning registered here cannot go missing down one of them.
+    //
+    //IT ANSWERS FOR THE RUN IT IS GIVEN, NOT FOR A MACHINE. `doing` is what the
+    //run IS — `{kind, id, uid, item}` — and ./keying.js refuses a judgement by
+    //returning no key for one, so a judge picks nothing up and this says nothing
+    //about it. That refusal stays in one place rather than being restated here.
+    //
+    //THROWING IS THE CALLER'S TO SWALLOW, and it does: a brief that could not be
+    //annotated is still the brief, and refusing to dispatch over a note about a
+    //memory folder would stop work for the sake of describing it.
+    undo.push(imports.briefings.says(async function (doing) {
+        var kept = await store.get(keying.keyFor(doing));
+        return keying.announcement(doing, kept);
+    }));
+
+    //---- AND NOTHING CONSUMES THIS ---------------------------------------
+    //
+    //It provides no service. Everything it does, it does at a door somebody else
+    //owns — the guest api above, `briefings` here, and the action table. What
+    //used to be a `sessions` service existed for ../../runners/runs to read the
+    //announcement out of, and reading it from there is exactly what put the
+    //dispatcher of both lanes downstream of one of the two lanes.
     await register(null, {
-        sessions: {
-            //---- where a conversation is filed, and what it is told --------
-            keyFor: keying.keyFor,
-            aboutWork: keying.aboutWork,
-            remembers: keying.remembers,
-
-            //ASKED WITH WHAT IS KEPT, rather than reaching for it itself, so the
-            //one caller that already has the record does not read it twice — and
-            //so this stays testable without a disk. See ./keying.js.
-            announcement: keying.announcement,
-
-            //---- and what is kept -----------------------------------------
-            keep: store.keep,
-            get: store.get,
-            has: store.has,
-            forget: store.forget,
-            everything: store.everything,
-
-            //---- for whatever needs one on its own -------------------------
-            inspect: inspect,
-            MOST: makeStoring.MOST
-        },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });
 }

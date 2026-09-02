@@ -104,7 +104,7 @@ Written down because they keep getting re-derived as drift.
   `worker--cut--<branch>`. Worker lane only — a judge that remembers its last
   four readings of one line has an opinion before it looks — and a judgement can
   ask for memory per reading, which outranks the default. See
-  `runners/sessions/keying.js`.
+  `worker/sessions/keying.js`.
 * **`core/` is a real boundary now**, and `test/rules/core-names-no-app.test.js`
   holds it: nothing under `core/` may name an app service.
 
@@ -355,7 +355,7 @@ missing file.
 ## 5. Built, never run — nobody knows if these work
 
 * **Claude session backup and restore, per branch cut.** The keying is written
-  and reasoned (`runners/sessions/keying.js`), the storing is written, and the
+  and reasoned (`worker/sessions/keying.js`), the storing is written, and the
   two drills that would prove it — *what a branch remembers* and *a new task on a
   remembered branch* — have **never run**, because of 2c. So: unknown, and one
   setting away from being knowable.

@@ -1,7 +1,7 @@
 //---------------------------------------------------------------------------
 //WHAT WORK HANDS BACK: the files it produced, and what a judge concluded.
 //
-//THE OTHER HALF OF ../sessions. That one is what a piece of work REMEMBERS
+//THE OTHER HALF OF ../../worker/sessions. That one is what a piece of work REMEMBERS
 //between the machines it passes through; this is what it PRODUCES and gives to
 //this host. Both are the guest talking back over https with its own token, and
 //neither can be reached by anything that did not dial in as a machine we made.
@@ -182,7 +182,7 @@ module.exports = function guestapi(deps) {
         name: 'handback',
         about: 'What a machine hands back: the files its work produced, and what a judge concluded',
 
-        //THE SAME FENCE ../sessions STATES. A supervisor runs no task and no
+        //THE SAME FENCE ../../worker/sessions STATES. A supervisor runs no task and no
         //judgement, so it has nothing to hand back — said here, where the verbs
         //are, rather than left as an accident of the lookup.
         may: function (vm) {

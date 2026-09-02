@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const path = require('node:path');
 
 const APP = path.join(__dirname, '..', '..', 'src', 'app');
-const looking = require(path.join(APP, 'runners', 'sessions', 'looking.js'));
+const looking = require(path.join(APP, 'worker', 'sessions', 'looking.js'));
 const { mustNotHave, transcriptIn, summarise, basename, NEVER } = looking;
 
 const entry = (name, size) => ({ name, size: size == null ? 10 : size, type: 'file' });

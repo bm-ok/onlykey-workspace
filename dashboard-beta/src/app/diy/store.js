@@ -4,7 +4,7 @@
 //A DOCUMENT IN THE WORKSPACE'S DRAWER, not on the host. A cut only means
 //something inside one workspace — two workspaces with a `main` are two different
 //branches — and these are named after cuts, so they follow the folder. Same
-//reasoning as ../runners/sessions, which keys what it keeps by branch cut for
+//reasoning as ../worker/sessions, which keys what it keeps by branch cut for
 //the same reason.
 //
 //WHAT IS KEPT AND WHAT IS ASKED FOR EVERY TIME. Kept: the title, the notes, the

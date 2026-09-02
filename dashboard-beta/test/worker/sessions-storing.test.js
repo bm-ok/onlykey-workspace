@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const APP = path.join(__dirname, '..', '..', 'src', 'app');
-const makeStoring = require(path.join(APP, 'runners', 'sessions', 'storing.js'));
+const makeStoring = require(path.join(APP, 'worker', 'sessions', 'storing.js'));
 const { okId } = makeStoring;
 
 //AGAINST THE REAL FILESYSTEM, in a temp folder. What is being checked here is

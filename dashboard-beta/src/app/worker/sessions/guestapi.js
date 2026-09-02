@@ -128,7 +128,7 @@ module.exports = function guestapi(deps) {
             //
             //422 rather than 400: the request is well formed and the CONTENT is
             //the problem — a credential in the archive, or an archive that will
-            //not open. See ../sessions/storing.js for why both are refused
+            //not open. See ./storing.js for why both are refused
             //rather than kept with a note.
             say('vm', name, 'guest').warn('would not keep what ' + doing.ref
                 + ' remembers: ' + e.message);

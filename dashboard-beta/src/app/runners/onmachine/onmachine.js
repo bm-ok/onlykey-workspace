@@ -52,7 +52,7 @@ module.exports = function onmachine(deps) {
     //
     //IT HID BECAUSE OF WHERE IT IS ASKED. ../runs wraps it in a try that says "a
     //brief that could not be annotated is still the brief", so the throw was
-    //caught and the work carried on with a slightly poorer prompt. ../sessions
+    //caught and the work carried on with a slightly poorer prompt. ../../worker/sessions
     //asks it to decide whether a machine is running anything at all, and a
     //machine that is running nothing is an ordinary answer there — 204, or a
     //409 saying a transcript has nothing to belong to. Nothing anywhere read

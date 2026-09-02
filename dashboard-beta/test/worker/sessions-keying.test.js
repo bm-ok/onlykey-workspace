@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const path = require('node:path');
 
 const APP = path.join(__dirname, '..', '..', 'src', 'app');
-const keying = require(path.join(APP, 'runners', 'sessions', 'keying.js'));
+const keying = require(path.join(APP, 'worker', 'sessions', 'keying.js'));
 const { keyFor, aboutWork, announcement, remembers, factsOf, REMEMBERS } = keying;
 
 const task = (over) => Object.assign({

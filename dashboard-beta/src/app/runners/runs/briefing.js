@@ -80,7 +80,7 @@ module.exports = function briefing(deps) {
 
 //---- AND WHAT GOES IN FRONT OF THE TASK ------------------------------------
 //
-//The announcement is ../sessions/keying.js's — what it SAYS is a property of the
+//The announcement is ../../worker/sessions/keying.js's — what it SAYS is a property of the
 //memory keying and belongs with it. This is only where it goes: in front, with
 //the task named as the task, so a worker cannot read the warning as part of the
 //brief it is being given.

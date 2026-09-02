@@ -35,7 +35,7 @@
 // with `require` — which a drill cannot do, since it runs from `dist/suites`
 // with only the harness beside it. That is why this suite read `will not load`.
 //
-// They are asked in `test/runners/sessions-keying.test.js`, which puts the same
+// They are asked in `test/worker/sessions-keying.test.js`, which puts the same
 // questions to the same functions and adds the ones this did not: that a worker
 // keeps its conversation and a judge does not, by default, and that a piece of
 // work may ask to remember over that default. Nothing about them needs a host.
