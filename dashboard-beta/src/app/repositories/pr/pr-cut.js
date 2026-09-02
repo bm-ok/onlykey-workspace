@@ -324,7 +324,6 @@ module.exports = function cuts(theme, okc, remember, shell) {
                 }],
                 cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
                 confirm: 'Push and open them',
-                protect: true,
                 onYes: function (f) {
                     return tell(okc.call('prCutMake', {
                         source: c.source, target: c.target,
@@ -384,7 +383,6 @@ module.exports = function cuts(theme, okc, remember, shell) {
                 ],
                 cost: 'A commit on a real default branch, in ' + open.length + ' repositor' + (open.length == 1 ? 'y' : 'ies') + '.',
                 confirm: open.length > 1 ? 'Merge all of them' : 'Merge it',
-                protect: true,
                 onYes: function () { return tell(okc.call('prCutLand', { source: c.source, target: c.target })); }
             });
         }
@@ -432,7 +430,6 @@ module.exports = function cuts(theme, okc, remember, shell) {
                     : ['They go back to open, as they were. GitHub refuses this for one that has been merged.'],
                 cost: 'This changes what other people see on GitHub.',
                 confirm: want == 'closed' ? 'Close all of them' : 'Reopen all of them',
-                protect: true,
                 onYes: function () {
                     return tell(okc.call('prCutUpdate', { source: c.source, target: c.target, state: want }));
                 }
@@ -455,7 +452,6 @@ module.exports = function cuts(theme, okc, remember, shell) {
                       hint: 'The template blocks are not re-applied here — this is the text as it will stand.' }
                 ],
                 confirm: 'Write it to all of them',
-                protect: true,
                 onYes: function (f) {
                     if (!(f.title || '').trim() && !(f.body || '').trim()) {
                         throw new Error('Nothing to change. Give a title, a description, or both.');

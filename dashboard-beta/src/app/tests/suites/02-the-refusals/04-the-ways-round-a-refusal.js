@@ -285,39 +285,40 @@ it('and the whole way round it, from outside, ends where it started', async ({ o
   // AND THIS IS WHERE THIS APP ANSWERS DIFFERENTLY FROM THE ONE IT WAS PORTED
   // FROM, so the check says which answer it is watching for.
   //
-  // Over there a driven press is ALLOWED — "testing the approve button means
-  // being able to press it" — and the mark set above is what refuses it at the
-  // far end. So the walk there is: press, confirm, and find it still
-  // unapproved.
+  // THE WALK IS: PRESS, CONFIRM, AND FIND IT STILL UNAPPROVED. The press opens
+  // the dialog and the confirm is refused by the ACTION, on the mark checked
+  // above.
   //
-  // HERE THE DRIVER REFUSES THE PRESS ITSELF. core/drive will not click a
-  // button marked protected at all, so the walk stops one step earlier and the
-  // approval is never reached. That is the stronger of the two: nothing is
-  // pressed, so nothing depends on what the far end does with the mark.
+  // IT USED TO STOP ONE STEP EARLIER. The buttons carried `protect`, and
+  // core/drive would not click a marked button at all — so this asserted the
+  // DRIVER's refusal and never reached the far end. That mark is gone: it was
+  // built when a model might have been driving the window, and the agents run
+  // in their own machines behind an API now, so the command line is a person's
+  // surface.
   //
-  // BOTH GUARDS ARE STILL CHECKED, and that is the point of keeping this walk
-  // rather than deleting it. The refusal below is the driver's; the check above
-  // proved the MARK arrives, and the check before that proved the ACTION
-  // refuses a call carrying it. Two pieces of code, each able to fail on its
-  // own, each watched separately.
-  //
-  // THE DRIVER'S REFUSAL IS NOT ENOUGH BY ITSELF, which is why the other two
-  // matter: it can only see a button the theme painted. A pane that builds its
-  // own control is one the mark is invisible on, and then the far end is all
-  // there is.
+  // WHICH LEAVES THE GUARD THAT WAS ALWAYS THE REAL ONE. The driver could only
+  // ever see a button the theme painted; a pane that builds its own control is
+  // one the mark is invisible on, and then the far end is all there is. Thirty
+  // actions refuse `_driven`, and this walks one of them end to end.
+  await okc('windowClick', { text: 'Approve it' })
+
+  const asking = await okc('windowControls')
+  assert.ok(asking.dialog, 'pressing Approve did not open the confirm dialog, so what follows is pressing nothing')
+
   const refusedPress = await assert.refuses(
-    () => okc('windowClick', { text: 'Approve it' }),
-    'protected|persons press|a person',
-    'the window let a driven press land on Approve — over there that is allowed and the action refuses it, but here the driver is the guard and it just opened')
+    () => okc('windowClick', { text: 'It is fit' }),
+    'done in the window|driven from the command line',
+    'the confirm went through and a driven press approved a prompt — that is the whole bypass')
 
   // ---- and it is still not approved ----------------------------------
   //
-  // THE EVIDENCE IS THE STATE, not the absence of a line in the log. Nothing
-  // was pressed, so nothing wrote anything either way.
+  // THE EVIDENCE IS THE STATE, not the absence of a line in the log. The
+  // refusal above is one piece of code; this is whether it had the effect it
+  // claims.
   const after = ((await okc('prompts')).prompts || []).find(p => p.id === ID)
-  assert.ok(after && !after.approved, `a press driven from the command line approved a prompt. That is the whole bypass, and it did not even need the confirm dialog — approved by ${after && after.approvedBy}`)
+  assert.ok(after && !after.approved, `a press driven from the command line approved a prompt. That is the whole bypass — approved by ${after && after.approvedBy}`)
 
-  log(`wrote a prompt down the pipe, drove the window to it, and the press was refused:
+  log(`wrote a prompt down the pipe, drove the window to it, pressed through the confirm, and the action refused:
 ${refusedPress.message.slice(0, 120)}`)
 })
 

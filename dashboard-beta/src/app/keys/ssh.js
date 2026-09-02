@@ -105,7 +105,7 @@ module.exports = function ssh(theme, okc) {
                             title="So ssh and VS Code find these machines by name, using this key">
                             Write the ssh config
                         </Button>
-                        <Button kind="danger" protect onClick={makeSshKey}>
+                        <Button kind="danger" onClick={makeSshKey}>
                             {s.ok ? 'Make a new one' : 'Make one'}
                         </Button>
                     </div>

@@ -419,7 +419,7 @@ module.exports = function trouble(theme, okc, shell) {
                                 same purple, same class, same words, and the
                                 driver turns it down identically. */}
                             {l.act
-                                ? <Linky protect onClick={function () { press(l); }}>{l.act.label}</Linky>
+                                ? <Linky onClick={function () { press(l); }}>{l.act.label}</Linky>
                                 : null}
                         </div>
                     );

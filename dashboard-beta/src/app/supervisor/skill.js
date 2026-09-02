@@ -181,7 +181,6 @@ module.exports = function skill(theme, okc, remember) {
                       placeholder: 'what this changes about how it works' }
                 ],
                 confirm: 'Propose it',
-                protect: true,
                 onYes: function (f) {
                     if (!(f.why || '').trim()) {
                         throw new Error('Say why. It is the half of this that is actually being approved.');
@@ -217,7 +216,6 @@ module.exports = function skill(theme, okc, remember) {
                 wide: true,
                 cost: 'It changes what it believes it is, from its next waking on.',
                 confirm: 'Approve it',
-                protect: true,
                 onYes: function () { return tell(okc.call('skillApprove', { which: which })); }
             });
         }
@@ -285,7 +283,7 @@ module.exports = function skill(theme, okc, remember) {
                                         readable without pressing anything. */}
                                     <Views names={['Read', 'Write', 'Review']} on={look} onPick={setLook} />
                                     {look == 'Write'
-                                        ? <Button kind="ok" protect disabled={writing === served}
+                                        ? <Button kind="ok" disabled={writing === served}
                                             title={writing === served ? 'nothing has changed' : 'propose it'}
                                             onClick={save}>Save it</Button>
                                         : null}
@@ -364,7 +362,7 @@ module.exports = function skill(theme, okc, remember) {
                                             <Badge kind="warn">waiting on you</Badge>
                                         </CardTitle>
                                         <div className="head-controls">
-                                            <Button kind="ok" protect onClick={approve}>Approve it</Button>
+                                            <Button kind="ok" onClick={approve}>Approve it</Button>
                                             <Button kind="danger" onClick={reject}>Turn it down</Button>
                                         </div>
                                     </div>

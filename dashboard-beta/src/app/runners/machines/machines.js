@@ -103,7 +103,6 @@ module.exports = function machines(theme, okc, remember) {
                 cost: 'Its disks are deleted. There is nothing to undo it with.',
                 confirm: 'Remove it',
                 danger: true,
-                protect: true,
                 onYes: function () {
                     return okc.call('vmRemove', { name: m.name }).then(function (r) {
                         //THE SELECTION GOES WITH IT. A panel describing a machine
@@ -130,7 +129,6 @@ module.exports = function machines(theme, okc, remember) {
                 cost: 'Its disk is destroyed, and installing takes about twenty-five minutes.',
                 confirm: 'Rebuild it',
                 danger: true,
-                protect: true,
                 onYes: function () {
                     //REMOVE AND MAKE ARE WAITED ON; INSTALLING IS NOT. Their
                     //answer belongs in this dialog — it either got a machine

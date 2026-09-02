@@ -700,7 +700,7 @@ module.exports = function tasks(theme, okc, remember) {
                                         sequence, and this one is not offered
                                         until the first has happened. */}
                                     {s.machine && s.machine.there && s.machine.dirty && !s.machine.running
-                                        ? <Button kind="danger" protect onClick={function () { clear(s); }}>
+                                        ? <Button kind="danger" onClick={function () { clear(s); }}>
                                             Clear the machine
                                         </Button>
                                         : null}
@@ -727,7 +727,7 @@ module.exports = function tasks(theme, okc, remember) {
                                         because it changes what every later
                                         rollback means. */}
                                     {s.machine && s.machine.there && s.machine.dirty && !s.machine.running
-                                        ? <Button protect onClick={function () { keep(s); }}>
+                                        ? <Button onClick={function () { keep(s); }}>
                                             Keep it as the starting point
                                         </Button>
                                         : null}

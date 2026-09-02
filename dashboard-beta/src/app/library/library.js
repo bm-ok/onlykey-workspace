@@ -328,7 +328,6 @@ module.exports = function library(theme, okc, remember) {
                         ? 'Approved, it can be sent to a machine and run.'
                         : 'Approved, it can be handed to a worker.',
                     confirm: 'It is fit',
-                    protect: true,
                     onYes: function (f) { return tell(okc.call(K.approve, { id: x.id, note: f.note || undefined })); }
                 });
             }
@@ -375,7 +374,6 @@ module.exports = function library(theme, okc, remember) {
                     cost: 'It cannot be brought back.',
                     confirm: 'Throw it away',
                     danger: true,
-                    protect: true,
                     onYes: function () { return tell(okc.call(K.forget, { id: x.id })).then(function () { setPicked(null); }); }
                 });
             }

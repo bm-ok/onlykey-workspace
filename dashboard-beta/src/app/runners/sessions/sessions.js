@@ -261,7 +261,7 @@ module.exports = function sessions(theme, okc, shell) {
                     : null}
                 {armed
                     ? (<>
-                        <Button kind="small danger" protect onClick={forget}>Yes, forget it</Button>
+                        <Button kind="small danger" onClick={forget}>Yes, forget it</Button>
                         <Button kind="small" onClick={function () { setArmed(false); }}>Keep it</Button>
                     </>)
                     : <Button kind="small danger" onClick={function () { setSaid(null); setArmed(true); }}>Forget it</Button>}

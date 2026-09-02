@@ -218,7 +218,7 @@ module.exports = function issues(theme, okc, remember, shell) {
                     one at a time. */}
                 {allWaiting.length
                     ? <div className="row" style={{ marginBottom: '8px' }}>
-                        <Button kind="ok" protect disabled={sending} onClick={sendAll}
+                        <Button kind="ok" disabled={sending} onClick={sendAll}
                             title="Sends every waiting reply, close and review, each through the same checks as sending it on its own">
                             {sending ? 'sending…' : 'Send all ' + allWaiting.length + ' waiting'}
                         </Button>
@@ -444,7 +444,7 @@ module.exports = function issues(theme, okc, remember, shell) {
                         conversation to the supervisor from here, quietly. Purple:
                         it starts a machine turn, and a supervisor handing itself
                         work is deciding what it works on. */}
-                    <Button protect onClick={function () { hand(); }} title="Puts the whole conversation into the chat and wakes the supervisor">
+                    <Button onClick={function () { hand(); }} title="Puts the whole conversation into the chat and wakes the supervisor">
                         Hand it to the supervisor
                     </Button>
                 </div>
@@ -492,7 +492,7 @@ module.exports = function issues(theme, okc, remember, shell) {
                                 somebody else's repository in your name — the
                                 exact act the draft exists to keep a person in
                                 front of. */}
-                            <Button kind="ok" protect onClick={function () { release('issueApprove'); }}>
+                            <Button kind="ok" onClick={function () { release('issueApprove'); }}>
                                 {mine.kind === 'close' ? 'Close it' : mine.kind === 'review' ? 'Post the review' : 'Send it'}
                             </Button>
                             {/* NOT PURPLE, AND THE SAME REASONING AS EVERY OTHER

@@ -141,7 +141,7 @@ module.exports = function todo(theme, okc, remember) {
                                     <Button kind={t.state == 'doing' ? 'ok' : ''}
                                         onClick={function () { move(t, next); }}>{moveOn}</Button>
                                     <Button onClick={function () { edit(t); }}>Edit</Button>
-                                    <Button kind="danger" protect onClick={function () { drop(t); }}>Remove</Button>
+                                    <Button kind="danger" onClick={function () { drop(t); }}>Remove</Button>
                                 </div>
                             </Card>
                         );

@@ -293,7 +293,6 @@ module.exports = function repos(theme, okc) {
                 cost: 'The commits on it are gone from ' + repo + ' on this host.',
                 confirm: 'Delete it anyway',
                 danger: true,
-                protect: true,
                 onYes: function (f) {
                     //THE TICK IS THE CONSENT AND THE BUTTON IS NOT.
                     if (f.force !== true) {

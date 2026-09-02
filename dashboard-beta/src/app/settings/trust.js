@@ -167,7 +167,6 @@ module.exports = function makeTrust(theme, okc) {
                 //../core/drive refuses a protected button, and ./server.js
                 //refuses the setting down the pipe — this is the half a person
                 //can see.
-                protect: true,
                 onYes: function () {
                     //THE NUMBER, NOT ONLY THE NAME. It was just looked up; there
                     //is no reason to store the weaker half of what came back.
@@ -261,7 +260,7 @@ module.exports = function makeTrust(theme, okc) {
                             having written anything new. ./server.js refuses the
                             setting down the pipe; this is the half a person can
                             see. */}
-                        <Button kind="ok" protect disabled={!changed} onClick={saveMarker}>
+                        <Button kind="ok" disabled={!changed} onClick={saveMarker}>
                             {editing.trim() ? 'Save' : 'Clear it'}
                         </Button>
                         {changed
@@ -350,13 +349,13 @@ module.exports = function makeTrust(theme, okc) {
                             Words, a state change on somebody's tracker, and a
                             thing a maintainer may merge on are not one decision
                             and were never offered as one switch. */}
-                        <Toggle protect on={!!s.githubReplyDirect} onChange={function (v) { save('githubReplyDirect', v); }}>
+                        <Toggle on={!!s.githubReplyDirect} onChange={function (v) { save('githubReplyDirect', v); }}>
                             Post replies to issues without me reading them first — a reply is words
                         </Toggle>
-                        <Toggle protect on={!!s.githubCloseDirect} onChange={function (v) { save('githubCloseDirect', v); }}>
+                        <Toggle on={!!s.githubCloseDirect} onChange={function (v) { save('githubCloseDirect', v); }}>
                             Close issues without me reading the close first — a close changes the state of somebody's tracker
                         </Toggle>
-                        <Toggle protect on={!!s.githubReviewDirect} onChange={function (v) { save('githubReviewDirect', v); }}>
+                        <Toggle on={!!s.githubReviewDirect} onChange={function (v) { save('githubReviewDirect', v); }}>
                             Post a judge's review without me reading it first — a review is something a maintainer may merge on
                         </Toggle>
                     </div>
@@ -408,7 +407,7 @@ module.exports = function makeTrust(theme, okc) {
                                                 — a refusal that does not
                                                 describe what was attempted is
                                                 worse than being told no. */}
-                                            <Button protect onClick={function () { dropThem(one); }}>Remove</Button>
+                                            <Button onClick={function () { dropThem(one); }}>Remove</Button>
                                         </div>
                                     </div>
                                 );
@@ -440,7 +439,7 @@ module.exports = function makeTrust(theme, okc) {
                         ? <div className="stack">
                             <Account who={found}>
                                 {found.kind === 'User' && !already
-                                    ? <Button kind="danger" protect onClick={function () { trustThem(found); }}>
+                                    ? <Button kind="danger" onClick={function () { trustThem(found); }}>
                                         Trust this account
                                     </Button>
                                     : null}

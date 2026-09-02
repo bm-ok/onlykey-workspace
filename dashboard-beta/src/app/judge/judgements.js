@@ -384,7 +384,6 @@ module.exports = function judgements(theme, okc, remember) {
                     readsAre: 'What will be posted',
                     cost: 'Nothing yet. The draft waits on this pane; posting it is a second, protected press.',
                     confirm: 'Write the draft',
-                    protect: true,
                     onYes: function () {
                         return okc.call('judgementSay', { ref: id }).then(
                             function (r) { setSaid({ text: r.note || 'Written.' }); },
@@ -432,7 +431,6 @@ module.exports = function judgements(theme, okc, remember) {
                 ],
                 cost: 'It borrows a machine and spends a Claude run.',
                 confirm: again ? 'Queue it again' : 'Queue it',
-                protect: true,
                 onYes: function () {
                     return okc.call('judgementQueue', { ref: ref }).then(
                         function (r) { setSaid({ text: r.note || (ref + ' is in the queue.') }); },
@@ -452,7 +450,6 @@ module.exports = function judgements(theme, okc, remember) {
                 cost: 'The findings cannot be brought back.',
                 confirm: 'Throw it away',
                 danger: true,
-                protect: true,
                 onYes: function () {
                     return okc.call('judgementRemove', { id: j.ref || String(j.number) }).then(
                         function (r) { setSaid({ text: r.note || 'Gone.' }); setPicked(null); },
@@ -576,18 +573,18 @@ module.exports = function judgements(theme, okc, remember) {
                                         have somewhere for a review to go now. A bare
                                         branch still does not. */}
                                     {subjectOf(on).kind == 'pull' || subjectOf(on).kind == 'cut'
-                                        ? <Button protect onClick={function () { say(on); }}
+                                        ? <Button onClick={function () { say(on); }}
                                             title="write what it found as a review draft of the pull request">Write the review</Button>
                                         : null}
                                     {canQueue(on)
-                                        ? <Button kind="ok" protect onClick={function () { queueIt(on); }}
+                                        ? <Button kind="ok" onClick={function () { queueIt(on); }}
                                             title={on.state === 'failed'
                                                 ? 'Its last attempt never ran, so nothing was decided'
                                                 : 'Written and not yet queued'}>
                                             {on.state === 'failed' ? 'Queue it again' : 'Queue it'}
                                         </Button>
                                         : null}
-                                    <Button kind="danger" protect onClick={function () { bin(on); }}>Throw it away</Button>
+                                    <Button kind="danger" onClick={function () { bin(on); }}>Throw it away</Button>
                                 </div>
 
                                 {/* THE REVIEW THIS JUDGEMENT WROTE, WAITING. Read
@@ -606,7 +603,7 @@ module.exports = function judgements(theme, okc, remember) {
                                             {d.forced ? <Note kind="warn">{d.why}</Note> : null}
                                             <Code text={d.text} tall />
                                             <div className="row" style={{ marginTop: '6px' }}>
-                                                <Button kind="ok" protect onClick={function () { release('issueApprove', d); }}>Post the review</Button>
+                                                <Button kind="ok" onClick={function () { release('issueApprove', d); }}>Post the review</Button>
                                                 <Button onClick={function () { release('issueDiscard', d); }}>Throw it away</Button>
                                             </div>
                                         </Card>

@@ -154,7 +154,6 @@ module.exports = function guests(theme, okc, remember) {
                     { name: 'as', label: 'Call it', placeholder: 'runner5', hint: 'what it is known as here, and what a machine is lent' }
                 ],
                 confirm: 'Get the link',
-                protect: true,
                 onYes: function (f) {
                     var as = String(f.as || '').trim();
                     if (!as) throw new Error('It needs a name.');
@@ -203,7 +202,6 @@ module.exports = function guests(theme, okc, remember) {
                 ],
                 cost: 'It signs that Claude account in and keeps the credential here, sealed.',
                 confirm: 'Keep it',
-                protect: true,
 
                 //---- AND A WAY OUT THAT ACTUALLY ENDS IT -------------------
                 //
@@ -307,7 +305,6 @@ module.exports = function guests(theme, okc, remember) {
                 cost: 'The token is gone. Getting it back means a new sign-in, as that account, from its own browser.',
                 confirm: 'Throw it away',
                 danger: true,
-                protect: true,
                 onYes: function () {
                     return tell(okc.call('guestForget', { name: g.name })).then(function () { setPicked(null); });
                 }

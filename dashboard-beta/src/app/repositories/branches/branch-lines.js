@@ -339,7 +339,6 @@ module.exports = function lines(theme, okc, shell, remember) {
                 }],
                 cost: 'The name, the reason and the arrangement are gone. Deleting the branches cannot be undone from here.',
                 confirm: 'Retire it',
-                protect: true,
                 onYes: function (f) {
                     return tell(okc.call('lineRetire', {
                         name: g.name,
@@ -363,7 +362,6 @@ module.exports = function lines(theme, okc, shell, remember) {
                 confirm: 'Forget it',
                 //A PERSON'S PRESS. It is not undoable from here — the name, the
                 //reason and the arrangement are gone.
-                protect: true,
                 onYes: function () {
                     return tell(okc.call('lineForget', { name: g.name })).then(function () { setPicked(null); });
                 }
@@ -514,9 +512,9 @@ module.exports = function lines(theme, okc, shell, remember) {
                                             Propose it for landing
                                         </Button>}
                                     {on.ends === 'landed'
-                                        ? <Button kind="ok" protect onClick={function () { retire(on); }}>Retire it</Button>
+                                        ? <Button kind="ok" onClick={function () { retire(on); }}>Retire it</Button>
                                         : null}
-                                    <Button kind="danger" protect onClick={function () { forget(on); }}>Forget it</Button>
+                                    <Button kind="danger" onClick={function () { forget(on); }}>Forget it</Button>
                                 </div>
                             </Panel>
                         )}

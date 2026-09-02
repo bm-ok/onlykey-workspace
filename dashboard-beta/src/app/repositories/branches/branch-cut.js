@@ -471,7 +471,6 @@ module.exports = function branches(theme, okc, remember) {
                 cost: 'The commits on it are gone from this host, in every repository that still has it.',
                 confirm: 'Delete it anyway',
                 danger: true,
-                protect: true,
                 onYes: function (f) {
                     //THE TICK IS THE CONSENT AND THE BUTTON IS NOT. Pressing
                     //through without it is the ordinary way somebody arrives

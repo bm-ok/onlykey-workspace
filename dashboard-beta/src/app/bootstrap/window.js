@@ -130,7 +130,6 @@ function makeBootstrap(theme, okc) {
                 ],
                 cost: 'It changes what a supervisor, a worker and a judge are each told they are.',
                 confirm: 'Restore it',
-                protect: true,
                 onYes: function (f) {
                     return tell(okc.call('bootstrapFromFile', { bytes: bytes, over: !!f.over }));
                 }
@@ -167,7 +166,6 @@ function makeBootstrap(theme, okc) {
                 ],
                 cost: 'It changes what a supervisor, a worker and a judge are each told they are.',
                 confirm: 'Restore it',
-                protect: true,
                 onYes: function (f) {
                     return tell(okc.call('bootstrapImport', { from: state.shipped, over: !!f.over }));
                 }
@@ -183,7 +181,7 @@ function makeBootstrap(theme, okc) {
                         <CardTitle>What this workspace has been taught</CardTitle>
                         <div className="head-controls">
                             <Button kind="ok" onClick={download}>Save it as a file</Button>
-                            <Button kind="ok" protect onClick={pickAndRestore}>Restore from a file</Button>
+                            <Button kind="ok" onClick={pickAndRestore}>Restore from a file</Button>
                         </div>
                     </div>
                     <CardSub>

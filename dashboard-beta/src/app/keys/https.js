@@ -91,7 +91,7 @@ module.exports = function https(theme, okc) {
                     {x.why ? <Note kind="warn">{x.why}</Note> : null}
 
                     <div className="row">
-                        <Button kind="danger" protect onClick={newCertificate}>Make a new certificate</Button>
+                        <Button kind="danger" onClick={newCertificate}>Make a new certificate</Button>
                     </div>
                 </Panel>
 

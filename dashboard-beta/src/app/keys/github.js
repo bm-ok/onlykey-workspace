@@ -230,7 +230,7 @@ module.exports = function github(theme, okc) {
                             {t.held ? 'Replace it' : 'Add a token'}
                         </Button>
                         {t.held
-                            ? <Button kind="danger" protect onClick={forgetToken}>Throw it away</Button>
+                            ? <Button kind="danger" onClick={forgetToken}>Throw it away</Button>
                             : null}
                     </div>
                 </Panel>
