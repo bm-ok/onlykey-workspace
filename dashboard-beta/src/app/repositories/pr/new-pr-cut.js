@@ -221,16 +221,84 @@ module.exports = function writer(theme, okc, remember) {
         //answers `into: null` and says where it is chosen, and a cut carrying
         //one of those cannot fully land — which is worth knowing before the
         //press rather than from GitHub afterwards.
+        //WHERE WORK GOES, SET FROM HERE. It is `repoTargetSet` — the same
+        //action the Repos pane's chooser calls, so this is the same decision
+        //made in a second place rather than a second way of deciding.
+        //
+        //BEHIND THE GATE, because it decides where pull requests from this
+        //repository open FOR EVER, not just for this cut. Undoing it is the
+        //same action with nothing chosen, which the dialog says.
+        function sendItTo(repo, pick) {
+            ask({
+                title: 'Open ' + repo + "'s pull requests on " + pick.on + '?',
+                plain: [
+                    pick.said === 'yours'
+                        ? 'That is the remote this repository was cloned from, so work stays yours and '
+                            + 'nothing is sent upstream.'
+                        : 'That is the fork this one was forked FROM. Pull requests from here would go to '
+                            + 'a repository somebody else owns, where they can see them.',
+                    'It is not only for this cut: it is where every pull request from ' + repo
+                        + ' opens until it is changed. The same choice is on Repositories → Repos, '
+                        + 'and unpicking it there puts this back to nothing.'
+                ],
+                confirm: 'Send it there',
+                protect: pick.said !== 'yours',
+                onYes: function () {
+                    return okc.call('repoTargetSet', { repo: repo, on: pick.on }).then(
+                        function () {
+                            setSaid({ text: repo + ' opens on ' + pick.on + ' now.' });
+                            asked.current = null;
+                        },
+                        function (e) { setSaid({ kind: 'bad', text: e.message }); throw e; }
+                    );
+                }
+            });
+        }
+
         function whereThisOpens(v) {
             var shown = as || v.showing;
             var w = (v.where || []).filter(function (r) { return r.repo === shown; })[0];
             if (!w) return null;
 
             if (!w.into) {
+                //---- AND THE PRESS, NOT THE NAME OF A TAB -------------------
+                //
+                //SAYING WHAT IS MISSING IS NOT THE SAME AS OFFERING IT — the
+                //same rule `nameTheHeads` below is written to. This said
+                //"Repositories → Repos → Where work goes" and stopped, which is
+                //this pane sending somebody away at the exact moment it could
+                //have helped, about a decision the app already knows both
+                //answers to.
+                //
+                //BOTH, AND NEITHER CHOSEN. Its own remote keeps the work yours;
+                //the parent is the fork it was forked FROM, which is where a
+                //change belongs if it is going anywhere at all. That is a
+                //decision about who you are working with, and picking one here
+                //would make it for somebody — on the one setting in this app
+                //that reaches another person's repository.
+                //
+                //A REPOSITORY THAT IS NOT A FORK HAS ONE ANSWER, and then this
+                //is a single press.
+                var could = w.couldBe || {};
+                var picks = [
+                    could.self ? { on: could.self, said: 'yours' } : null,
+                    could.parent && could.parent !== could.self
+                        ? { on: could.parent, said: 'the one it was forked from' } : null
+                ].filter(Boolean);
+
                 return (
                     <Note>
                         <Badge kind="warn">no remote picked</Badge>{' '}
                         This one has nowhere to open: {w.intoWhy || 'nothing is chosen for it'}.
+                        {picks.map(function (p) {
+                            return (
+                                <span key={p.on}>{' '}
+                                    <Button kind="ok" onClick={function () { sendItTo(w.repo, p); }}>
+                                        {'Send it to ' + p.on}
+                                    </Button>
+                                </span>
+                            );
+                        })}
                     </Note>
                 );
             }

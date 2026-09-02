@@ -1317,7 +1317,27 @@ async function plugin(imports, register) {
                         //does not have to guess which of the two it is.
                         intoWhy: into ? null : (chose && chose.off
                             ? 'set to send work nowhere'
-                            : 'nothing picked — Repositories → Repos → Where work goes'),
+                            : 'nothing has been picked for it'),
+                        //---- AND WHAT COULD BE PICKED, SO A PANE CAN OFFER IT --
+                        //
+                        //NAMING THE TAB WAS ALL THIS DID. `intoWhy` used to end
+                        //"Repositories → Repos → Where work goes", which is a pane
+                        //stopping somebody at the exact moment it could have
+                        //helped -- and the app already knows both answers.
+                        //
+                        //THE TWO ARE A REAL CHOICE AND NOT A DEFAULT. Its own
+                        //remote keeps the work yours; the parent is the fork it
+                        //was forked FROM, which is where a change belongs if it
+                        //is going anywhere. Picking one here would decide, for
+                        //somebody, the one thing on this pane that reaches
+                        //another person's repository.
+                        //
+                        //`parent` IS NULL FOR ANYTHING THAT IS NOT A FORK, and
+                        //then there is only one answer and one press.
+                        couldBe: {
+                            self: mine,
+                            parent: (row && row.parent) || null
+                        },
                         //AND WHETHER IT CROSSES AT ALL, which is the one-word
                         //version of the two addresses under it.
                         crossing: !!(mine && into && into !== mine),

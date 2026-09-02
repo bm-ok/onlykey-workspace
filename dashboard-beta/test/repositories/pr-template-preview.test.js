@@ -160,7 +160,50 @@ test('with nothing picked there is no destination, and it says which nothing it 
 
     assert.equal(said.where[0].into, null, 'a destination nobody picked was drawn as the destination');
     assert.equal(said.where[0].crossing, false);
-    assert.match(said.where[0].intoWhy, /nothing picked/);
+    assert.match(said.where[0].intoWhy, /nothing has been picked/);
+
+    //AND IT NO LONGER SENDS ANYBODY ANYWHERE. This ended "Repositories → Repos
+    //→ Where work goes", which is the pane stopping somebody at the exact
+    //moment it could have helped — see `couldBe` below, which is what it
+    //offers instead.
+    assert.ok(!/Repositories/.test(said.where[0].intoWhy), 'it still names a tab to go to');
+});
+
+//---------------------------------------------------------------------------
+//AND WHAT COULD BE PICKED, SO THE PANE CAN OFFER IT RATHER THAN NAME A TAB.
+//
+//The app knows both answers already: the remote this repository was cloned
+//from, and the fork it was forked FROM. They are a real choice and not a
+//default — one keeps the work yours, the other reaches a repository somebody
+//else owns — so both are handed over and neither is chosen here.
+//---------------------------------------------------------------------------
+
+test('a repository with nowhere to open is told what it could open on', async () => {
+    const w = await loaded({ repos: [{ repo: 'repo-one', parent: 'upstream/repo-one' }] });
+    const said = await w.preview.run({ source: 'fix/thing', target: 'default' });
+
+    assert.deepEqual(said.where[0].couldBe, { self: 'me/repo-one', parent: 'upstream/repo-one' });
+});
+
+test('one that is not a fork has a single answer', async () => {
+    //AND THEN THE PANE IS ONE PRESS. `parent` is null for anything nobody
+    //forked, which is the case that prompted this: a repository whose sibling
+    //was set to exactly its own remote, blocked on a choice with one option.
+    const w = await loaded({ repos: [{ repo: 'repo-one' }] });
+    const said = await w.preview.run({ source: 'fix/thing', target: 'default' });
+
+    assert.deepEqual(said.where[0].couldBe, { self: 'me/repo-one', parent: null });
+});
+
+test('a repository that already has one is not offered alternatives to it', async () => {
+    //`couldBe` IS STILL ANSWERED, because the pane only reads it when there is
+    //no destination — but nothing here should read as a suggestion to change a
+    //choice somebody has made.
+    const w = await loaded({ repos: [{ repo: 'repo-one', target: { on: 'someone-else/repo-one' } }] });
+    const said = await w.preview.run({ source: 'fix/thing', target: 'default' });
+
+    assert.equal(said.where[0].into, 'someone-else/repo-one');
+    assert.equal(said.where[0].intoWhy, null, 'it explained a destination that is set');
 });
 
 test('and one set to send nowhere says that instead', async () => {
