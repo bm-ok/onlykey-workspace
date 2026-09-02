@@ -2830,6 +2830,99 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- ASKING ORIGIN WHAT IT HAS, AND MOVING NOTHING -----------------
+        //
+        //A REFRESH THAT WRITES IS NOT A REFRESH. The panel's own button ran
+        //`repoSyncBranch` with no branch -- fetch, then fast-forward every
+        //branch that could be -- under a refresh glyph. So the one control that
+        //looked like "show me where things stand" moved refs in the repository
+        //somebody was looking at, and there was no way to ask the question
+        //without answering it as well.
+        //
+        //CATCHING UP IS STILL ONE PRESS, on the row of the branch it is about,
+        //and the whole workspace at once is still the Sync tab. What did not
+        //exist was this: fetch, prune, and say what changed.
+        //
+        //WHICH IS THE ANSWER TO A BRANCH DELETED ON GITHUB. `refs/remotes/
+        //origin/<name>` lives on this disk and outlives the branch it points at
+        //-- so the panel went on drawing a row for a branch that had been
+        //deleted on the remote, in step with an origin that no longer had it.
+        //`fetch --prune` is what drops it, and nothing short of a fetch can
+        //know.
+        //
+        //READ EITHER SIDE OF THE FETCH, because "it fetched" is not an answer
+        //anybody has a question for. What somebody wants to know is what MOVED,
+        //and the two reads are cheap: ../refs keeps the drawer, and the fetch
+        //invalidates it in between by announcing itself.
+        undo.push(actions.define('repoFetch', {
+            about: 'Ask origin what it has and say what changed — fetches and prunes, and moves no branch here',
+            takes: ['repo'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                if (!name) throw new Error('Say which repository.');
+
+                var found = await workspace.repos();
+                if (!found.some(function (r) { return r.name === name; })) {
+                    throw new Error('There is no repository called "' + name + '" here. This workspace has: '
+                        + found.map(function (r) { return r.name; }).join(', ') + '.');
+                }
+
+                var was = await refs.of(name);
+
+                var got = await git.fetch(name);
+                if (!got.fetched) {
+                    return { repo: name, fetched: false, changed: [], note: 'Could not reach origin: ' + (got.why || 'it did not say why') };
+                }
+
+                var now = await refs.of(name);
+
+                //EVERY NAME EITHER SIDE KNEW, so a branch that appeared and one
+                //that went are both here to be compared.
+                var names = Object.keys(was).concat(Object.keys(now)).filter(function (n, i, all) {
+                    return all.indexOf(n) === i;
+                }).sort(function (x, y) { return x.localeCompare(y); });
+
+                var changed = [];
+                for (var i = 0; i < names.length; i++) {
+                    var before = (was[names[i]] || {}).remote || null;
+                    var after = (now[names[i]] || {}).remote || null;
+                    if (before === after) continue;
+                    changed.push({
+                        branch: names[i],
+                        was: before,
+                        now: after,
+                        //THREE THINGS THAT CAN HAVE HAPPENED, and `dropped` is
+                        //the one nothing else here could ever have found out.
+                        what: !before ? 'appeared' : !after ? 'dropped' : 'moved'
+                    });
+                }
+
+                function say(k) {
+                    var d = changed.filter(function (c) { return c.what === k; });
+                    if (!d.length) return null;
+                    var which = d.map(function (c) { return c.branch; }).join(', ');
+                    if (k === 'dropped') return 'origin no longer has ' + which;
+                    if (k === 'appeared') return 'origin has ' + which + ', which is new here';
+                    return which + ' moved on origin';
+                }
+
+                if (changed.length) {
+                    log.on('git', name).good(changed.length + ' branch(es) changed on origin');
+                }
+
+                return {
+                    repo: name, fetched: true, changed: changed,
+                    //NOTHING CHANGED IS AN ANSWER AND IT IS SAID AS ONE. "It
+                    //fetched" leaves somebody wondering whether it worked; this
+                    //is the same press reporting that origin is where it was.
+                    note: changed.length
+                        ? ['appeared', 'moved', 'dropped'].map(say).filter(Boolean).join('; ') + '.'
+                        : 'Origin is where it was — nothing changed. Nothing here was moved.'
+                };
+            }
+        }));
+
         undo.push(actions.define('repoSyncBranch', {
             about: 'Fetch from origin and fast-forward one branch, or every branch in a repository',
             takes: ['repo', 'branch'],

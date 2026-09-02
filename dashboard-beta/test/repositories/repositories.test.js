@@ -2126,3 +2126,124 @@ test('and it refuses what it cannot act on before it touches git', async () => {
 
     assert.deepEqual(asked, [], 'it fetched for a call it was going to refuse');
 });
+
+//---------------------------------------------------------------------------
+//ASKING ORIGIN WHAT IT HAS, WITHOUT ANSWERING IT.
+//
+//The panel's refresh ran `repoSyncBranch` with no branch — fetch, then
+//fast-forward every branch that could take one — under a ⟳. So the one control
+//that looked like "show me where things stand" moved refs in the repository
+//being looked at, and there was no way to ask without also answering.
+//
+//AND IT IS THE ONLY WAY TO FIND OUT A BRANCH IS GONE. `refs/remotes/origin/x`
+//lives on this disk and outlives the branch it points at, so a branch deleted
+//on GitHub goes on being drawn, in step with an origin that has not got it.
+//`fetch --prune` drops it — see ../git/writes.test.js for git actually doing
+//that against a real origin. These are about what this action ASKS FOR and
+//what it says, which is the part invisible everywhere else.
+//---------------------------------------------------------------------------
+
+function aFetchApp(how) {
+    const it = how || {};
+    const asked = [];
+    let reads = 0;
+
+    return anApp(REPO_OK, undefined, undefined, {
+        settings: { read: async () => ({}) },
+        git: {
+            fetch: async (repo) => {
+                asked.push('fetch ' + repo);
+                return it.fetched === false ? { fetched: false, why: 'origin refused' } : { fetched: true };
+            },
+            //RECORDED SO ITS ABSENCE CAN BE ASSERTED. This is the whole point of
+            //the change: a refresh that fast-forwards is not a refresh.
+            fastForward: async (repo, branch) => {
+                asked.push('fastForward ' + repo + ' ' + branch);
+                return { moved: true };
+            }
+        },
+        //BEFORE THE FETCH, THEN AFTER IT. The action reads either side, which is
+        //how it can say what MOVED rather than merely that it fetched.
+        refs: { of: async () => (reads++ === 0 ? (it.before || {}) : (it.after || it.before || {})) }
+    }).then((app) => Object.assign(app, { asked }));
+}
+
+const AT = (sha) => ({ branch: 'x', local: sha, remote: sha });
+
+test('a refresh fetches and moves nothing', async () => {
+    const { actions, asked } = await aFetchApp({
+        before: { master: { branch: 'master', local: 'aaa', remote: 'aaa' } },
+        after: { master: { branch: 'master', local: 'aaa', remote: 'bbb' } }
+    });
+
+    const said = await actions.call('repoFetch', { repo: 'repo-one' });
+    assert.equal(said.fetched, true);
+    assert.deepEqual(asked, ['fetch repo-one'],
+        'a refresh moved a branch — that is the thing this action exists not to do');
+});
+
+test('a branch deleted on origin is what it is for', async () => {
+    //THE CASE THAT PROMPTED IT: deleted on GitHub, still drawn here, and no
+    //amount of reading this disk could have told anybody.
+    const { actions } = await aFetchApp({
+        before: {
+            master: { branch: 'master', local: 'aaa', remote: 'aaa' },
+            'old/thing': { branch: 'old/thing', local: 'ccc', remote: 'ccc' }
+        },
+        after: {
+            master: { branch: 'master', local: 'aaa', remote: 'aaa' },
+            'old/thing': { branch: 'old/thing', local: 'ccc', remote: null }
+        }
+    });
+
+    const said = await actions.call('repoFetch', { repo: 'repo-one' });
+    assert.deepEqual(said.changed, [{ branch: 'old/thing', was: 'ccc', now: null, what: 'dropped' }]);
+    assert.match(said.note, /origin no longer has old\/thing/);
+});
+
+test('one that appeared, and one that moved, are different news', async () => {
+    const { actions } = await aFetchApp({
+        before: { master: { branch: 'master', local: 'aaa', remote: 'aaa' } },
+        after: {
+            master: { branch: 'master', local: 'aaa', remote: 'bbb' },
+            'theirs/new': { branch: 'theirs/new', local: null, remote: 'ddd' }
+        }
+    });
+
+    const said = await actions.call('repoFetch', { repo: 'repo-one' });
+    const by = {};
+    said.changed.forEach((c) => { by[c.branch] = c.what; });
+    assert.deepEqual(by, { master: 'moved', 'theirs/new': 'appeared' });
+    assert.match(said.note, /origin has theirs\/new, which is new here/);
+    assert.match(said.note, /master moved on origin/);
+});
+
+test('nothing changed is an answer, and says nothing was moved either', async () => {
+    //"It fetched" leaves somebody wondering whether it worked. This is the
+    //same press reporting that origin is where it was.
+    const { actions } = await aFetchApp({
+        before: { master: { branch: 'master', local: 'aaa', remote: 'aaa' } }
+    });
+
+    const said = await actions.call('repoFetch', { repo: 'repo-one' });
+    assert.deepEqual(said.changed, []);
+    assert.match(said.note, /Origin is where it was/);
+    assert.match(said.note, /Nothing here was moved/);
+});
+
+test('an origin that cannot be reached is reported, not thrown', async () => {
+    const { actions } = await aFetchApp({ fetched: false, before: {} });
+
+    const said = await actions.call('repoFetch', { repo: 'repo-one' });
+    assert.equal(said.fetched, false);
+    assert.match(said.note, /Could not reach origin: origin refused/);
+});
+
+test('and it refuses what it cannot act on before it touches git', async () => {
+    const { actions, asked } = await aFetchApp({ before: {} });
+
+    await assert.rejects(() => actions.call('repoFetch', {}), /Say which repository/);
+    await assert.rejects(() => actions.call('repoFetch', { repo: 'nope' }), /no repository called "nope"/);
+
+    assert.deepEqual(asked, [], 'it fetched for a call it was going to refuse');
+});

@@ -140,6 +140,21 @@ module.exports = function repos(theme, okc) {
         var q = okc.use('repoBranches', { repo: repo }, 8000);
         var [busy, setBusy] = useState(null);
 
+        //ASKING, WHICH MOVES NOTHING. See `repoFetch`: it fetches, prunes and
+        //reports what changed on origin -- including a branch that is no longer
+        //there, which is the one thing no amount of reading this disk can find
+        //out.
+        function refresh() {
+            setBusy('*');
+            okc.call('repoFetch', { repo: repo }).then(
+                function (x) {
+                    setBusy(null); q.again();
+                    onMoved(x && x.note, x && x.fetched ? null : 'bad');
+                },
+                function (e) { setBusy(null); onMoved(e.message, 'bad'); }
+            );
+        }
+
         function sync(branch) {
             setBusy(branch || '*');
             okc.call('repoSyncBranch', branch ? { repo: repo, branch: branch } : { repo: repo }).then(
@@ -312,8 +327,15 @@ module.exports = function repos(theme, okc) {
                     </Badge>
                     {s.onlyHere ? <Badge kind="muted">{s.onlyHere + ' only here'}</Badge> : null}
                     <Grow />
-                    <Plus disabled={busy == '*'} onClick={function () { sync(null); }}
-                        title="Fetch from origin and fast-forward every branch here that has one. Only fast-forwards.">
+                    {/* ⟳ ASKS, IT DOES NOT ANSWER. This ran a fetch AND a
+                        fast-forward of every branch that could take one, under
+                        a refresh glyph -- so the one control that looked like
+                        "show me where things stand" moved refs in the
+                        repository being looked at. Catching one up is the ↓ on
+                        its own row; the whole workspace at once is the Sync
+                        tab. */}
+                    <Plus disabled={busy == '*'} onClick={function () { refresh(); }}
+                        title="Ask origin what it has, and say what changed. Fetches and prunes; moves no branch here.">
                         {busy == '*' ? '…' : '⟳'}
                     </Plus>
                 </CardTitle>
@@ -354,9 +376,16 @@ module.exports = function repos(theme, okc) {
                                             if (canTake(b)) return take(b.branch);
                                             return sync(b.branch);
                                         }}>
-                                        {busy == b.branch ? '…'
-                                            : canPush(b) ? '↑'
-                                                : canTake(b) ? '↓' : '⟳'}
+                                        {/* ↓ FOR BOTH WAYS OF BRINGING IT
+                                            HERE. Catching a branch up is the
+                                            pull half -- local fast-forwarded to
+                                            what origin has -- so it travels in
+                                            the same direction as taking one
+                                            down, and wearing ⟳ made it read as
+                                            a refresh beside a ⟳ that was one.
+                                            Which of the two it is, is on the
+                                            title; the direction is the glyph. */}
+                                        {busy == b.branch ? '…' : canPush(b) ? '↑' : '↓'}
                                     </Button>
                                     {/* THE GLYPH IS NOT ITS NAME. A button
                                         whose children are not plain text has
