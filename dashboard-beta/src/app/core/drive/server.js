@@ -90,34 +90,6 @@ async function plugin(imports, register) {
         return s;
     }
 
-    //---- the guards, enforced here as well as painted there ----------------
-    //
-    //THE MARK AND THE REFUSAL MUST NOT BOTH DEPEND ON A PANE USING THE KIT, and
-    //this was found by setting a guard and watching it do nothing.
-    //
-    //The theme paints `.protected` on a `Button`, and the driver refused
-    //anything wearing that class. Which works for every control built from the
-    //kit — and sessions/ hand-rolls `<button class="btn small">Show in folder`.
-    //So a guard set at the window, recorded in guards.json, visible in the
-    //Guards pane, was pressed from the command line a moment later. A guard that
-    //silently does not apply is worse than no guard: it is a promise.
-    //
-    //So the list is checked HERE too, by the words on the button, where no pane
-    //can fail to opt in. The class is still honoured — that is what carries the
-    //ones the app proposes — and this catches the ones a person added.
-    async function guardedLabels() {
-        try {
-            var g = await actions.call('guards', {});
-            return (g && g.on || []).map(function (x) { return String(x.label || '').trim().toLowerCase(); });
-        } catch (e) {
-            //A GUARD LIST THAT CANNOT BE READ REFUSES NOTHING EXTRA, and that is
-            //the wrong way to fail — but the alternative is refusing everything
-            //on a transient error, which would read as the driver being broken.
-            //The class-based half still applies either way.
-            return [];
-        }
-    }
-
     //---- asking the page ---------------------------------------------------
 
     async function drive(want) {
@@ -160,10 +132,7 @@ async function plugin(imports, register) {
                     do: 'click',
                     text: args.text,
                     nth: args.nth == null ? null : Number(args.nth),
-                    dry: asking,
-                    //Sent with the request so the page can refuse by name as
-                    //well as by class. See guardedLabels above.
-                    guarded: await guardedLabels()
+                    dry: asking
                 });
             }
         }),

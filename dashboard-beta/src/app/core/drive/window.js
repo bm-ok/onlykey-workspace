@@ -501,13 +501,12 @@ async function plugin(imports, register) {
             //to find out was to press it. Ambiguity already refuses; this is the
             //other half, an UNambiguous match that is unambiguously the wrong
             //button.
-            var byName = (want.guarded || []).indexOf(String(b.label || '').trim().toLowerCase()) >= 0;
             if (want.dry) {
                 return {
                     on: r.where, would: b.label, picks: !!b.picks,
                     disabled: b.disabled, why: b.why || null,
-                    protected: !!b.protected || byName,
-                    note: (b.protected || byName)
+                    protected: !!b.protected,
+                    note: b.protected
                         ? "Nothing was pressed, and nothing here can press it: this one is a person's."
                         : 'Nothing was pressed. Run it again without --dry to press it.'
                 };
@@ -526,22 +525,16 @@ async function plugin(imports, register) {
             //Refused even in testing mode, and refused for --dry's benefit too:
             //--dry still names it, so the button can be FOUND from here and
             //cannot be pressed from here.
-            //BY THE WORDS ON IT, as well as by the class. The class covers what
-            //the app proposes; this covers what a person added, including on a
-            //control whose pane never used the kit and so was never painted.
-            var byName = (want.guarded || []).indexOf(String(b.label || '').trim().toLowerCase()) >= 0;
-            if (b.protected || byName) {
-                //THE MESSAGE HAS TO BE TRUE OF THIS BUTTON. Saying "which is what
-                //the purple says" about a control that is NOT painted purple —
-                //because its pane hand-rolled the button and never consulted the
-                //theme — is a refusal describing something the person cannot
-                //see. The two are worth telling apart: one is the app's own
-                //mark, the other is a guard somebody added, and only the first
-                //is on the screen.
+            //BY THE CLASS, WHICH IS THE MARK THAT IS ON THE SCREEN. There was a
+            //second half here that refused by the words on the button as well,
+            //carrying a list a person could add to at Settings → Guards. That
+            //pane is gone: it predates the agents living in their own machines,
+            //and a refusal now belongs at the API each one reaches this app
+            //through, named by the action — not painted on a control.
+            if (b.protected) {
                 throw new Error('"' + b.label + '" is a person\'s press. '
-                    + (b.protected
-                        ? 'It is marked protected, which is what the purple says: the point of this button is that somebody read what it is about and decided.'
-                        : 'You guarded it by name in Settings → Guards. It is not painted purple, because the pane it lives on builds that button itself rather than from the kit.')
+                    + 'It is marked protected, which is what the purple says: the point of this button '
+                    + 'is that somebody read what it is about and decided.'
                     + ' Testing mode does not open it.');
             }
 
