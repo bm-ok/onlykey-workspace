@@ -503,6 +503,86 @@ test('deleting one nothing has is refused, rather than reported as done', async 
 });
 
 //---------------------------------------------------------------------------
+//AND DELETING IT FROM ONE REPOSITORY.
+//
+//A cut branch is one change across three repositories, and taking it from all
+//of them at once is right for that. It is not the only shape a branch has
+//here: one that came down from origin lives in a single repository, and one
+//that WAS cut can be finished with in one place and still wanted in the other
+//two. Neither was reachable -- the only delete took a name and swept.
+//---------------------------------------------------------------------------
+
+test('`repo` takes it from that repository and leaves the others alone', async () => {
+    const { actions } = await anApp(THREE);
+    await actions.call('branchCreate', { branch: 'fix/one-of-three', reason: 'r', group: 'the-change' });
+
+    const said = await actions.call('branchDelete', { branch: 'fix/one-of-three', repo: 'two' });
+    assert.equal(said.removed, 1);
+    assert.deepEqual(said.on.map((o) => o.repo), ['two'], 'it touched a repository it was not asked about');
+
+    assert.ok(!fs.existsSync(path.join(work, 'two', '.git', 'refs', 'heads', 'fix', 'one-of-three')));
+    assert.ok(fs.existsSync(path.join(work, 'one', '.git', 'refs', 'heads', 'fix', 'one-of-three')), 'one lost it too');
+    assert.ok(fs.existsSync(path.join(work, 'three', '.git', 'refs', 'heads', 'fix', 'one-of-three')), 'three lost it too');
+});
+
+test('the note survives while any copy of the branch does', async () => {
+    //THE REGRESSION THE NARROWING WOULD HAVE CAUSED. The note was cleared on
+    //`!kept.length` -- nothing REFUSED -- which means "no copies left" only
+    //while the call sweeps every repository. Narrowed to one it is true after
+    //deleting one copy of three, and why the branch was cut would have gone
+    //while the branch itself was still in two places.
+    const { actions, state } = await anApp(THREE);
+    await actions.call('branchCreate', { branch: 'fix/note', reason: 'r', group: 'the-change' });
+
+    await actions.call('branchDelete', { branch: 'fix/note', repo: 'one' });
+    assert.ok((await state.here.doc('cuts')).read({})['fix/note'],
+        'the note went while two repositories still had the branch');
+
+    await actions.call('branchDelete', { branch: 'fix/note', repo: 'two' });
+    assert.ok((await state.here.doc('cuts')).read({})['fix/note'], 'and again with one left');
+
+    //AND IT STILL GOES WITH THE LAST COPY, one repository at a time.
+    await actions.call('branchDelete', { branch: 'fix/note', repo: 'three' });
+    assert.equal((await state.here.doc('cuts')).read({})['fix/note'], undefined,
+        'the note outlived the last copy of the branch');
+});
+
+test('it says the branch is still elsewhere, because that is what was asked for', async () => {
+    const { actions } = await anApp(THREE);
+    await actions.call('branchCreate', { branch: 'fix/said', reason: 'r', group: 'the-change' });
+
+    const some = await actions.call('branchDelete', { branch: 'fix/said', repo: 'one' });
+    assert.match(some.note, /still in the other repositories/);
+
+    await actions.call('branchDelete', { branch: 'fix/said', repo: 'two' });
+    const last = await actions.call('branchDelete', { branch: 'fix/said', repo: 'three' });
+    assert.doesNotMatch(last.note, /still in the other repositories/, 'nothing has it now');
+});
+
+test('protection is of the name, not of a copy', async () => {
+    //Half a line is not a smaller version of a line: a branch a line is built
+    //on is refused in one repository exactly as it is in all of them.
+    const { actions } = await anApp(THREE);
+    await assert.rejects(
+        () => actions.call('branchDelete', { branch: 'work', repo: 'one' }),
+        /is a link in "the-change"/);
+});
+
+test('a repository that is not here, and one that has not got it, are different answers', async () => {
+    const { actions } = await anApp(THREE);
+    await actions.call('branchCreate', { branch: 'fix/named', reason: 'r', group: 'the-change' });
+
+    await assert.rejects(
+        () => actions.call('branchDelete', { branch: 'fix/named', repo: 'nowhere' }),
+        /no repository called "nowhere"/);
+
+    await actions.call('branchDelete', { branch: 'fix/named', repo: 'one' });
+    await assert.rejects(
+        () => actions.call('branchDelete', { branch: 'fix/named', repo: 'one' }),
+        /one has no branch called "fix\/named"/);
+});
+
+//---------------------------------------------------------------------------
 //SYNCING A LINE — one act across several repositories, only ever forward.
 //---------------------------------------------------------------------------
 

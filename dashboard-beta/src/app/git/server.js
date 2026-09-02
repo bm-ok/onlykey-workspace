@@ -74,7 +74,32 @@ var child = require('child_process');
 //that — but the thing that keeps this honest about what it is FOR. Anything not
 //here is a capability somebody has to decide to add.
 var READS = [
-    'diff', 'log', 'branch', 'show', 'status',
+    'diff', 'log', 'show', 'status',
+
+    //`branch` IS NOT HERE, AND IT WAS. It is the same trap as `remote`
+    //two blocks down, arrived at from the opposite direction: a
+    //subcommand whose name reads like a read and whose flags write.
+    //`git branch --list` reads; `git branch <new> <from>`, `branch -d`
+    //and `branch -D` all move a ref.
+    //
+    //THIS APP ONLY EVER WRITES WITH IT. `makeBranch` and `removeBranch`
+    //are the only two call sites and both are writes -- every branch READ
+    //here goes through `for-each-ref`, which is on this list and belongs
+    //on it. So the entry bought nothing and cost every branch write its
+    //announcement.
+    //
+    //WHAT IT COST: ../repositories/refs is the only subscriber, and it
+    //keeps a drawer of branches per repository. Cutting a branch or
+    //deleting one left that drawer holding the answer from before, so
+    //`hasBranch` went on saying yes about a branch that had just been
+    //deleted and no about one just cut. Found because `branchDelete`
+    //asked, after deleting, whether any copy was left -- and was told
+    //yes about the copy it had itself just removed.
+    //
+    //It is the exact failure the `remote get-url` note describes, and the
+    //reason it survived is that this list is phrased the safe way round
+    //for a NEW door and not for an existing entry that is too coarse.
+
     'rev-parse', 'rev-list', 'merge-base', 'for-each-ref', 'ls-files', 'cat-file', 'cherry',
 
     //`merge-tree` IS HERE AND IT IS THE ONE ENTRY THAT NEEDS AN ARGUMENT.

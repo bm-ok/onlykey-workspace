@@ -927,21 +927,47 @@ async function plugin(imports, register) {
         //REFUSED WHILE IT IS PROTECTED, which is the same rule as cutting onto
         //one. A line's branches stop being protected when the line is forgotten,
         //and the message for that is on `lineForget`.
+        //ONE REPOSITORY, OR ALL OF THEM, AND `repo` IS WHICH.
+        //
+        //A CUT BRANCH IS ONE CHANGE ACROSS NINE REPOSITORIES and deleting it
+        //everywhere at once is right for that. But not every branch here was
+        //cut: one that came down from origin lives in a single repository, and
+        //one that WAS cut can be finished with in one place and still wanted in
+        //the other eight. Neither was reachable -- the only delete took a name
+        //and swept the workspace.
+        //
+        //So `repo` narrows it, and the guard, the refusal and the force path
+        //stay in this one action rather than being written a second time
+        //beside a per-repository button. A duplicated guard is how one comes to
+        //be missed.
         undo.push(actions.define('branchDelete', {
-            about: 'Delete a branch from every repository that has it',
-            takes: ['branch', 'force'],
+            about: 'Delete a branch — from one repository with `repo`, or from every repository that has it',
+            takes: ['branch', 'repo', 'force'],
             run: async function (args) {
                 var a = args || {};
                 var name = String(a.branch || '').trim();
                 if (!name) throw new Error('There is no branch to delete.');
 
+                //PROTECTION IS OF THE NAME, NOT OF A COPY. A branch a line is
+                //built on is refused in every repository it is in, including
+                //when only one of them was asked for -- half a line is not a
+                //smaller version of a line.
                 var guarded = await whyProtected(name);
                 if (guarded) throw new Error(guarded);
 
                 var force = a.force === true || a.force === 'true' || a.force === 1 || a.force === '1';
-                var found = await workspace.repos();
-                var done = [];
+                var all = await workspace.repos();
+                var only = String(a.repo || '').trim();
+                var found = all;
 
+                if (only) {
+                    found = all.filter(function (r) { return r.name === only; });
+                    if (!found.length) {
+                        throw new Error('There is no repository called "' + only + '" in this workspace.');
+                    }
+                }
+
+                var done = [];
                 for (var i = 0; i < found.length; i++) {
                     var repo = found[i].name;
                     if (!(await refs.hasBranch(repo, name))) continue;
@@ -949,7 +975,11 @@ async function plugin(imports, register) {
                     done.push({ repo: repo, removed: !!said.removed, unmerged: !!said.unmerged, why: said.why || null });
                 }
 
-                if (!done.length) throw new Error('No repository here has a branch called "' + name + '".');
+                if (!done.length) {
+                    throw new Error(only
+                        ? only + ' has no branch called "' + name + '".'
+                        : 'No repository here has a branch called "' + name + '".');
+                }
 
                 var gone = done.filter(function (d) { return d.removed; }).length;
                 var kept = done.filter(function (d) { return !d.removed; });
@@ -957,7 +987,19 @@ async function plugin(imports, register) {
                 //THE NOTE GOES WHEN THE LAST COPY DOES, and not before. A branch
                 //deleted from two of three repositories still exists, and why it
                 //was cut is still the answer to a question somebody has.
-                if (gone && !kept.length) {
+                //
+                //ASKED OF EVERY REPOSITORY, NOT OF WHAT THIS CALL TOUCHED. This
+                //was `!kept.length` -- true whenever nothing REFUSED -- which
+                //means the same thing only while the call sweeps the workspace.
+                //Narrowed to one repository it is true after deleting one copy
+                //of nine, and the note for a branch still in eight of them would
+                //have gone with it.
+                var stillSomewhere = false;
+                for (var j = 0; j < all.length && !stillSomewhere; j++) {
+                    if (await refs.hasBranch(all[j].name, name)) stillSomewhere = true;
+                }
+
+                if (gone && !stillSomewhere) {
                     var doc = await cuts();
                     var notes = doc.read({}) || {};
                     if (notes[name]) { delete notes[name]; doc.write(notes); }
@@ -1013,6 +1055,11 @@ async function plugin(imports, register) {
                             + (kept.some(function (k) { return k.unmerged; })
                                 ? ' Deleting it anyway needs force, and what it carries goes with it.' : '')
                         : 'Gone from ' + gone + ' repositor' + (gone === 1 ? 'y' : 'ies') + '.'
+                            //WHAT IS STILL THERE, when only one copy was asked
+                            //for. Somebody deleting from one repository needs to
+                            //know the branch is not gone -- that IS the act they
+                            //chose, and saying nothing reads as if it were.
+                            + (stillSomewhere ? ' It is still in the other repositories that have it.' : '')
                 };
             }
         }));
