@@ -117,4 +117,4 @@ may not reach it*. It is only honest because it is spent on nothing else.
   [sign it in](howto/sign-in-a-machine.md)
 - [Work in a machine yourself](howto/work-in-a-machine-yourself.md) — the
   same lane, driven by hand, when you want to be the one typing
-- [What a person may do, and what a machine may do](permissions-and-guards/README.md)
+- [What a person may do, and what a machine may do](permissions/README.md)

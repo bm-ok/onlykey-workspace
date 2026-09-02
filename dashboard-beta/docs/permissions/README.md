@@ -1,4 +1,4 @@
-# Permissions and guards
+# Permissions
 
 What a person may do, what a machine may do, and where the line is drawn —
 and why each refusal says what it says.

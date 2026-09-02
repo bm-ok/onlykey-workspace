@@ -30,7 +30,7 @@ concluded "reject"`. The reason is what it reads first.
    `prCuts`, `jobs`.
 
 It cannot see files, run commands, or reach anything but the actions on
-[what the supervisor may call](../permissions-and-guards/what-the-supervisor-may-call.md).
+[what the supervisor may call](../permissions/what-the-supervisor-may-call.md).
 
 ## What it leaves behind
 

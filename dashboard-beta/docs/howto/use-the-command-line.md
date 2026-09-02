@@ -2,7 +2,7 @@
 
 Everything the window can do, the command line can ask for — with a few
 presses held back for a person (see
-[Purple, and the wire](../permissions-and-guards/purple-and-the-wire.md)).
+[Purple, and the wire](../permissions/purple-and-the-wire.md)).
 
 ## The one command
 

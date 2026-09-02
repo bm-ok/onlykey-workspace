@@ -29,7 +29,7 @@ A suite is a folder. Each has a README saying what belongs in it.
 | `queue` | the Queue tab: tasks, judgements, the tick, the library |
 | `agents` | the supervisor, the judge and the worker, and their skills |
 | `machines` | the virtual machines, pools, snapshots and sign-ins |
-| `permissions-and-guards` | what a person may do, what a machine may do, and why |
+| `permissions` | what a person may do, what a machine may do, and why |
 | `development` | working on this app: the dev loop, proving a change, the tests |
 
 Deleting a page is done at the window only; `git rm` is the honest way from
