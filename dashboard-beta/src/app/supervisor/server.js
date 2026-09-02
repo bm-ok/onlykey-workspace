@@ -1250,7 +1250,7 @@ async function plugin(imports, register) {
                             text: 'I woke and stopped after ' + took + 's without asking this host for '
                                 + 'anything, so nothing was done.\n\nThat usually means the machine cannot '
                                 + 'run a worker at all — most often it is holding no credential '
-                                + '(Runners → Claude sign-ins), and sometimes the launcher or the tool '
+                                + '(the Keys tab), and sometimes the launcher or the tool '
                                 + 'server is missing. Nothing about your message was lost; wake me again '
                                 + 'once it can run.'
                         });

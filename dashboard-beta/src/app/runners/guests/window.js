@@ -1,6 +1,5 @@
 var React = require('react');
 var makeGuests = require('./guests');
-var makeMoved = require('./moved');
 var { useState } = React;
 
 //---------------------------------------------------------------------------
@@ -69,24 +68,6 @@ async function plugin(imports, register) {
     //the matching reason on the machine side.
     shell.pane({ tab: 'Keys', name: 'Claude DIY', order: 25, Component: GuestsFor('diy') });
     shell.pane({ tab: 'Keys', name: 'Claude supervisor', order: 30, Component: GuestsFor('supervisor') });
-
-    //---- AND A SIGNPOST WHERE THEY WERE -----------------------------------
-    //
-    //MOVED AND GONE ARE DIFFERENT, and a tab that quietly loses three panes
-    //reads as the second. Somebody who comes to Runners looking for a sign-in is
-    //looking for something that WAS here, and being told where it went is the
-    //whole difference.
-    //
-    //The app being ported from does exactly this, in the other direction: when
-    //the sign-ins left Keys for Runners it left a card behind saying so, with a
-    //comment calling it "a signpost and not a redirect". Same reasoning, and its
-    //other note applies too — the panel it replaced went on asking every few
-    //seconds for a credential it no longer owned, so this one asks NOTHING.
-    //
-    //REGISTERED BY THIS PLUGIN rather than by Runners, so that deleting this
-    //folder takes its own signpost with it. A pointer to something that is gone
-    //is worse than no pointer.
-    shell.pane({ tab: 'Runners', name: 'Claude sign-ins', order: 20, Component: makeMoved(theme, shell) });
 
     await register(null, {});
 }

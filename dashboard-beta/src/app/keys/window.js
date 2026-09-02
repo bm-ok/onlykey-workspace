@@ -27,8 +27,7 @@ var makeHttps = require('./https');
 //before it is anything to do with a machine: it is kept whether or not a machine
 //exists, it outlives every machine it is lent to, and what is asked of it is
 //what is asked of the GitHub token beside it. Under Runners they sat in the tab
-//named after the thing they are lent TO. There is a signpost where they were —
-//see ../runners/guests/moved.js, and note that it asks nothing.
+//named after the thing they are lent TO.
 //
 //`GitHub` BECAME THREE PANES. It was one pane holding three credentials and two
 //of them were not GitHub — with a caption inside it apologising for the heading:
