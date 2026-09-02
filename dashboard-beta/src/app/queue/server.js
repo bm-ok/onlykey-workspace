@@ -2,6 +2,9 @@ var fs = require('fs');
 var path = require('path');
 
 var policy = require('./policy');
+//WHETHER THE QUEUE COULD TAKE A MACHINE AT ALL — the same question the
+//Runners pane asks, from the module that owns it.
+var roles = require('../vms/ours/roles');
 var makeStore = require('./store');
 var makeArchive = require('./archive');
 var makeDoors = require('./doors');
@@ -909,15 +912,36 @@ async function plugin(imports, register) {
                 var doing = busyAs(await busyNow())[name] || null;
                 imports.log.on('vm', name).info(want ? 'available to the queue' : 'kept back from the queue');
 
+                //---- AND WHAT IT SAYS HAS TO BE TRUE OF THIS MACHINE ---------
+                //
+                //"The queue may pick this up" IS NOT TRUE OF EVERY MACHINE. The
+                //queue takes worker or judge and nothing else, so on anything
+                //else both halves of this note promised or threatened something
+                //that was never going to happen either way — and the press that
+                //cleared a stale flag on a DIY machine answered "the queue may
+                //pick this up", about a machine it will always leave alone.
+                var inPlay = roles.takesQueuedWork(vm);
+
                 return {
                     name: name,
                     forTasks: want,
-                    note: want
-                        ? 'The queue may pick this up when it is free and clean.'
-                        : doing
-                            ? 'It is running ' + doing + ' and will finish that first — this stops it being picked '
-                                + 'up again, it does not interrupt it.'
-                            : 'The queue will not pick this up. Nothing else about it changes.'
+                    //SAID SEPARATELY RATHER THAN FOLDED INTO THE SENTENCE, so
+                    //anything reading this can tell "not held back" from "not
+                    //something the queue takes".
+                    inQueue: inPlay,
+                    note: !inPlay
+                        ? (want
+                            ? 'Nothing is holding ' + name + ' back now. The queue still will not pick it up: it '
+                                + 'takes worker or judge, and this is tagged '
+                                + (((vm && vm.tags) || []).length ? vm.tags.join(', ') : 'nothing') + '.'
+                            : 'Recorded, but it changes nothing: the queue takes worker or judge and would leave '
+                                + name + ' alone anyway.')
+                        : want
+                            ? 'The queue may pick this up when it is free and clean.'
+                            : doing
+                                ? 'It is running ' + doing + ' and will finish that first — this stops it being picked '
+                                    + 'up again, it does not interrupt it.'
+                                : 'The queue will not pick this up. Nothing else about it changes.'
                 };
             }
         }));

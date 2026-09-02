@@ -1,6 +1,12 @@
 var React = require('react');
 var { useState } = React;
 
+//WHETHER THE QUEUE COULD TAKE THIS MACHINE AT ALL, asked of the module
+//that owns the question rather than restated here. Its own comment says
+//why: the queue, this pane and any drill have to give the same answer, and
+//they only do by asking in one place.
+var roles = require('../../vms/ours/roles');
+
 module.exports = function machines(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
@@ -36,7 +42,15 @@ module.exports = function machines(theme, okc, remember) {
                     {(v.kinds || []).length
                         ? (v.kinds || []).map(function (k) { return <span key={k}><Badge>{k}</Badge>{' '}</span>; })
                         : <Badge kind="warn">no role — the queue leaves it alone</Badge>}
-                    {v.forTasks === false ? <span>{' '}<Badge kind="warn">kept back</Badge></span> : null}
+                    {/* KEPT BACK IS ABOUT THE QUEUE, so it says nothing about a
+                        machine the queue would never take. The queue picks
+                        worker or judge and nothing else — a DIY machine is a
+                        person's seat and is out of it by role — so an orange
+                        "kept back" there is a warning about a thing that was
+                        never going to happen, next to a button offering to undo
+                        it. One sat on a DIY machine for two days. */}
+                    {v.forTasks === false && roles.takesQueuedWork(v)
+                        ? <span>{' '}<Badge kind="warn">kept back</Badge></span> : null}
                     {v.holdsCredential ? <span>{' '}<Badge kind="warn">holding a sign-in</Badge></span> : null}
                     {v.borrowed ? <span>{' '}<Badge kind="run">borrowed</Badge></span> : null}
                 </CardSub>
@@ -251,6 +265,19 @@ module.exports = function machines(theme, okc, remember) {
                             });
                         }}>Release</Button>
 
+                    {/* AND THE CONTROL ITSELF, ON THE MACHINES IT IS ABOUT.
+                        Offering to "let the queue use" a machine the queue will
+                        leave alone anyway is an offer that cannot be kept — the
+                        dialog underneath already had to say so in a second
+                        sentence.
+
+                        STILL SHOWN WHEN THE FLAG IS SET, whatever the tags,
+                        because a machine that arrived here kept back must have
+                        somewhere to be let go. Hiding it on exactly the records
+                        that carry a stale one is how a flag becomes permanent:
+                        this pane was the only way to clear the one that sat on
+                        ok-diy1, and it would have been gone. */}
+                    {roles.takesQueuedWork(v) || v.forTasks === false ? (
                     <Button kind={v.forTasks === false ? 'ok' : ''}
                         onClick={function () {
                             var giving = v.forTasks === false;
@@ -267,6 +294,7 @@ module.exports = function machines(theme, okc, remember) {
                         }}>
                         {v.forTasks === false ? 'Let the queue use it' : 'Keep it back'}
                     </Button>
+                    ) : null}
 
                     {/*---- AND MAKING IT AGAIN --------------------------------
 

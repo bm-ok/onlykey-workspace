@@ -119,3 +119,55 @@ test('and the two agree on the tag strings themselves', () => {
     assert.equal(policy.JUDGE, roles.JUDGE);
     assert.equal(policy.WORKER, roles.WORKER);
 });
+
+//---------------------------------------------------------------------------
+//AND WHAT THE RUNNERS PANE DRAWS OFF IT.
+//
+//"Kept back" is a control for the queue, and the queue takes worker or judge
+//and nothing else. On anything else the badge warned about something that was
+//never going to happen and the button offered to undo it — an offer that could
+//not be kept, which the dialog underneath already had to apologise for in a
+//second sentence. One sat on a DIY machine for two days.
+//
+//THE TWO CONDITIONS ARE NOT THE SAME ONE, and the difference is the whole
+//reason this is worth a test: the BADGE is about whether the flag means
+//anything, and the BUTTON is also about whether a flag that means nothing can
+//still be cleared. Hiding the button on exactly the records carrying a stale
+//flag is how a flag becomes permanent — this pane was the only way to clear
+//the one that sat on ok-diy1.
+//---------------------------------------------------------------------------
+
+const shows = (v) => ({
+    badge: v.forTasks === false && roles.takesQueuedWork(v),
+    button: roles.takesQueuedWork(v) || v.forTasks === false
+});
+
+test('the queue control is drawn for machines the queue could take', () => {
+    assert.deepEqual(shows({ tags: ['worker', 'judge'] }), { badge: false, button: true });
+    assert.deepEqual(shows({ tags: ['worker'], forTasks: false }), { badge: true, button: true });
+    assert.deepEqual(shows({ tags: ['judge'], forTasks: false }), { badge: true, button: true });
+
+    //A MACHINE CAN BE BOTH, and then the keep-back is the only thing stopping
+    //the queue rolling it back under somebody sitting in it.
+    assert.deepEqual(shows({ tags: ['worker', 'diy'], forTasks: false }), { badge: true, button: true });
+});
+
+test('and not for machines it would leave alone anyway', () => {
+    assert.deepEqual(shows({ tags: ['diy'] }), { badge: false, button: false });
+    assert.deepEqual(shows({ tags: ['diy'], forTasks: true }), { badge: false, button: false });
+    assert.deepEqual(shows({ tags: [] }), { badge: false, button: false });
+
+    //A SUPERVISOR IS NOT IN THE POOL AT ALL: it decides what work to give, and
+    //a machine that decides what work to give should not also be given some.
+    assert.deepEqual(shows({ tags: ['supervisor'] }), { badge: false, button: false });
+});
+
+test('a stale flag can always be let go, whatever the machine is tagged', () => {
+    //ok-diy1 CARRIED ONE FOR TWO DAYS. It is not reachable by the DIY lane
+    //either: the give-back is guarded by a flag on the seat, and the seat was
+    //gone. This button was the only way out, so it must not vanish precisely
+    //when it is needed.
+    assert.deepEqual(shows({ tags: ['diy'], forTasks: false }), { badge: false, button: true });
+    assert.deepEqual(shows({ tags: [], forTasks: false }), { badge: false, button: true });
+    assert.deepEqual(shows({ tags: ['supervisor'], forTasks: false }), { badge: false, button: true });
+});
