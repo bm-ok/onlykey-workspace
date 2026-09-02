@@ -1,38 +1,21 @@
 var React = require('react');
-var { useState, useEffect } = React;
 
-//---- who decides what is guarded -------------------------------------------
+//---- what the code says is a person's --------------------------------------
 //
-//THE THEME MUST NOT CONSUME `guards`, and this is why the answer arrives
-//backwards. Every pane consumes the theme, and the guards pane is a pane — so a
-//theme that asked for `guards` would be waiting on something waiting on it.
+//`protect` ON A CONTROL IS THE WHOLE ANSWER. A pane marks a press as one
+//somebody has to make, the theme paints it purple, and ../../core/drive
+//refuses to press anything wearing that class.
 //
-//Instead the theme keeps a hook with a safe default: what the code proposed
-//stands, and nothing is unlocked. The guards plugin fills it in when it comes
-//up. If it never comes up, every proposed guard is still a guard — which is the
-//direction to fail in, since the cost is a trip to the window and the other
-//direction is a press nobody agreed to.
-var guardHook = {
-    check: function (label, proposed) { return !!proposed; },
-    watchers: new Set()
-};
-function setGuardCheck(fn) {
-    guardHook.check = fn || function (label, proposed) { return !!proposed; };
-    guardsChanged();
-}
-function guardsChanged() {
-    guardHook.watchers.forEach(function (w) { w(); });
-}
-//Subscribed per control, so turning a guard on repaints the button that moment
-//rather than at the next time something else happens to render.
+//IT USED TO BE A QUESTION ASKED OF SOMEWHERE ELSE. The theme kept a hook and a
+//safe default, and a guards plugin filled it in with a list a person could add
+//to at Settings -> Guards. That plugin is gone: it predates the agents running
+//in their own machines, and a refusal now belongs at the API each one reaches
+//this app through, named by the action, rather than painted on a control.
+//
+//So this is a plain function again. It stays a function, and stays named, so
+//there is one place the four controls below agree on what purple means.
 function useGuard(label, proposed) {
-    var [, bump] = useState(0);
-    useEffect(function () {
-        var f = function () { bump(function (n) { return n + 1; }); };
-        guardHook.watchers.add(f);
-        return function () { guardHook.watchers.delete(f); };
-    }, []);
-    return guardHook.check(label, proposed);
+    return !!proposed;
 }
 
 //---------------------------------------------------------------------------
@@ -587,7 +570,7 @@ function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}<
 function KvSub({ children }) { return <div className="sub muted">{children}</div>; }
 
 module.exports = {
-    setGuardCheck, guardsChanged, useGuard,
+    useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted, Quoted,
     Badge, Badges, Chips, Chip, Views,
     Button, Toggle, Plus, Cog, Finder, Sorter, Form, HeadRow, Controls,
