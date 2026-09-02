@@ -57,6 +57,26 @@ module.exports = function repos(theme, okc) {
     //of them: a branch cannot be behind origin and absent from it at once.
     function canPush(b) { return b.state == 'only here' || b.state == 'ahead'; }
 
+    //---- AND BEING DONE WITH ONE ------------------------------------------
+    //
+    //A SEPARATE BUTTON, NOT A FOURTH ACT ON THE OTHER ONE. The three above are
+    //mutually exclusive ways of moving a branch about, and none of them loses
+    //anything. This one is the opposite weight, and a destructive act reached
+    //by the same press as a fetch is one somebody arrives at by rhythm.
+    //
+    //`against` IS NULL FOR EXACTLY THE ROWS THIS MUST NOT OFFER -- see
+    //`repoBranches`, which leaves it null for the repository's DEFAULT BRANCH
+    //and for a branch with no local copy. Deleting either is not a thing to
+    //ask about: one is what everything else here is measured against, and the
+    //other is not on this computer to delete.
+    //
+    //EVERY OTHER REFUSAL IS THE SERVER'S. A branch a line is built on is
+    //protected, and one carrying unmerged commits needs telling twice -- both
+    //are decided in `branchDelete` and said in its own words. Repeating either
+    //test here would be a second copy of a guard, which is how one comes to
+    //disagree with the other.
+    function canDelete(b) { return !!(b.local && b.against); }
+
     var STATE = {
         same: null,
         behind: { kind: 'warn', word: 'behind' },
@@ -93,7 +113,7 @@ module.exports = function repos(theme, okc) {
             return (
                 <PartWhy>
                     <span className="ok">{'Everything on this branch is already in ' + a.base}</span>
-                    <span className="muted">{' — the commits look different because the pull request was squashed when it merged. Nothing here is unsaved. It can be deleted on the Branches tab.'}</span>
+                    <span className="muted">{' — the commits look different because the pull request was squashed when it merged. Nothing here is unsaved, and ✕ deletes it from this repository.'}</span>
                 </PartWhy>
             );
         }
@@ -177,6 +197,102 @@ module.exports = function repos(theme, okc) {
             });
         }
 
+        //---- AND DELETING ONE, FROM THIS REPOSITORY -------------------------
+        //
+        //THE PANE SAID IT COULD BE DONE AND POINTED AT NOWHERE. A branch whose
+        //work has landed drew "It can be deleted on the Branches tab" -- and
+        //there is no Branches tab: the row is Branches Cut and Branches Lines,
+        //and the delete on the first takes a branch out of EVERY repository at
+        //once. So a branch finished with in one repository and wanted in eight
+        //others had no way to go, and the sentence naming the act made that
+        //read as a bug rather than as a missing feature.
+        //
+        //FROM THIS REPOSITORY ONLY, which is what this pane is about
+        //throughout: `repoSyncBranch`, `repoTakeBranch` and `repoPushBranch`
+        //are all one repository. `branchDelete` takes `repo` for it, so the
+        //protection check and the force path stay in one place.
+        function remove(b) {
+            var a = b.against || {};
+            ask({
+                title: 'Delete "' + b.branch + '" from ' + repo + '?',
+                plain: [
+                    'From this repository only. Any other repository with a branch of this name keeps it.',
+                    //WHETHER THE WORK ON IT IS SAFE, WHICH IS THE QUESTION
+                    //SOMEBODY ACTUALLY HAS. A squashed merge leaves work that
+                    //HAS landed looking unmerged, so the row already works this
+                    //out -- saying it again here means the answer is in front of
+                    //them at the moment they decide rather than scrolled away.
+                    a.state == 'landed'
+                        ? 'Everything on it is already in ' + a.base + '. Nothing on it is unsaved.'
+                        : a.state == 'live'
+                            ? a.unlanded + ' commit(s) on it are not in ' + a.base + ' yet.'
+                            : null,
+                    //LOCAL IS NOT THE SAME AS GONE, and this is the sentence
+                    //that stops somebody thinking it is. Nothing on this row
+                    //touches GitHub; the branch on the fork is deleted from a
+                    //merged pull request, which is a different act elsewhere.
+                    b.remote
+                        ? 'origin still has it. This deletes the copy on this computer and nothing on GitHub.'
+                        : 'It is only on this computer, so this is the last copy of it.'
+                ],
+                cost: a.state == 'landed' && b.remote
+                    ? 'A branch here goes. Its work is in ' + a.base + ' and origin still has the branch.'
+                    : 'Anything on it that was never merged or pushed is gone.',
+                confirm: 'Delete it',
+                danger: true,
+                onYes: function () {
+                    //ASKED WITHOUT FORCE, ALWAYS -- the same order as the delete
+                    //on Branches Cut. Offering it up front makes it a thing to
+                    //tick past; asking once git has said it is needed makes it a
+                    //decision about a branch that carries specific work.
+                    setBusy(b.branch);
+                    return okc.call('branchDelete', { repo: repo, branch: b.branch }).then(
+                        function (x) {
+                            setBusy(null); q.again();
+                            onMoved(x && x.note, x && x.ok ? null : 'warn');
+                            if (x && !x.ok && x.unmerged) forceRemove(b, x);
+                        },
+                        function (e) { setBusy(null); onMoved(e.message, 'bad'); throw e; }
+                    );
+                }
+            });
+        }
+
+        //NOT A RETRY, A DIFFERENT QUESTION. The first press asked "delete this
+        //branch"; git answered that it carries commits that are nowhere else,
+        //so this asks "throw that work away" -- the only question left, and not
+        //the one already answered.
+        function forceRemove(b) {
+            ask({
+                title: 'Throw away what "' + b.branch + '" carries?',
+                plain: [
+                    'It carries commits that are not merged anywhere else, in ' + repo + '.',
+                    'If the work is wanted, close this and land it first — merge it into a line, push it to origin, or send it out as a PR cut. Nothing here can get it back afterwards.'
+                ],
+                fields: [{
+                    name: 'force',
+                    type: 'checkbox',
+                    label: 'Delete it anyway, and lose what it carries',
+                    hint: 'This is what git refused to do without being told twice.'
+                }],
+                cost: 'The commits on it are gone from ' + repo + ' on this host.',
+                confirm: 'Delete it anyway',
+                danger: true,
+                protect: true,
+                onYes: function (f) {
+                    //THE TICK IS THE CONSENT AND THE BUTTON IS NOT.
+                    if (f.force !== true) {
+                        throw new Error('Tick the box to say the work on it can go. Nothing was deleted.');
+                    }
+                    setBusy(b.branch);
+                    return okc.call('branchDelete', { repo: repo, branch: b.branch, force: true }).then(
+                        function (x) { setBusy(null); q.again(); onMoved(x && x.note, x && x.ok ? null : 'warn'); },
+                        function (e) { setBusy(null); onMoved(e.message, 'bad'); throw e; }
+                    );
+                }
+            });
+        }
+
         if (q.error && !q.state) return <Panel><Note kind="bad">{q.error}</Note></Panel>;
         if (!q.state) return <Panel><Skeleton rows={4} /></Panel>;
 
@@ -241,6 +357,25 @@ module.exports = function repos(theme, okc) {
                                         {busy == b.branch ? '…'
                                             : canPush(b) ? '↑'
                                                 : canTake(b) ? '↓' : '⟳'}
+                                    </Button>
+                                    {/* THE GLYPH IS NOT ITS NAME. A button
+                                        whose children are not plain text has
+                                        nothing for the guards pane to list or
+                                        the driver to match on, so `guard` says
+                                        what it is -- see ../../ui/theme/bits.
+                                        The other button on this row is three
+                                        acts and gets its name from `title`
+                                        instead; this one is always the same
+                                        act, so it can be named once. */}
+                                    <Button kind="small danger" guard="Delete branch"
+                                        disabled={!canDelete(b) || busy == b.branch}
+                                        title={canDelete(b)
+                                            ? 'Delete ' + b.branch + ' from ' + repo + ' — this repository only'
+                                            : b.local
+                                                ? 'This is the default branch of ' + repo
+                                                : 'It is not on this computer to delete'}
+                                        onClick={function () { remove(b); }}>
+                                        {'✕'}
                                     </Button>
                                 </React.Fragment>
                             }>
