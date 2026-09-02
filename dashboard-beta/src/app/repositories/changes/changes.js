@@ -374,7 +374,7 @@ module.exports = function changes(theme, okc, remember) {
                 title: 'Stop proposing "' + from + '"?',
                 plain: [
                     'It stops being a proposal and goes back to being a line.',
-                    'Its branches stay protected, because they are still named in a line. Forget the line on the Lines tab to build on them directly again.',
+                    'Its branches stay protected, because they are still named in a line. Forget the line on Repositories → Branches Lines to build on them directly again.',
                     'Nothing that has already landed is undone.'
                 ],
                 confirm: 'Take it back',
@@ -433,7 +433,7 @@ module.exports = function changes(theme, okc, remember) {
                 </div>
 
                 {err ? <Note kind="bad">{err}</Note> : null}
-                {!into ? <Note kind="warn">There is no other line to compare it against. Name the line it would go into on the Lines tab.</Note> : null}
+                {!into ? <Note kind="warn">There is no other line to compare it against. Name the line it would go into on Repositories → Branches Lines.</Note> : null}
                 {/* WHAT THIS PANE IS, AND THAT IT IS SAFE. The old window opens
                     with this and it was dropped in the port — which loses the
                     one sentence saying you may read everything here without

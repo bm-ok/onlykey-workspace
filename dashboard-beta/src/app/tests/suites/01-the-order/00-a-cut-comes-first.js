@@ -22,7 +22,7 @@ const { scratch, aLine } = require('../../helpers')
 
 it('a task cannot be written on a branch that does not exist yet', async ({ okc, assert, state, log }) => {
   // The first rule in the outline, and the one that makes the order real: the
-  // cut exists first, made on the Branches tab where naming what it is for and
+  // cut exists first, made on Branches Cut, where naming what it is for and
   // what it starts from is the whole act.
   //
   // TRIED BEFORE ANYTHING IS ARRANGED, on purpose. A refusal proved after the
@@ -79,7 +79,7 @@ cleanup(async ({ okc, state }) => {
 //   a task cannot be written on a branch that does not exist yet
 //     refused, and this is what it said:
 //     There is no branch called "drill/never-cut-140753" in this workspace. Cut
-//     it first, on the Branches tab — a task delivers on a branch, and one
+//     it first, on Branches Cut — a task delivers on a branch, and one
 //     nobody has cut is work with nowhere to land.
 //
 //   a cut is made, on a line
@@ -91,7 +91,7 @@ cleanup(async ({ okc, state }) => {
 // The digits are a clock and change every run; nothing else here should move.
 //
 // NOTE THAT THE APP HAS TWO REFUSALS FOR THIS, and they are not the same words.
-// The one above is `taskCreate` and points at the Branches tab, which is right
+// The one above is `taskCreate` and points at Branches Cut, which is right
 // for somebody sitting at the window. The queue meets a second one when it sets
 // a machine up on a branch that has since been deleted, and that one gives the
 // command: `branchCreate --branch ... --reason "..." --group "..."`. Both are

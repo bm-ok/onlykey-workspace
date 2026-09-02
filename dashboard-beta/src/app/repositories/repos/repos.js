@@ -134,7 +134,7 @@ module.exports = function repos(theme, okc) {
 
     function Branches({ repo, onMoved }) {
         //ASKED EVERY EIGHT SECONDS BECAUSE IT IS LOCAL AND IT MOVES. This reads
-        //git, not GitHub — a sync from the Branches tab or the command line
+        //git, not GitHub — a sync from the Sync tab or the command line
         //moves it, and a panel whose whole job is saying whether two things
         //match is worse than useless when it is stale.
         var q = okc.use('repoBranches', { repo: repo }, 8000);

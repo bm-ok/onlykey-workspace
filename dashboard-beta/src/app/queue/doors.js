@@ -37,8 +37,14 @@ module.exports = function doors(store, ask, log) {
         if (ok) return ok;
 
         if (!(await ask.branchExists(name))) {
-            return 'There is no branch called "' + name + '" in this workspace. Cut it first, on the Branches tab '
-                + '— a task delivers on a branch, and one nobody has cut is work with nowhere to land.';
+            //THE TAB IT NAMES HAS TO EXIST. This said "the Branches tab",
+            //which is not in the row: it is Branches Cut, beside Branches
+            //Lines. A sentence telling somebody where to go, to a place that
+            //is not there, is worse than not saying — it reads as the app
+            //being broken rather than as a step being missing.
+            return 'There is no branch called "' + name + '" in this workspace. Cut it first, on '
+                + 'Repositories → Branches Cut — a task delivers on a branch, and one nobody has cut '
+                + 'is work with nowhere to land.';
         }
         return null;
     }

@@ -453,7 +453,10 @@ async function plugin(imports, register) {
         //twice — the same argument the old window makes about the path to
         //VBoxManage, which is what its title bar used to carry. What belongs
         //there is what all of this is ABOUT: the folder of repositories. The
-        //version is on the About tab for anybody who wants it.
+        //version is not drawn anywhere at all, which is the honest state of
+        //it: this said it was on the About tab, and there is no About tab
+        //and nothing shows a version. Somewhere in Settings is where it
+        //would go if anybody wants it.
         //
         //(A `{/* */}` comment cannot sit between attributes — that is for
         //children. Between attributes it is a `//` line, as here. Learned twice.)
