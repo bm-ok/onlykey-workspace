@@ -59,7 +59,6 @@ module.exports = function lines(theme, okc, shell, remember) {
         var board = boardRead.state;
         var [picked, setPicked] = remember.use('lines', 'line', null);
         var [said, setSaid] = useState(null);
-        var [busy, setBusy] = useState(null);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -75,36 +74,20 @@ module.exports = function lines(theme, okc, shell, remember) {
             );
         }
 
-        //---- fetching, and it only ever fast-forwards ----------------------
+        //---- NOTHING ON THIS PANE WRITES TO A REPOSITORY --------------------
         //
-        //THE ONLY THING ON THIS PANE THAT WRITES TO A REPOSITORY, and it writes
-        //in the one direction that cannot lose anything: a branch that has moved
-        //HERE is reported and left alone. A line that has moved on both sides
-        //cannot be helped by this at all — the button says so rather than trying
-        //and failing.
+        //IT USED TO, TWICE. There was a ⟳ on the HEAD branches card that
+        //fetched and fast-forwarded every default branch, and one on each line
+        //that did the same for the branches that line names. Both predate the
+        //Sync tab, which is where catching things up lives now: ../repos/sync.js
+        //has the line sync, the per-repository pull, and the whole workspace at
+        //once, side by side with what each one is behind.
         //
-        //STILL RELAYED. `lineSync` and `repoSync` run in the app being ported
-        //from, because ../../git refuses every write and the door for them is
-        //not built yet. Pressing these does the real thing, through the relay,
-        //exactly as it does over there — and nothing here changes when they move.
-        function syncLine(g) {
-            setBusy(g.name);
-            setSaid(null);
-            return okc.call('lineSync', { name: g.name }).then(
-                function (r) { setSaid({ bad: !!r.stuck, text: r.note }); again(); },
-                function (e) { setSaid({ bad: true, text: e.message }); }
-            ).then(function () { setBusy(null); });
-        }
-
-        function syncDefaults() {
-            setBusy('*');
-            setSaid(null);
-            return okc.call('repoSync', {}).then(
-                function (r) { setSaid({ bad: !r.moved, text: r.note }); again(); },
-                function (e) { setSaid({ bad: true, text: e.message }); }
-            ).then(function () { setBusy(null); });
-        }
-
+        //TWO PLACES TO DO ONE THING IS WORSE THAN EITHER. This pane is about
+        //what a line IS — which branch each repository is on, and whether the
+        //line still matches origin — and the badge beside the name says where
+        //it stands. Where to act on that is one tab along, once.
+        //
         //---- A LINE IS MADE OUT OF A CUT ------------------------------------
         //
         //THIS BUTTON USED TO CALL `lineSave` WITH NOTHING, which names whatever
@@ -418,11 +401,6 @@ module.exports = function lines(theme, okc, shell, remember) {
                             <Card>
                                 <CardTitle>
                                     HEAD branches
-                                    <Grow />
-                                    <Plus disabled={busy === '*'} onClick={syncDefaults}
-                                        title="Fetch from origin and fast-forward every default branch. Only fast-forwards: anything that has moved on here is reported and left alone.">
-                                        {busy === '*' ? '…' : '⟳'}
-                                    </Plus>
                                 </CardTitle>
                                 <Kv>
                                     {repos.map(function (r) {
@@ -480,16 +458,6 @@ module.exports = function lines(theme, okc, shell, remember) {
                                     <Sync g={on} />
                                     {on.marked ? <span>{' '}<Badge kind="run">proposed</Badge></span> : null}
                                     {on.why ? <span>{' '}<Muted>{on.why}</Muted></span> : null}
-                                    <Grow />
-                                    <Plus disabled={busy === on.name}
-                                        onClick={function () { syncLine(on); }}
-                                        title={on.sync === 'conflict'
-                                            ? 'Part of this line has moved on both sides. A fast-forward cannot help — see Conflicts.'
-                                            : on.sync === 'behind'
-                                                ? 'Fetch from origin and fast-forward every branch "' + on.name + '" names, as one act'
-                                                : 'Every branch this line names already matches origin'}>
-                                        {busy === on.name ? '…' : '⟳'}
-                                    </Plus>
                                 </CardTitle>
 
                                 {/* NAME LEFT, FACTS RIGHT, and the facts travel
