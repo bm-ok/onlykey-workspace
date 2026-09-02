@@ -453,7 +453,35 @@ module.exports = function judgements(theme, okc, remember, whatItHandedBack) {
                                         places showing one fact is two places to
                                         disagree, and the one somebody happens to
                                         read decides what they believe. */}
-                                    <KvRow label="judged by">{on.by || <span className="muted">not recorded</span>}</KvRow>
+                                    {/* "a machine" AND NOT "worker", WHICH IS WHAT
+                                        IT SAID AND WHAT IT STORES.
+
+                                        ../judge/store.js keeps this as `person`
+                                        or `worker`, and its note is right about
+                                        why: "a person and a worker are the same
+                                        act with a different body — a person's
+                                        judgement is a judgement with no run".
+
+                                        THE WORD WENT STALE UNDER IT. `worker` is
+                                        now a LANE in this app — the counterpart
+                                        of `judge`, in the drawer paths, in the
+                                        session keys, in the permission kinds — so
+                                        "judged by worker" on a JUDGEMENT reads as
+                                        the worker lane having read it, which is
+                                        the one thing it cannot mean.
+
+                                        THE FIELD IS NOT RENAMED. ../judge/gate.js
+                                        and ../queue both turn on `=== 'person'`,
+                                        and every judgement already recorded
+                                        carries the old word. What is fixed is the
+                                        sentence a person reads. */}
+                                    <KvRow label="judged by">
+                                        {on.by === 'person'
+                                            ? 'a person, who read it themselves'
+                                            : on.by
+                                                ? 'a machine, on a run'
+                                                : <span className="muted">not recorded</span>}
+                                    </KvRow>
                                     <KvRow label="judge">{on.job || <span className="muted">none</span>}</KvRow>
                                     <KvRow label="told">{on.promptName || on.promptId || <span className="muted">none</span>}</KvRow>
                                     <KvRow label="under">{on.contractName || on.contractId || <span className="muted">no rules</span>}</KvRow>

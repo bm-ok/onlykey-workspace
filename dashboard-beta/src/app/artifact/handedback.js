@@ -191,7 +191,16 @@ module.exports = function handedBack(theme) {
                         yet is a panel reporting on a question nobody asked. */}
                     {pick ? (
                         <Panel>
-                            <CardTitle><Mono>{pick}</Mono></CardTitle>
+                            {/* THE NAME SHOWN ON THE CARD ABOVE, not the one this
+                                asked by. `pick` is the on-disk `<run>--<name>`,
+                                because that is what the read doors resolve
+                                unambiguously — but a heading is for reading, and
+                                somebody who pressed "Read it" on CLAIM.md should
+                                not be shown a different name over the result. */}
+                            <CardTitle><Mono>{
+                                (files.filter(function (f) { return (f.file || f.name) === pick; })[0] || {}).name
+                                    || pick
+                            }</Mono></CardTitle>
                             {body === null
                                 ? <Skeleton rows={3} />
                                 : text
