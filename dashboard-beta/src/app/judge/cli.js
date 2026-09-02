@@ -63,25 +63,46 @@ module.exports = {
             return out.join('\n');
         },
 
+        //WHAT IT HANDED BACK, AND ONLY THAT.
+        //
+        //THIS PRINTED `J4 undefined undefined` FOR ONE COMMIT. It read `reads`,
+        //`state` and `verdict` off the answer, and those left when the action
+        //stopped folding the judgement's own facts in beside the files — they are
+        //`judging`'s to answer now.
+        //
+        //NOTHING FAILED AND NOTHING WAS LOGGED. Reading a missing field off an
+        //object is `undefined`, and `'  ' + undefined` is a string; the only sign
+        //was the word on the line. It is the shape of quiet failure this app's
+        //notes keep returning to, one layer out from a misspelt CSS class.
         judgementFindings: function (said) {
             //ONE FILE IN FULL — which is what a supervisor came for, since this
             //is its only window onto the code.
             if (said.text !== undefined) {
                 return [
-                    '  ' + said.ref + '  ' + said.reads + '   ' + said.file,
+                    '  ' + said.ref + '   ' + said.file
+                        + (said.bytes ? '   ' + Math.round(said.bytes / 1024) + ' KB' : ''),
                     ''
                 ].join('\n') + said.text;
             }
 
             var files = said.files || [];
-            var out = ['  ' + said.ref + '  ' + said.reads
-                + '   ' + said.state + (said.verdict ? ', ' + said.verdict : '')];
+            var out = ['  ' + said.ref + '   ' + files.length + ' file(s)'];
             out.push('');
 
             if (!files.length) out.push('  ' + said.note);
             else {
                 files.forEach(function (f) {
-                    out.push('  ' + fit(f.name, 40) + Math.round((f.bytes || 0) / 1024) + ' KB');
+                    //THE NAME THE JOB WAS TOLD TO WRITE, not the one on disk.
+                    //
+                    //A file is kept as `<run>--<name>` so two runs cannot
+                    //overwrite each other, and this column fits forty characters.
+                    //The run prefix is thirty-four of them, so printing the
+                    //on-disk name gave `job-check-a-claim-20260902211533--CLAI…`
+                    //— everything except the part somebody needs in order to ask
+                    //for it. `judgementFindings --file CLAIM.md` is what the read
+                    //door already accepts.
+                    out.push('  ' + fit(f.name || f.file, 40)
+                        + Math.round((f.bytes || 0) / 1024) + ' KB');
                 });
                 out.push('');
                 out.push('  ' + said.note);

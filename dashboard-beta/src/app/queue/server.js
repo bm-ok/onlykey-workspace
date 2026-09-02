@@ -1556,7 +1556,34 @@ async function plugin(imports, register) {
             run: async function (args) {
                 var a = args || {};
                 var task = await store.get(a.id);
-                var said = await artifacts.read(task.uid, String(a.file || ''));
+
+                //BY THE NAME `taskFiles` PRINTS, WHICH IS NOT THE ONE ON DISK.
+                //
+                //A file is kept as `<run>--<name>`, and the list shows the short
+                //name — the one the job was TOLD to write. Reading matched the
+                //on-disk name only, so `taskFiles` printed `handover.txt` and
+                //`taskFileRead --file handover.txt` answered "there is no file
+                //called that", about a file it had just listed.
+                //
+                //../artifact RESOLVES IT, because the drawer is its and ../judge
+                //wanted the same answer. An exact match always wins; two runs
+                //that both handed back one name are refused rather than guessed
+                //at.
+                var want = String(a.file || '');
+                var found = await artifacts.find(task.uid, want);
+
+                if (!found.one && found.many) {
+                    throw new Error('#' + task.number + ' handed back ' + found.many.length + ' files called "'
+                        + want + '", from different runs. Name the one that is meant: '
+                        + found.many.map(function (f) { return f.file; }).join(', ') + '.');
+                }
+                if (!found.one) {
+                    throw new Error('#' + task.number + ' handed back nothing called "' + want + '". It handed back: '
+                        + (found.handed.map(function (f) { return f.name || f.file; }).join(', ') || 'nothing at all')
+                        + '.');
+                }
+
+                var said = await artifacts.read(task.uid, found.one.file);
                 return Object.assign({}, said, { task: task.id, number: task.number });
             }
         }));

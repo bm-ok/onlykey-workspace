@@ -136,16 +136,29 @@ module.exports = function handedBack(theme) {
                             //card puts the press next to the thing it presses.
                             <Stack>
                                 {files.map(function (f) {
+                                    //TWO NAMES, AND THEY ARE FOR TWO DIFFERENT
+                                    //THINGS. A file is kept as `<run>--<name>`,
+                                    //so `file` is what is on disk and `name` is
+                                    //what the job was told to write.
+                                    //
+                                    //SHOW THE SECOND AND ASK BY THE FIRST. The
+                                    //short name is what somebody recognises; it
+                                    //is also ambiguous when two runs of one piece
+                                    //of work both handed back a CLAIM.md, and the
+                                    //read doors refuse that rather than picking
+                                    //the newer one. The on-disk name never is.
+                                    var shown = f.name || f.file;
+                                    var ask = f.file || f.name;
                                     return (
-                                        <Card key={f.name}>
+                                        <Card key={ask}>
                                             <CardTitle>
-                                                <Mono>{f.name}</Mono>
+                                                <Mono>{shown}</Mono>
                                                 <Badge kind="muted">{Math.round(f.bytes / 1024) + ' KB'}</Badge>
                                             </CardTitle>
                                             <div className="row" style={{ marginTop: '6px' }}>
-                                                <Button kind={f.name == pick ? 'ok' : undefined}
-                                                    onClick={function () { setPick(f.name); }}>
-                                                    {f.name == pick ? 'Reading it' : 'Read it'}
+                                                <Button kind={ask == pick ? 'ok' : undefined}
+                                                    onClick={function () { setPick(ask); }}>
+                                                    {ask == pick ? 'Reading it' : 'Read it'}
                                                 </Button>
                                             </div>
                                         </Card>

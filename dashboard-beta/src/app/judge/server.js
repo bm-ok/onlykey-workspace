@@ -598,8 +598,38 @@ async function plugin(imports, register) {
                     //ends up with two sources for one truth.
                     return {
                         ref: it.ref,
+
+                        //BOTH NAMES, AND IT CARRIED ONLY THE WRONG ONE.
+                        //
+                        //A handed-back file is stored as `<run>--<name>`, so
+                        //`f.file` is `job-check-a-claim-20260902211533--CLAIM.md`
+                        //and `f.name` — off the sidecar — is `CLAIM.md`, which is
+                        //what the job was TOLD to write. This mapped `f.file`
+                        //into `name` and dropped the other.
+                        //
+                        //WHICH MADE THE LIST UNREADABLE AT EXACTLY THE WRONG END.
+                        //The command line fits a name into forty columns and the
+                        //run prefix is thirty-four of them, so it printed
+                        //`job-check-a-claim-20260902211533--CLAI…` — everything
+                        //except the part anybody needs.
+                        //
+                        //AND THE READ DOOR BELOW ALREADY KNEW BETTER. It accepts
+                        //`CLAIM.md`, because "a supervisor did exactly that and
+                        //was refused for naming the file the job was told to
+                        //write" — so the list was hiding the name the reader
+                        //already takes.
+                        //
+                        //`file` IS WHAT TO ASK FOR and `name` is what to show.
+                        //The short name is ambiguous when two runs both handed
+                        //back a CLAIM.md, and the read door refuses that rather
+                        //than guessing; the on-disk name never is.
                         files: handed.map(function (f) {
-                            return { name: f.file, bytes: f.bytes, kept: f.kept || null };
+                            return {
+                                name: f.name || f.file,
+                                file: f.file,
+                                bytes: f.bytes,
+                                kept: f.kept || null
+                            };
                         }),
                         //A RUN THAT CRASHED IS NOT A JUDGE THAT FOUND NOTHING,
                         //and saying so is the whole of this branch. It said "it
@@ -658,10 +688,17 @@ async function plugin(imports, register) {
                 //THE REFUSALS FOR A BINARY AND FOR SOMETHING ENORMOUS ARE
                 //../core/archive'S, and are the right answer to pass straight
                 //through rather than to soften.
+                //THE SAME SHAPE AS THE LIST ABOVE, and it was not for a moment.
+                //The list stopped folding `whose(it)` in and this did not, so one
+                //action answered with the judgement's facts for a file and
+                //without them for the list of files. An action that changes shape
+                //depending on which question you asked it is one nothing can
+                //print without checking both.
                 var body = await artifacts.read(it.uid, one.file);
-                return Object.assign(whose(it), {
+                return {
+                    ref: it.ref,
                     file: one.file, bytes: one.bytes, text: body.text
-                });
+                };
             }
         }));
 

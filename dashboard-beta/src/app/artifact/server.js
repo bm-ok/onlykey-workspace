@@ -138,7 +138,46 @@ async function plugin(imports, register) {
     //THE LANE IS NAMED AT THE TOP OF THE FILE THAT USES IT, which is where
     //somebody reading ../judge or ../queue wants to see it.
     function handedBack(what) {
-        return drawerFor(what);
+        var drawer = drawerFor(what);
+
+        //---- AND THE NAME SOMEBODY WOULD ACTUALLY TYPE ---------------------
+        //
+        //A file is kept as `<run>--<name>`, so two runs of one piece of work
+        //cannot overwrite each other. That prefix is this app's bookkeeping;
+        //asking for "CLAIM.md" is what anybody reading the contract would do,
+        //and what every list in this app SHOWS.
+        //
+        //IT LIVED IN ../judge AND NOWHERE ELSE, which is how `taskFileRead`
+        //came to refuse a name `taskFiles` had just printed. The judge's own
+        //note says a supervisor was "refused for naming the file the job was
+        //told to write"; the task door had the same fault and no such note.
+        //
+        //HERE BECAUSE THE DRAWER IS HERE. Both readers want one answer to "which
+        //file is that", and the second copy was about to be written rather than
+        //shared.
+        //
+        //ONLY WHERE IT IS UNAMBIGUOUS. If two runs both handed back a CLAIM.md
+        //the short name names two things, and refusing is right — it lists them
+        //and asks which, rather than picking the newer and being quietly wrong
+        //about which reading is being read. An EXACT match always wins, so a
+        //caller holding the on-disk name is never sent through the guessing.
+        drawer.find = async function (uid, want) {
+            var asked = String(want == null ? '' : want);
+            var handed = await drawer.list(uid);
+
+            var exact = handed.filter(function (f) { return f.file === asked; })[0];
+            if (exact) return { one: exact, handed: handed, many: null };
+
+            var ends = handed.filter(function (f) {
+                return String(f.file).indexOf('--' + asked) === String(f.file).length - asked.length - 2;
+            });
+            if (ends.length === 1) return { one: ends[0], handed: handed, many: null };
+            if (ends.length > 1) return { one: null, handed: handed, many: ends };
+
+            return { one: null, handed: handed, many: null };
+        };
+
+        return drawer;
     }
 
     //---- AND EVERYTHING, ACROSS THE LANES ---------------------------------
