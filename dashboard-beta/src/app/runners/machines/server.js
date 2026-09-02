@@ -4,6 +4,9 @@ var makeSpeaking = require('./speaking');
 var makeRestoring = require('./restoring');
 var makeAwaiting = require('./awaiting');
 var makeSnapshotting = require('./snapshotting');
+//RULES ABOUT A MACHINE RECORD, asked of the module that owns them — see
+//`keptBackByThem` there for why a rebuild has to know whose a keep-back is.
+var records = require('../../vms/ours/records');
 
 //---- WHO IS FREE, ASKED OF THE ONE PLACE THAT DECIDES -----------------------
 //
@@ -425,7 +428,15 @@ async function plugin(imports, register) {
                 //the record, and undone by rebuilding from the spec. A machine
                 //taken out of the pool on purpose must not quietly rejoin it
                 //because it was made again.
-                var keptBack = was.forTasks === false;
+                //
+                //SOMEBODY, AND NOT THE DIY LANE. That reasoning is a person's:
+                //they decided, and remaking the disk does not unmake the
+                //decision. A keep-back the DIY lane took is the opposite — it
+                //was holding the machine for work that was on the disk being
+                //destroyed here, and carrying it across would keep a machine out
+                //of the pool on behalf of a seat that cannot exist any more.
+                //That is how one stayed out for two days.
+                var keptBack = records.keptBackByThem(was);
 
                 await actions.call('vmRemove', { name: name });
                 var made = await imports.provision.create(spec);

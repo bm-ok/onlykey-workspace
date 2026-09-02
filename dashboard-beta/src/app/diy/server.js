@@ -592,11 +592,21 @@ async function plugin(imports, register) {
                 //machine is at its base snapshot holding nothing, so there is
                 //nothing left to protect.
                 //
-                //ONLY WHAT THIS SEAT TOOK. `keptBack` was written when the press
-                //did it, so a machine somebody kept back themselves on the
-                //Runners tab is still kept back afterwards — undoing that would
-                //be this app overruling a decision it was never asked about.
-                if (it.keptBack) {
+                //ONLY WHAT THIS LANE TOOK. A machine somebody kept back
+                //themselves on the Runners tab is still kept back afterwards —
+                //undoing that would be this app overruling a decision it was
+                //never asked about.
+                //
+                //ASKED OF THE MACHINE, NOT OF THE SEAT. `it.keptBack` was
+                //written on the seat, so the fact died with it: a seat forgotten
+                //or a machine restored by hand left the keep-back standing with
+                //nothing able to undo it, which is how ok-diy1 spent two days
+                //out of a pool it was never in. `keptBackBy` lives on the
+                //machine and outlives every ending.
+                //
+                //THE SEAT'S OWN FLAG IS STILL READ, because seats opened before
+                //this have it and nothing else does.
+                if (it.keptBack || (live && live.keptBackBy === 'diy')) {
                     try {
                         await actions.call('vmForTasks', { name: it.machine, enabled: true });
                         did.push('let the queue have it again');
@@ -743,6 +753,32 @@ async function plugin(imports, register) {
                     }
                 }
 
+                //---- AND WHAT THIS LANE TOOK GOES BACK ---------------------
+                //
+                //FORGETTING IS AN ENDING, and it was the one that leaked. The
+                //refusals above mean the machine is off and clean by the time
+                //this runs, so there is nothing left to protect it for — and
+                //this is the last moment anything knows the machine was DIY's,
+                //because the next line deletes the only record that says so.
+                //
+                //ONLY WHAT DIY TOOK. `keptBackBy` says whose the keep-back is;
+                //a person's is left exactly where they put it.
+                var freed = null;
+                if (it.machine) {
+                    var held = (await liveByName())[it.machine];
+                    if (held && held.keptBackBy === 'diy') {
+                        try {
+                            await actions.call('vmForTasks', { name: it.machine, enabled: true });
+                            freed = it.machine;
+                        } catch (e) {
+                            //NOT WORTH FAILING A FORGET FOR. The seat is going
+                            //either way, and a machine still kept back is
+                            //visible and clearable on Runners.
+                            log.on('diy').warn('could not let the queue have ' + it.machine + ' again: ' + e.message);
+                        }
+                    }
+                }
+
                 await store.forget(a.id);
                 log.on('diy').warn('forgot "' + it.title + '"');
 
@@ -753,8 +789,10 @@ async function plugin(imports, register) {
                 return {
                     id: a.id,
                     forgotten: true,
+                    freed: freed,
                     note: 'Off the list. ' + (it.cut ? '"' + it.cut + '" and anything pushed to it are untouched. ' : '')
-                        + (it.machine ? it.machine + ' is still yours — give it back on Runners if you are done with it.' : '')
+                        + (freed ? freed + ' is back in the pool — this lane was the only thing holding it. ' : '')
+                        + (it.machine && !freed ? it.machine + ' is still yours — give it back on Runners if you are done with it.' : '')
                 };
             }
         }));
@@ -903,7 +941,7 @@ async function plugin(imports, register) {
                 var keptBack = false;
                 if (roles.takesQueuedWork(vm)) {
                     if (vm.forTasks !== false) {
-                        await actions.call('vmForTasks', { name: name, enabled: false });
+                        await actions.call('vmForTasks', { name: name, enabled: false, by: 'diy' });
                         did.push('kept ' + name + ' back from the queue');
                         keptBack = true;
                     }

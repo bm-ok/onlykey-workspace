@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { asRecorded, newRecord, stageOf, STAGES } = require('../../src/app/vms/ours/records');
+const { asRecorded, newRecord, stageOf, STAGES, keptBackByThem } = require('../../src/app/vms/ours/records');
 
 //---------------------------------------------------------------------------
 //what a record is, and where the machine it describes has got to.
@@ -236,4 +236,39 @@ test('and nothing here needs a machine, a disk, or VirtualBox to answer', () => 
     //above be asked without a guest.
     assert.equal(dirty(null), false);
     assert.equal(dirty(undefined), false);
+});
+
+//---------------------------------------------------------------------------
+//WHOSE KEEP-BACK IT IS.
+//
+//`forTasks: false` wore two facts that look identical on the record: a person
+//taking a machine out of the pool, and the DIY lane holding one while somebody
+//sits in it. They are not the same decision, and the place it matters most is
+//`vmRebuild`, which carries a keep-back across on purpose — a person's
+//reasoning exactly ("must not quietly rejoin it because it was made again"),
+//and wrong for a lane whose seat cannot survive the disk being destroyed.
+//
+//ok-diy1 SAT OUT OF THE POOL FOR TWO DAYS that way, held by a seat that no
+//longer existed, on a machine the queue would never have taken anyway.
+//---------------------------------------------------------------------------
+
+test('a keep-back somebody made themselves survives a rebuild', () => {
+    assert.equal(keptBackByThem({ forTasks: false }), true);
+    assert.equal(keptBackByThem({ forTasks: false, keptBackBy: null }), true);
+    //ANYTHING THAT IS NOT THE LANE IS THEIRS. The field says who, and only the
+    //lane writes itself into it.
+    assert.equal(keptBackByThem({ forTasks: false, keptBackBy: 'someone' }), true);
+});
+
+test('one the DIY lane took does not', () => {
+    assert.equal(keptBackByThem({ forTasks: false, keptBackBy: 'diy' }), false);
+});
+
+test('a machine that is not kept back at all is not kept back by anybody', () => {
+    assert.equal(keptBackByThem({}), false);
+    assert.equal(keptBackByThem({ forTasks: true }), false);
+    assert.equal(keptBackByThem(null), false);
+    //AND THE FIELD ALONE IS NOT THE ANSWER: a stale `keptBackBy` on a machine
+    //that is back in the pool says nothing about it.
+    assert.equal(keptBackByThem({ forTasks: true, keptBackBy: 'diy' }), false);
 });

@@ -885,9 +885,25 @@ async function plugin(imports, register) {
         //IT DOES NOT INTERRUPT ANYTHING, and that is said out loud on the answer.
         //Somebody pressing this while a task runs on that machine is asking for
         //it BACK, and would otherwise assume it had been freed at once.
+        //---- AND WHO DECIDED IT, WHICH DECIDES WHO MAY UNDO IT -------------
+        //
+        //TWO DIFFERENT FACTS WORE ONE FIELD. `forTasks: false` meant both "a
+        //person took this machine out of the pool" and "the DIY lane is holding
+        //it while somebody sits in it", and nothing could tell them apart.
+        //
+        //IT COST A MACHINE. The DIY lane's give-back was guarded by a flag on
+        //the SEAT, so when the seat went the fact went with it: ok-diy1 sat out
+        //of the pool for two days, held by nothing, with the Runners button as
+        //the only way out. And a rebuild PRESERVES a keep-back on purpose --
+        //correct for a person's decision, wrong for a lane that no longer holds
+        //the machine.
+        //
+        //SO IT IS WRITTEN ON THE MACHINE AND SAYS WHOSE IT IS. Any ending can
+        //then give back what DIY took, and none of them may touch a keep-back
+        //somebody made themselves.
         undo.push(actions.define('vmForTasks', {
             about: 'Let the queue use this machine, or keep it back for yourself',
-            takes: ['name', 'enabled'],
+            takes: ['name', 'enabled', 'by'],
             run: async function (args) {
                 var a = args || {};
                 var name = String(a.name || '').trim();
@@ -907,7 +923,15 @@ async function plugin(imports, register) {
                     ? (vm.forTasks === false)
                     : !(a.enabled === false || a.enabled === 'false' || a.enabled === 'no' || a.enabled === '0');
 
-                imports.ours.update(name, { forTasks: want });
+                //LETTING GO ALWAYS CLEARS IT, whoever is letting go: once the
+                //machine is back in the pool there is nothing left to hand back.
+                //And a person keeping it back makes it THEIRS, which is why the
+                //default is null rather than "leave what was there".
+                var by = String(a.by || '').trim().toLowerCase();
+                imports.ours.update(name, {
+                    forTasks: want,
+                    keptBackBy: want ? null : (by === 'diy' ? 'diy' : null)
+                });
 
                 var doing = busyAs(await busyNow())[name] || null;
                 imports.log.on('vm', name).info(want ? 'available to the queue' : 'kept back from the queue');

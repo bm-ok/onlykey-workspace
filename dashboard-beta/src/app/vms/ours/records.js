@@ -158,10 +158,32 @@ function dirty(vm) {
     return String(v.dirtySince) > String(v.cleanSince);
 }
 
+//---- WHOSE KEEP-BACK IT IS -------------------------------------------------
+//
+//`forTasks: false` WORE TWO DIFFERENT FACTS. A person taking a machine out of
+//the pool, and the DIY lane holding one while somebody sits in it. They look
+//identical on the record and they are not the same decision: a person's is
+//theirs to undo, and the lane's has to be given back when the lane lets go.
+//
+//THE DIFFERENCE MATTERS MOST WHERE THE MACHINE IS DESTROYED. `vmRebuild`
+//carries a keep-back across on purpose — "a machine taken out of the pool on
+//purpose must not quietly rejoin it because it was made again" — which is a
+//person's reasoning exactly, and wrong for a lane whose seat cannot survive
+//the disk. One machine sat out of the pool for two days that way.
+//
+//SO IT IS ASKED HERE, beside `dirty`, for the same reason that one is: a rule
+//about a record belongs with the record, and everything reading it should get
+//one answer.
+function keptBackByThem(vm) {
+    var v = vm || {};
+    return v.forTasks === false && v.keptBackBy !== 'diy';
+}
+
 module.exports = {
     asRecorded: asRecorded,
     newRecord: newRecord,
     dirty: dirty,
+    keptBackByThem: keptBackByThem,
     stageOf: stageOf,
     STAGES: STAGES
 };

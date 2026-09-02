@@ -84,7 +84,17 @@ async function anApp() {
     //becoming true.
     const stub = (name, fn) => actions.define(name, { about: name, run: async (a) => { called.push(name); return fn ? fn(a || {}) : {}; } });
 
-    stub('vmForTasks', (a) => { vms[a.name].forTasks = false; return { name: a.name }; });
+    //IT SETS WHAT IT WAS ASKED FOR, AND RECORDS WHOSE DECISION IT WAS, both
+    //of which the real one does. This used to write `forTasks = false` whatever
+    //it was told — so "let the queue have it again" left the machine kept back,
+    //and `keptBackBy` did not exist at all. A stand-in that cannot show a
+    //give-back is a stand-in every give-back test passes against.
+    stub('vmForTasks', (a) => {
+        var want = !(a.enabled === false || a.enabled === 'false');
+        vms[a.name].forTasks = want;
+        vms[a.name].keptBackBy = want ? null : (a.by === 'diy' ? 'diy' : null);
+        return { name: a.name, forTasks: want };
+    });
     stub('vmStart', (a) => { vms[a.name].running = true; return { name: a.name }; });
     stub('vmAwait', (a) => { vms[a.name].connected = true; return { name: a.name }; });
     //THE TWO DOORS THAT CHANGE A GUEST'S DISK BOTH STAMP IT, exactly as the
@@ -304,6 +314,98 @@ test('a machine the queue would take IS kept back, and gets given back when it i
 
     assert.ok(called.includes('vmForTasks'),
         'clearing the seat did not give the machine back to the queue: ' + called.join(' | '));
+});
+
+//---------------------------------------------------------------------------
+//AND WHOSE DECISION THE KEEP-BACK WAS, WHICH DECIDES WHO MAY UNDO IT.
+//
+//`forTasks: false` wore two different facts: a person taking a machine out of
+//the pool, and this lane holding one while somebody sits in it. The give-back
+//was guarded by a flag on the SEAT, so when the seat went the fact went with
+//it — ok-diy1 sat out of a pool it was never in for two days, held by nothing,
+//with the Runners button as the only way out.
+//
+//`keptBackBy` lives on the machine and outlives every ending.
+//---------------------------------------------------------------------------
+
+test('the lane says the keep-back is its own, on the machine', async () => {
+    vms = { 'beta-diy1': VM({ tags: ['diy', 'worker'] }) };
+
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+
+    assert.equal(vms['beta-diy1'].forTasks, false);
+    assert.equal(vms['beta-diy1'].keptBackBy, 'diy',
+        'nothing on the machine says this lane took it, so no ending but diyClear can give it back');
+});
+
+test('forgetting a seat gives back what the lane took', async () => {
+    //THE ENDING THAT LEAKED. `diyForget` refuses while the machine is running
+    //or dirty, so by the time it runs there is nothing left to hold it for —
+    //and it is the LAST moment anything knows the machine was this lane's,
+    //because it deletes the only record that said so.
+    vms = { 'beta-diy1': VM({ tags: ['diy', 'worker'] }) };
+
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+    await actions.call('diySleep', { id: it.id, _fromTest: true });
+
+    //ROLLED BACK BY HAND, WHICH IS HOW ok-diy1 GOT THERE: a plain snapshot
+    //restore from the Runners tab, which never goes near `diyClear`. The
+    //machine is clean, the seat is still on the list, and forgetting it is the
+    //last moment anything knows whose the keep-back was.
+    //
+    //`cleanSince`, NOT `dirty`. The register computes dirty from the pair --
+    //see records.dirty -- so writing the answer instead of the fact is a
+    //stand-in disagreeing with the reader every other part of this uses.
+    vms['beta-diy1'].cleanSince = '2026-08-01T00:00:00.000Z';
+
+    const said = await actions.call('diyForget', { id: it.id, _fromTest: true });
+
+    assert.equal(vms['beta-diy1'].forTasks, true, 'the machine was forgotten still held out of the queue');
+    assert.equal(said.freed, 'beta-diy1');
+    assert.match(said.note, /back in the pool/);
+});
+
+test('forgetting leaves a keep-back somebody made themselves', async () => {
+    //NOT THIS APP'S DECISION TO UNDO, and the seat never took it away.
+    vms = { 'beta-diy1': VM({ tags: ['diy', 'worker'], forTasks: false }) };
+
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+    await actions.call('diySleep', { id: it.id, _fromTest: true });
+    vms['beta-diy1'].cleanSince = '2026-08-01T00:00:00.000Z';
+
+    const said = await actions.call('diyForget', { id: it.id, _fromTest: true });
+
+    assert.equal(vms['beta-diy1'].forTasks, false, 'forgetting handed back a machine this lane never took');
+    assert.equal(said.freed, null);
+    assert.match(said.note, /still yours/);
+});
+
+test('a seat opened on a machine this lane already held still gives it back', async () => {
+    //THE SEAT'S OWN FLAG IS FALSE HERE, and that is the point. `diyOpen` only
+    //sets it when the press itself kept the machine back — so a machine this
+    //lane was already holding produces a seat that says it took nothing, and
+    //the old give-back, guarded by that flag, did nothing at all.
+    //
+    //WHAT MAKES IT WORK NOW IS THE MACHINE saying whose the keep-back is.
+    vms = { 'beta-diy1': VM({ tags: ['diy', 'worker'], forTasks: false, keptBackBy: 'diy' }) };
+
+    const actions = await anApp();
+    const it = await start(actions);
+    await actions.call('diyOpen', { id: it.id, machine: 'beta-diy1', signIn: 'diy-b1', _fromTest: true });
+
+    assert.ok(!called.includes('vmForTasks'), 'it kept back a machine that was already kept back');
+
+    await actions.call('diySleep', { id: it.id, _fromTest: true });
+    await actions.call('diyClear', { id: it.id, _fromTest: true });
+
+    assert.equal(vms['beta-diy1'].forTasks, true,
+        'the give-back still depends on the seat, so a machine this lane already held stays out of the pool');
 });
 
 test('a machine somebody kept back themselves is left kept back', async () => {
