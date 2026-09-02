@@ -224,7 +224,19 @@ async function plugin(imports, register) {
                 all.forEach(function (v) { if (v.forTasks === false) held[v.name] = true; });
 
                 var supervisors = all.filter(function (v) { return v.supervisor; });
-                var workers = all.filter(function (v) { return !v.supervisor; });
+                //THE MACHINES THE QUEUE MAY REACH, WHICH IS WHAT THIS REPORT IS
+                //ABOUT — "how many are free to take work". A supervisor was
+                //already dropped here; a DIY machine is out for the same reason
+                //and was not, so this built a `diy` pool with nothing free in it
+                //and a reason saying it needed tagging.
+                //
+                //ASKED OF ../../queue/policy RATHER THAN FILTERED AGAIN HERE.
+                //`availability` now drops both, and taking its answer as the
+                //list — instead of computing a second one and looking each
+                //machine up in it — is what stops the two disagreeing. That is
+                //exactly how this one came to disagree: the supervisor rule was
+                //written twice and the DIY rule reached neither copy.
+                var workers = all.filter(function (v) { return !policy.notForTheQueue(v); });
 
                 var kinds = {};
                 workers.forEach(function (vm) {

@@ -33,8 +33,34 @@ var SUPERVISOR = 'supervisor';
 var JUDGE = 'judge';
 var WORKER = 'worker';
 
+//AND ONE THIS FILE KNOWS ONLY IN ORDER TO LEAVE IT ALONE.
+//
+//A DIY MACHINE IS A PERSON'S SEAT. Nothing here hands it work, ever: the tick
+//must not pick it up, roll it back to base and run a task over the top of
+//somebody's afternoon. ../vms/ours/roles.js owns that rule and says so at
+//`takesQueuedWork`, which stays worker-or-judge on purpose.
+//
+//SO WHY IS THE WORD HERE AT ALL. Because "not one of my three" and "not mine to
+//touch" are different answers and this file could only give the first. A DIY
+//machine has been told what it is for; asking the queue produced "has not been
+//told what it is for — tag it worker or judge", which is both untrue and
+//DANGEROUS ADVICE: following it hands a person's seat to the tick.
+//
+//A supervisor reported that as a host-config fault and offered to fix it — it
+//had been told a third of the machines were idle by misconfiguration, by the app,
+//about a machine doing exactly what it was built to do.
+var DIY = 'diy';
+
 function tagged(vm, want) {
     return ((vm && vm.tags) || []).some(function (t) { return String(t).toLowerCase() === want; });
+}
+
+//WHETHER THIS IS THE QUEUE'S BUSINESS AT ALL, which is a question before every
+//other question in this file. A supervisor and a DIY machine are both out, for
+//different reasons and by the same rule: they have been told what they are for,
+//and it is not this.
+function notForTheQueue(vm) {
+    return tagged(vm, SUPERVISOR) || tagged(vm, DIY);
 }
 
 //WHICH OF THE THREE A MACHINE IS, asked in one place.
@@ -104,6 +130,32 @@ function availability(vms, inFlight) {
         //this one cannot, and reporting it as "kept back" would suggest a button
         //exists.
         if (tagged(v, SUPERVISOR)) return no('is tagged supervisor, so it is never given task work');
+
+        //AND A PERSON'S SEAT, FOR THE SAME REASON AND WITH THE SAME FORCE.
+        //
+        //A DIY MACHINE IS SOMEBODY'S. The tick must not pick it up, roll it back
+        //to base and run a task over the top of their afternoon — which is what
+        //../vms/ours/roles.js says at `takesQueuedWork`, keeping `diy` out of it
+        //on purpose.
+        //
+        //IT SAID SOMETHING ELSE ENTIRELY, AND THE SOMETHING ELSE WAS ADVICE.
+        //This file knows three tags; `diy` is not one of them, so a DIY machine
+        //fell through to the roleless branch below and came back "has not been
+        //told what it is for — tag it worker or judge with vmTags". Untrue: it
+        //has been told. And DANGEROUS, because following it hands a person's
+        //seat to the tick — the exact thing the role exists to prevent, and
+        //something ../runners/guests refuses in as many words.
+        //
+        //A SUPERVISOR READ THAT AND REPORTED IT as a host-config fault worth
+        //fixing: "a third of your machines idle by configuration". It was doing
+        //its job. The app was telling it the wrong thing.
+        //
+        //BEFORE `forTasks`, beside the supervisor and for the same reason: this
+        //is what the machine IS, not a decision somebody can flip, and reporting
+        //it as kept back would suggest a button exists.
+        if (tagged(v, DIY)) {
+            return no('is tagged diy, so it is somebody\'s own machine and the queue leaves it alone');
+        }
 
         //A DECISION, CHECKED BEFORE ANY OF THE FACTS. Somebody has said keep
         //this one back, and that outranks it merely looking idle — which is
@@ -418,6 +470,10 @@ module.exports = {
     plan: plan,
     SUPERVISOR: SUPERVISOR, JUDGE: JUDGE, WORKER: WORKER,
     kindsOf: kindsOf, canBe: canBe, kindSaid: kindSaid,
+    //THE ONE RULE SAYING WHOSE MACHINE THIS IS NOT. ../runners/machines asks it
+    //too, so `pools` and the tick agree about which machines are outside the
+    //queue -- the disagreement that let a DIY box be advertised as idle capacity.
+    notForTheQueue: notForTheQueue,
     availability: availability,
     takes: takes, ofItsOwnKind: ofItsOwnKind,
     order: order, ORDER: ORDER
