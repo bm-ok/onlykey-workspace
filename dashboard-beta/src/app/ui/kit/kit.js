@@ -221,7 +221,7 @@ module.exports = function kit(theme) {
                             <Row>
                                 <Swatch token="running" is="something is happening now" />
                                 <Swatch token="human" is="a person&apos;s press" />
-                                <Swatch token="guarded" is="attached to the old app" />
+                                <Swatch token="relayed" is="attached to the old app" />
                             </Row>
                             <Note>
                                 The same purple, under three names on purpose &mdash; so that changing
@@ -234,8 +234,9 @@ module.exports = function kit(theme) {
                         <Shelf title="The dot" about="a state as a mark, small enough to sit in front of a row">
                             <Row>
                                 <Dot tone="ok" title="working normally" />
-                                <Dot tone="guarded" title="attached to the dashboard being ported from" />
+                                <Dot tone="warn" title="worth reading, and not wrong" />
                                 <Dot tone="fail" title="this window cannot reach its own server" />
+                                <Dot tone="relayed" title="attached to the dashboard being ported from" />
                             </Row>
                             <Note>
                                 Three sizes of news and no words. It is the smallest thing here that
@@ -256,7 +257,7 @@ module.exports = function kit(theme) {
                                 <Mono><Dot tone="ok" title="up" /> ok-runner1</Mono>
                             </Row>
                             <Row>
-                                <Mono><Dot tone="guarded" title="a person is in it" /> ok-diy1</Mono>
+                                <Mono><Dot tone="warn" title="behind, and worth reading" /> ok-diy1</Mono>
                             </Row>
                             <Row>
                                 <Mono><Dot tone="fail" title="cannot be reached" /> ok-super1</Mono>

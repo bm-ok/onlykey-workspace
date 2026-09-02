@@ -85,8 +85,16 @@
      the only thing that makes them legible.
 
      ITS OWN NAME AND NOT `--human`, though the hex is the same, so that changing
-     one of the three meanings cannot silently change the other two. */
-  --guarded: #a371f7;
+     one of the three meanings cannot silently change the other two.
+
+     IT WAS CALLED `--guarded` AND THAT NAMED THE WRONG THING. There was a
+     Settings -> Guards pane once, and the name came from it rather than from
+     what the colour says. The pane is gone and this never was about guarding:
+     it is on while the relay to the old app is up. A name that says what a
+     thing is gets reached for correctly; a name that says what it was gets
+     reached for by meaning, which is how a dot marked `guarded` ended up on a
+     row about a machine somebody was sitting in. */
+  --relayed: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -196,10 +204,16 @@ h2:first-child { margin-top: 0; }
  * everyday state, so it is already green — a dashboard that reads "not quite
  * right" for the entire remainder of a port is a dashboard nobody reads.
  *
- * `guarded` IS THE SCAFFOLDING STILL ATTACHED — see `--guarded` above. Not a
+ * `relayed` IS THE SCAFFOLDING STILL ATTACHED — see `--relayed` above. Not a
  * warning: everything works, and more of it works than in the green case. What
  * it says is that some of what you are looking at is coming from the old app,
- * which is worth knowing before believing it, and which has an end date. */
+ * which is worth knowing before believing it, and which has an end date.
+ *
+ * `warn` IS FOR A ROW RATHER THAN THE CORNER. The three above are the three
+ * things the CORNER can say; a dot in front of a list row is answering about
+ * that row, and the everyday middle answer — worth reading, not wrong — had no
+ * tone at all. Amber, the same amber a badge uses, so one colour means one
+ * thing wherever it is. */
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--fail);
@@ -213,7 +227,7 @@ h2:first-child { margin-top: 0; }
   display: inline-block;
   vertical-align: middle;
 }
-/* THE TONE NAMES ARE CHECKED AGAINST THIS FILE, not invented. `guarded` here
+/* THE TONE NAMES ARE CHECKED AGAINST THIS FILE, not invented. `relayed` here
  * started life as `notice`, which is the BANNER a few rules down — so the dot
  * quietly took `padding: 10px 16px`, `display: flex` and a gap, and drew as a
  * wide purple oval beside two round ones. It cost nothing but a look at it,
@@ -222,7 +236,8 @@ h2:first-child { margin-top: 0; }
  * that was done before naming the tone. `.ok`, `.fail` and `.guarded` exist
  * nowhere else in this file, and that was checked rather than assumed. */
 .dot.ok { background: var(--ok); }
-.dot.guarded { background: var(--guarded); }
+.dot.relayed { background: var(--relayed); }
+.dot.warn { background: var(--warn); }
 .dot.fail { background: var(--fail); }
 
 .tabs { display: flex; gap: 4px; margin-left: auto; }

@@ -471,7 +471,7 @@ async function plugin(imports, register) {
                 // say about it and no state where both are reported at once.
                 dot={!wire
                     ? { tone: 'fail', title: DOT_DEAD }
-                    : (up ? { tone: 'guarded', title: DOT_BOTH } : { tone: 'ok', title: DOT_ALONE })}
+                    : (up ? { tone: 'relayed', title: DOT_BOTH } : { tone: 'ok', title: DOT_ALONE })}
                 tabs={tabs.filter(inRow).map(function (t) {
                     return { name: t.name, badge: badges[t.name], stopped: stopped[t.name] };
                 })}
