@@ -34,13 +34,20 @@ var path = require('path');
 var KEEP = [
     'app',        //started, closing
     'task',       //written, queued, judged, thrown away — and prompts, jobs, contracts
-    //`todo` IS AN ADDITION, and the only one. It is a tag the dashboard's own
-    //code writes under and its KEEP list does not name — so over there a
-    //supervisor putting something on the list, and marking it done, is not kept.
-    //That looks like an oversight rather than a decision: the list exists exactly
-    //because a supervisor may decide something while nobody is awake, which is
-    //the case that comment describes as the one thing nobody typed.
-    'todo',
+    //`memory` IS AN ADDITION, and the only one. It is a tag the dashboard's own
+    //KEEP list does not name — so over there, what a supervisor decided while
+    //nobody was awake is not kept. That looks like an oversight rather than a
+    //decision: the store exists exactly because a supervisor works things out
+    //between wakings, which is the case that comment describes as the one thing
+    //nobody typed.
+    //
+    //AND IT CARRIES MORE WEIGHT HERE THAN THE `todo` TAG IT REPLACES. The todo
+    //list refused deletion down the pipe, so the list itself was the record: a
+    //supervisor could not empty it, which is what made it usable for checking up
+    //on one. A memory is the supervisor's own and it MAY empty it — so this tag
+    //is what is left of that property. Every write and every forget is here, and
+    //what it chose to stop believing stays answerable after the note is gone.
+    'memory',
     'job',        //a job sent to a machine
     'queue',      //picked up, dispatched, adopted, put away
     'vm',         //made, installed, started, stopped, deleted, snapshotted, credentialed

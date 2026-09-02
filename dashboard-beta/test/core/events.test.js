@@ -103,13 +103,18 @@ test('a token does not survive, wherever in the sentence it is', async () => {
 test('a kept act written to the live log lands in the record, and an unkept one does not', async () => {
     const { log, events } = await anApp();
 
-    log.on('todo').good('T1 "a thing" — added by the window');
+    //`memory` IS THE KEPT ONE, and it was `todo` until the supervisor's list
+    //became its memory. The tag carries more weight now than it did: the todo
+    //list refused deletion down the pipe, so the list itself was the record —
+    //a supervisor could not empty it. It MAY empty a memory, so this tag is
+    //what is left of that property.
+    log.on('memory').good('"how the owner likes commits" written down');
     log.on('okc').good('connected to the dashboard');
     log.on('vm', 'runner1', 'channel').info('reading its runs');
 
     const rows = events.all({});
     assert.equal(rows.length, 1, 'the allowlist let something through, or dropped the act');
-    assert.match(rows[0].text, /T1 "a thing"/);
+    assert.match(rows[0].text, /how the owner likes commits/);
 });
 
 test('it survives the process it was written by', async () => {

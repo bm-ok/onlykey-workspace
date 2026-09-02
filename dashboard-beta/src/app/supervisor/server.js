@@ -2,9 +2,9 @@ var fs = require('fs');
 var path = require('path');
 
 var makeGuestApi = require('./guestapi');
-var makeTodos = require('./todos');
+var makeMemory = require('./memory');
 var makeSaid = require('./said');
-var makeCarrying = require('./carrying');
+
 //THE FENCE ITSELF, read by the pane as well as enforced by the door — see
 //`supervisorMay` below for why it is the same call rather than a second list.
 var allowed = require('./allowed');
@@ -13,8 +13,8 @@ var allowed = require('./allowed');
 //THE LIST OF THINGS TO DO, as actions.
 //
 //Written for two callers who are not the same and must not be given the same
-//door. See the head of ./todos.js for what this list is and, more usefully, what
-//it is NOT — it is neither the task board nor the triage notebook.
+//door. See the head of ./memory.js for what a supervisor's memory is and, more
+//usefully, what it is NOT — it is neither the task board nor a list of things to do.
 //
 //A SUPERVISOR MAY WRITE TO IT. That is the point of it existing: a decision taken
 //at 3am that cannot be acted on until somebody is awake has nowhere else to go,
@@ -53,15 +53,17 @@ plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
-    //TWO WAYS IN, AND THE DIFFERENCE IS NOT STYLE. `log` is scoped to 'todo' for
-    //the list below; `say` is UNSCOPED, because `.on` APPENDS.
+    //`say` IS UNSCOPED, because `.on` APPENDS.
     //
     //This file was the todo list once and is now the whole tab, so every
     //supervisor line went out tagged `todo,supervisor,<machine>` — a waking, a
     //turn that did nothing, a machine being started, all filed under a list they
     //have nothing to do with. Found by reading the log of the first real wake,
     //which is the only place it shows.
-    var log = imports.log.on('todo');
+    //
+    //THE SCOPED `log` HAS GONE WITH THE LIST. It existed for the todo actions
+    //and nothing else used it; what the memory writes is said through `say`
+    //under the `memory` tag, beside every other supervisor line.
     var say = imports.log.on;
 
     //`actions` is absent when this half is built against a bare host — the test
@@ -128,7 +130,6 @@ async function plugin(imports, register) {
         };
     }
 
-    var todos = makeTodos(following('todo'));
 
     //THE REGISTER AND THE SIGN-INS, which is what "can it run" is made of. See
     //`supervisorState` below: a supervisor with no credential is not a broken
@@ -145,11 +146,18 @@ async function plugin(imports, register) {
     //a task number, a branch, a cut — do not exist in the next folder along.
     var talk = makeSaid(following('chat'), following('chat-read'), following('chat-from'));
 
-    //AND THE NOTEBOOK, in the same folder's drawer. ./carrying.js argued that a
-    //supervisor's train of thought spans whatever folder it was looking at —
-    //but what it is carrying is lines like "#12 is waiting on a judge", and #12
-    //is a number in one workspace and somebody else's task in the next.
-    var notebook = makeCarrying(following('triage'));
+    //AND WHAT IT KNOWS, in the same folder's drawer. The argument ./memory.js
+    //inherited from the notebook before it: a supervisor's train of thought
+    //spans whatever folder it was looking at — but what it remembers is lines
+    //like "#12 is waiting on a judge", and #12 is a number in one workspace and
+    //somebody else's task in the next.
+    //
+    //`memory` AND NOT `triage`, WHICH IS A NEW DOCUMENT ON PURPOSE. Both stores
+    //were empty when this was written — checked, not assumed — so nothing is
+    //migrated and nothing is lost. A host that did have triage rows keeps its
+    //`triage.json` untouched beside this, readable by hand, rather than being
+    //half-converted into a shape it was never written for.
+    var memory = makeMemory(following('memory'));
 
     //---- WHERE A PROPOSED SKILL WAITS --------------------------------------
     //
@@ -211,14 +219,6 @@ async function plugin(imports, register) {
         decided.write(all);
     }
 
-    //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
-    //are reading the same thing.
-    function board() {
-        var all = todos.all();
-        function counted(s) { return all.filter(function (t) { return t.state === s; }).length; }
-        return { todos: all, open: counted('open'), doing: counted('doing'), done: counted('done') };
-    }
-
     var undo = [];
 
     //---- WHAT IS WAITING ON A PERSON HERE --------------------------------------
@@ -253,74 +253,6 @@ async function plugin(imports, register) {
             }
         }));
     }
-
-    undo.push(actions.define('todos', {
-        about: 'The list of things to do: what is open, what is being done, and what is finished',
-        run: function () {
-            var now = board();
-            return Object.assign({}, now, {
-                states: todos.STATES,
-                note: now.todos.length
-                    ? null
-                    : 'Nothing on the list. todoAdd puts something on it — a line saying what is to be done, and why if the line is not enough on its own.'
-            });
-        }
-    }));
-
-    undo.push(actions.define('todoAdd', {
-        about: 'Put something on the list: what is to be done, and why',
-        takes: ['what', 'why', 'state'],
-        run: function (args) {
-            var a = args || {};
-            var by = actions.whoAsked(a);
-            var one = todos.add(a.what, a.why == null ? null : a.why, a.state || 'open', by);
-            log.good(one.ref + ' "' + one.what + '" — added by ' + by);
-            return Object.assign({}, one, board(), { note: one.ref + ' is on the list.' });
-        }
-    }));
-
-    undo.push(actions.define('todoSet', {
-        about: 'Change something on the list: its wording, its reason, or what state it is in',
-        takes: ['id', 'what', 'why', 'state'],
-        run: function (args) {
-            var a = args || {};
-            var was = todos.get(a.id);
-            if (!was) throw new Error('There is no todo "' + a.id + '". Ask for the list to see what there is.');
-
-            var by = actions.whoAsked(a);
-            var one = todos.edit(a.id, { what: a.what, why: a.why, state: a.state, by: by });
-
-            //SAID ONLY WHEN IT MOVED. Rewording something is not an event worth a
-            //line in the record; finishing it is, and so is picking it up.
-            if (was.state !== one.state) log.good(one.ref + ' "' + one.what + '" — ' + was.state + ' to ' + one.state + ', by ' + by);
-            return Object.assign({}, one, board(), { was: was.state, note: one.ref + ' is ' + one.state + '.' });
-        }
-    }));
-
-    undo.push(actions.define('todoRemove', {
-        about: 'Take something off the list for good. A person, in the window — a supervisor marks things done instead',
-        takes: ['id'],
-        run: function (args) {
-            var a = args || {};
-
-            //THE REFUSAL THAT MAKES THE LIST WORTH READING.
-            //
-            //Everything else here is open to both ends deliberately. This one is
-            //not, because a list that the thing doing the work can empty says
-            //nothing about what the work was — and "it is no longer on the list"
-            //would stop meaning "it was dealt with".
-            if (a._overTheWire) {
-                throw new Error(
-                    'Taking something off the list for good is done in the window, by a person. '
-                    + 'Mark it done instead — done is kept and shown; removed leaves no trace that it was ever there.'
-                );
-            }
-
-            var one = todos.remove(a.id);
-            log.warn(one.ref + ' "' + one.what + '" removed');
-            return Object.assign({}, one, board(), { note: one.ref + ' is gone. It was ' + one.state + '.' });
-        }
-    }));
 
     //---- the conversation --------------------------------------------------
     //
@@ -785,68 +717,110 @@ async function plugin(imports, register) {
         return { kind: 'note', state: null, landed: false, how: null };
     }
 
-    undo.push(actions.define('triage', {
-        about: 'What the supervisor is in the middle of, and which of those things have finished since',
-        takes: ['about'],
+    //=======================================================================
+    //WHAT THE SUPERVISOR KNOWS.
+    //=======================================================================
+    //
+    //THESE REPLACE `triage*` AND `todo*`, and the reason is one observation:
+    //the supervisor was using the TODO LIST as a memory. Not out of confusion —
+    //it was the only store it could put free text in that a person could then
+    //look at. So a list of things TO DO filled up with things that were simply
+    //TRUE.
+    //
+    //IT ALREADY HAD A MEMORY API AND NOBODY COULD SEE IT. `triage` gave it read,
+    //write and delete, all three on ../supervisor/allowed.js. What it had no
+    //pane. The todo list had one. That asymmetry decided where the notes went.
+    //
+    //AND THE TRIAGE SHAPE WAS FOR A DIFFERENT JOB — `state` required, notes
+    //capped at 500 characters, both right for tracking what it was waiting on
+    //and both wrong for a fact. See ./memory.js.
+    //
+    //WHAT IS KEPT IS THE RESOLUTION, which was the best thing about triage: each
+    //entry is looked up against the real stores, so "what I was waiting on" is
+    //answered by the task and judgement records rather than believed. A name
+    //that is not a work item falls through and is left alone — `whereIsIt` was
+    //already written that way, because "anything can be written in this
+    //notebook".
+    undo.push(actions.define('memory', {
+        about: 'What the supervisor knows: what it wrote down, and which of those things have moved since',
+        takes: ['name'],
         run: async function (args) {
             var a = args || {};
-            var want = a.about == null ? null : String(a.about).trim();
+            var want = a.name == null ? null : String(a.name).trim();
 
             var rows = [];
-            var kept = notebook.all().filter(function (r) { return !want || r.about === want; });
+            var kept = memory.all().filter(function (r) { return !want || r.name === want; });
             for (var i = 0; i < kept.length; i++) {
-                rows.push(Object.assign({}, kept[i], { now: await whereIsIt(kept[i].about) }));
+                rows.push(Object.assign({}, kept[i], { now: await whereIsIt(kept[i].name) }));
             }
 
             //WHAT IT WAS WAITING FOR AND IS NOW READY, pulled out rather than
-            //left to be spotted. This is the whole reason the notebook is
-            //resolved against the stores instead of being believed.
+            //left to be spotted. This is the whole reason each row is resolved
+            //against the stores instead of being believed.
+            //
+            //ONLY WHERE A STATE SAYS IT WAS WAITING. Most of what is remembered
+            //is not waiting on anything, and a fact about how somebody likes
+            //their commits does not become "ready" because a task went green.
             var ready = rows.filter(function (r) {
                 return r.now.landed && /wait/i.test(r.state || '');
             });
 
             return {
-                carrying: rows,
+                memory: rows,
                 ready: ready.map(function (r) {
-                    return { about: r.about, was: r.state, now: r.now.how };
+                    return { name: r.name, was: r.state, now: r.now.how };
                 }),
                 note: rows.length
                     ? (ready.length
                         ? ready.length + ' of ' + rows.length + ' finished while you were away — read those '
                             + 'first, then say what you are doing about them.'
-                        : rows.length + ' thing(s) in hand, none of them finished since.')
-                    : 'Nothing in hand. Write one down when you ask for something and will not get the '
-                        + 'answer in this waking.',
-                states: notebook.USUAL
+                        : rows.length + ' thing(s) remembered.')
+                    : 'Nothing remembered yet. memorySet writes something down — a name to look it up by, '
+                        + 'and what you know about it.'
             };
         }
     }));
 
-    undo.push(actions.define('triageSet', {
-        about: 'Write down what you are in the middle of: what it is about, what state it is in, and why',
-        takes: ['about', 'state', 'note'],
+    undo.push(actions.define('memorySet', {
+        about: 'Remember something: a name to look it up by, and what you know. Writing the same name again changes it',
+        takes: ['name', 'note', 'state'],
         run: async function (args) {
             var a = args || {};
-            var row = notebook.set({
-                about: a.about,
-                state: a.state,
+            var said = memory.set({
+                name: a.name,
                 note: a.note,
-                //WHO IS CARRYING IT. Almost always the supervisor, and worth
+                state: a.state,
+                //WHO WROTE IT DOWN. Almost always the supervisor, and worth
                 //recording because a person can write one too — an entry with no
                 //author reads as the app's own opinion, which it never is.
                 by: a._fromMachine || (a._overTheWire ? 'the command line'
                     : a._fromTest ? 'a drill' : 'the window')
             });
 
-            say('supervisor').info('triage: ' + row.about + ' — ' + row.state);
-            return Object.assign({}, row, { now: await whereIsIt(row.about) });
+            //REMEMBERED AND CHANGED ITS MIND ARE DIFFERENT LINES, and the record
+            //is most of what is left of the property the todo list had: a list
+            //the supervisor could not empty was one a person could check up on
+            //it with. It can empty this one, so what it did is in the record
+            //instead. See ../core/events, which keeps the `memory` tag for this.
+            say('memory').on('supervisor').info(said.was
+                ? '"' + said.row.name + '" changed'
+                : '"' + said.row.name + '" written down');
+
+            return Object.assign({}, said.row, {
+                was: said.was ? said.was.note : null,
+                now: await whereIsIt(said.row.name)
+            });
         }
     }));
 
-    undo.push(actions.define('triageForget', {
-        about: 'Stop carrying something. Nothing about the task or judgement itself is touched',
-        takes: ['about'],
-        run: function (args) { return notebook.forget((args || {}).about); }
+    undo.push(actions.define('memoryForget', {
+        about: 'Forget something. Nothing about the task or judgement it named is touched',
+        takes: ['name'],
+        run: function (args) {
+            var gone = memory.forget((args || {}).name);
+            say('memory').on('supervisor').warn('"' + gone.forgotten + '" forgotten');
+            return gone;
+        }
     }));
 
     //---- WHAT HAPPENED WHILE IT WAS AWAY, IN ONE CALL ----------------------
@@ -1998,7 +1972,7 @@ async function plugin(imports, register) {
             };
             proposals.write(all);
 
-            log.on('supervisor').warn('a change to ' + one.title + ' is proposed and waiting on a person'
+            say('supervisor').warn('a change to ' + one.title + ' is proposed and waiting on a person'
                 + (already ? ' (replacing one from ' + already.at + ')' : '') + ' — ' + why.slice(0, 160));
 
             return {
@@ -2081,7 +2055,7 @@ async function plugin(imports, register) {
             //reads exactly like never having asked.
             decide(which, 'approved', it.why, null);
 
-            log.on('supervisor').good('the proposed change to ' + which + ' was approved and is now what is served'
+            say('supervisor').good('the proposed change to ' + which + ' was approved and is now what is served'
                 + ' — it was proposed because: ' + String(it.why).slice(0, 160));
 
             return Object.assign({}, said, {
@@ -2131,7 +2105,7 @@ async function plugin(imports, register) {
                     + ' (you had asked because: ' + String(it.why).slice(0, 200) + ')'
             });
 
-            log.on('supervisor').warn('a proposed change to ' + which + ' was turned down — ' + why.slice(0, 160));
+            say('supervisor').warn('a proposed change to ' + which + ' was turned down — ' + why.slice(0, 160));
 
             return {
                 which: which, rejected: true, why: why, hadAsked: it.why,

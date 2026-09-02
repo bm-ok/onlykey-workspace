@@ -1,6 +1,6 @@
 var React = require('react');
 var makeSkill = require('./skill');
-var makeTodo = require('./todo');
+var makeMemory = require('./memorypane');
 var makeMay = require('./may');
 var makeChat = require('./chat');
 var { useState, useEffect, useRef } = React;
@@ -39,7 +39,7 @@ async function plugin(imports, register) {
 
     shell.tab({ name: 'Supervisor', order: 70 });
     shell.pane({ tab: 'Supervisor', name: 'Chat', order: 10, Component: makeChat(theme, okc, markdown) });
-    shell.pane({ tab: 'Supervisor', name: 'Todo', order: 20, Component: makeTodo(theme, okc, remember) });
+    shell.pane({ tab: 'Supervisor', name: 'Memory', order: 20, Component: makeMemory(theme, okc, remember) });
     shell.pane({ tab: 'Supervisor', name: 'Skill', order: 30, Component: makeSkill(theme, okc, remember) });
     shell.pane({ tab: 'Supervisor', name: 'What it may do', order: 40, Component: makeMay(theme, okc) });
 

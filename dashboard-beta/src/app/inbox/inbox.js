@@ -58,7 +58,7 @@ module.exports = function inbox(theme, okc, remember) {
                 //the wrong key is a pane that opens at the top of its list and
                 //an inbox that looks like it does nothing.
                 var slot = {
-                    Todo: ['todo', 'picked'], 'PR cuts': ['cuts', 'picked'], 'Branches Cut': ['branches', 'picked'],
+                    Memory: ['memory', 'only'], 'PR cuts': ['cuts', 'picked'], 'Branches Cut': ['branches', 'picked'],
                     'Virtual machines': ['machines', 'picked'], Judgement: ['judge', 'picked'],
                     Issues: ['issues', 'picked'], Skill: ['skill', 'which'],
                     //TWO THAT WERE MISSING, FOUND BY PRESSING: a line to retire

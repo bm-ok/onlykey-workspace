@@ -228,7 +228,7 @@ var MAY = {
   judgementQueue: 'put a judgement in the queue — it goes ahead of tasks, because it reads work already waiting',
   judgementUnqueue: 'take a judgement back out of the queue',
 
-  // ---- AND WHAT IT IS IN THE MIDDLE OF ------------------------------------
+  // ---- AND WHAT IT KNOWS --------------------------------------------------
   //
   // A supervisor is woken, reads, decides and stops, carrying one bookmark
   // across. That is enough while a decision finishes inside one waking, and this
@@ -239,32 +239,28 @@ var MAY = {
   // reading the board and guessing, and a guess about "did I already ask for
   // that" is how one judgement gets queued twice.
   //
-  // THE NOTEBOOK HOLDS THE INTENT; THE STORES HOLD THE TRUTH. "triage" resolves
+  // AND NOT ONLY WHAT IT IS WAITING ON. The rest is what is simply TRUE and
+  // exists nowhere else: how the owner likes their commits, which repository not
+  // to touch without asking, a doubt worth raising before recommending anything.
+  // Those went in the TODO LIST until now — a list of things to do, filling with
+  // things that were not to-dos at all, because it was the only free-text store
+  // a supervisor could write and a person could see.
+  //
+  // THE MEMORY HOLDS THE BELIEF; THE STORES HOLD THE TRUTH. `memory` resolves
   // each entry against the records and says which of the things it was waiting
   // on have finished, so "still running" and "the answer is sitting there" stop
-  // looking identical from its own notes.
-  triage: 'what you are in the middle of, and which of those things finished while you were away',
-  triageSet: 'write down what you are waiting on and why, so the next waking knows what you already asked for',
-  triageForget: 'stop carrying something. Nothing about the task or judgement itself is touched',
-
-  // ---- and what there is to DO, which is neither of the above ---------------
+  // looking identical from its own notes. A name that is not a task or a
+  // judgement is left alone.
   //
-  // Triage says where something that already exists has got to. This is for the
-  // things that exist nowhere else: a decision taken at three in the morning
-  // that cannot be acted on until somebody is awake, a doubt worth raising
-  // before recommending anything, a check that needs a person's eyes. Without
-  // somewhere to put those, they go in the conversation and are gone the moment
-  // the conversation is long.
-  //
-  // ADD, CHANGE AND FINISH, AND NOT DELETE. `todoRemove` is deliberately absent
-  // from this list and refuses over the wire besides. "Done" and "gone" are
-  // different claims: done is kept and shown, gone leaves no trace anything was
-  // ever there — and a list the worker can empty is a list nobody can use to
-  // check up on the worker, which is most of why a person opens that tab.
-  todos: 'the list of things to do: what is open, what is being done, what is finished',
-  todoAdd: 'put something on that list — a line saying what is to be done, and why if the line is not enough on its own',
-  todoSet: 'change something on the list, or move it between open, doing and done. Finishing one is how you take it off — you may not delete',
-
+  // IT MAY DELETE, WHICH `todoRemove` DID NOT ALLOW. That refusal was right for
+  // a to-do list — "a list the worker can empty is a list nobody can use to
+  // check up on the worker" — and it is wrong for a memory, which is the
+  // supervisor's own. What is left of the property is the record: every write
+  // and every forget is an event under the `memory` tag, so what it chose to
+  // stop believing is still answerable.
+  memory: 'what you know, and which of the things you were waiting on have finished since',
+  memorySet: 'write something down under a name you will look it up by. The same name again changes it rather than adding a second copy',
+  memoryForget: 'forget something. Nothing about the task or judgement it named is touched',
   // ---- and what it may PROPOSE ---------------------------------------------
   //
   // A supervisor that can only write tasks under definitions somebody else wrote
