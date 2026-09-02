@@ -36,7 +36,7 @@ var makeBoard = require('./board');
 //before it, and wrong about the run that had just lost its work. So this shows
 //what the dashboard now computes and does not try to be clever about it.
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library', 'whatItMayDo'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc, remember, library } = imports;
@@ -86,6 +86,21 @@ async function plugin(imports, register) {
     shell.pane({ tab: 'Worker', name: 'Jobs', order: 30, Component: library('job', 'task') });
     shell.pane({ tab: 'Worker', name: 'Prompts', order: 40, Component: library('prompt', 'task') });
     shell.pane({ tab: 'Worker', name: 'Contracts', order: 50, Component: library('contract', 'task') });
+
+    //---- AND WHAT A RUN OF THIS KIND MAY DO --------------------------------
+    //
+    //THE SAME PANE THE SUPERVISOR HAS HAD ALL ALONG, for the other kind of
+    //machine. It is not a description of the rules: ../permissions hands back
+    //what the doors refuse by, declared by each plugin at its own door.
+    //
+    //`task` IS THE KIND OF RUN, NOT THE TAG ON THE MACHINE. A worker and a
+    //judge are the same disk; what decides a push is the run it is on now.
+    shell.pane({
+        tab: 'Worker', name: 'What it may do', order: 60,
+        Component: imports.whatItMayDo('task',
+            'What a machine running a TASK may do at the doors this host serves. A task delivers on a '
+            + 'branch, so it pushes — and hands files back alongside the commits.')
+    });
 
     await register(null, {});
 }

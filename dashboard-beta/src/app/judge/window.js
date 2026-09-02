@@ -24,7 +24,7 @@ var makeJudgements = require('./judgements');
 //looked" and "somebody looked and would not say" — and half of the ones on this
 //host that said nothing said nothing because they CRASHED.
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library', 'whatItMayDo'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc, remember, library } = imports;
@@ -62,6 +62,19 @@ async function plugin(imports, register) {
     shell.pane({ tab: 'Judge', name: 'Jobs', order: 30, Component: library('job', 'judge') });
     shell.pane({ tab: 'Judge', name: 'Prompts', order: 40, Component: library('prompt', 'judge') });
     shell.pane({ tab: 'Judge', name: 'Contracts', order: 50, Component: library('contract', 'judge') });
+
+    //---- AND WHAT A RUN OF THIS KIND MAY DO --------------------------------
+    //
+    //THE HALF WORTH READING HERE IS THE REFUSAL. A judging machine is set up ON
+    //the branch it is reading, so it looks exactly like a machine that may
+    //push — and the one rule that separates them is declared at the door that
+    //refuses it. See ../permissions.
+    shell.pane({
+        tab: 'Judge', name: 'What it may do', order: 60,
+        Component: imports.whatItMayDo('judgement',
+            'What a machine reading a JUDGEMENT may do at the doors this host serves. It changes nothing '
+            + 'and may not push to what it reads, so what it hands back is everything it has to say.')
+    });
 
     await register(null, {});
 }
