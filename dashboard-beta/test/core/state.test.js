@@ -260,6 +260,16 @@ test('a drawer hides the host\'s half and keeps the workspace\'s', async () => {
     assert.ok(!rules.includes('*'),
         'the drawer ignores everything, which hides the set a workspace is built from');
 
+    //WHAT A WORKER REMEMBERED, which is the biggest thing that lands here and
+    //the one nothing else would catch. `sessions/` is a tar of a machine's
+    //`~/.claude` per branch cut -- every turn it was told, megabytes a task,
+    //made by a machine THIS host lent a credential to. It appears the first
+    //time a worker runs in a workspace, which is exactly when nobody is looking
+    //at the drawer.
+    assert.ok(rules.includes('sessions/'),
+        'the drawer does not hide sessions/, so the first worker run puts a tar of everything '
+        + 'it was told in front of `git add`: ' + rules.join(' | '));
+
     //THE GUARD ITSELF IS TRACKED, or a clone arrives with no guard at all and
     //the first `add -A` there commits the tokens.
     assert.ok(!rules.includes('.gitignore'),

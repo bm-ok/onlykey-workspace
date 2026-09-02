@@ -25,6 +25,12 @@
 //    `cached-github.json` alone runs to megabytes that would land in a diff.
 //  * WHEN THIS HOST LAST LOOKED, and which machine it has open. True of one
 //    computer, meaningless on another.
+//  * WHAT A WORKER REMEMBERED. `sessions/` is a gzipped tar of a machine's
+//    `~/.claude` per branch cut — every turn, every tool call, everything it
+//    was told — made by a machine THIS host lent a credential to. Somebody
+//    else opening the workspace has their own machines and their own runs, and
+//    the folder grows by megabytes a task. Named as a FOLDER because that is
+//    what it is: one directory per key, holding `claude.tgz`.
 //
 //`cached-*` IS A PATTERN AND NOT TWO FILENAMES, because the names are built
 //rather than written: ../cached/server.js does `doc('cached-' + name)`, so
@@ -61,5 +67,10 @@ module.exports = [
     '# When this host last looked, and which machine it has open.',
     'github-arrived.json',
     'diy.json',
+    '',
+    '# What a worker remembered: a tar of a machine\'s ~/.claude per branch cut,',
+    '# made by a machine this host lent a credential to. Megabytes a task, and',
+    '# every turn it was told.',
+    'sessions/',
     ''
 ].join('\n');
