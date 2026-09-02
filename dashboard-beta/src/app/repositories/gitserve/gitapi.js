@@ -62,7 +62,7 @@ module.exports = function gitApi(d) {
     //
     //SO IT THROWS HERE, AT REGISTRATION, where the app will not start rather
     //than at a push where it would quietly wave one through.
-    ['scopeOf', 'whyProtected', 'mayRevise', 'freeEverywhere', 'whatIsOn'].forEach(function (rule) {
+    ['scopeOf', 'whyProtected', 'mayRevise', 'freeEverywhere', 'whatIsOn', 'may'].forEach(function (rule) {
         if (typeof d[rule] !== 'function') {
             throw new Error('the git door was built without "' + rule + '", so it cannot decide who may push. '
                 + 'Every rule it applies is asked of the plugin that owns it — see ./server.js.');
@@ -247,12 +247,19 @@ module.exports = function gitApi(d) {
             return null;
         }
 
-        if (doing && doing.kind === 'judgement') {
-            to.warn(at.name + ' is judging ' + (doing.reads || 'a change') + ' and tried to push to ' + repo);
+        //ASKED, NOT DECIDED. `doing.kind` says what this run IS; ../../
+        //permissions says what a run of that kind may do at this door, and the
+        //plugin that declared it is ./server.js — so this refusal and the
+        //sentence the Judge tab shows are one string rather than two that can
+        //drift apart.
+        var allowed = d.may(doing && doing.kind, 'push');
+        if (!allowed.may) {
+            to.warn(at.name + ' is ' + ((doing && doing.kind) || 'running nothing') + ' and tried to push to ' + repo);
             text(at, 403,
-                'refused: this machine is reading a change, not making one.\n'
-                + 'a judgement may not push to what it judges - hand your findings back as a file instead:\n'
-                + '  okc-artifact <file>\n'
+                'refused: ' + allowed.why + '\n'
+                + (doing && doing.kind === 'judgement'
+                    ? 'hand your findings back as a file instead:\n  okc-artifact <file>\n'
+                    : '')
                 + 'nothing was taken - your commits are still on your own copy.\n');
             return null;
         }

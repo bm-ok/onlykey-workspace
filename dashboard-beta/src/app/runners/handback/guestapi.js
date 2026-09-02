@@ -23,6 +23,9 @@ module.exports = function guestapi(deps) {
     var d = deps || {};
 
     var whatIsOn = d.whatIsOn;      //(machine) -> what it is running, or null
+    //(kind, door) -> { may, why }. Declared in ./server.js beside the code that
+    //refuses by it, so this door and the pane that lists it read one string.
+    var may = d.may;
     var artifacts = d.artifacts;    //keep(uid, name, body, meta)
     var verdictFor = d.verdictFor;  //(judgement, verdict, note) -> recorded
     var say = d.say;                //(who, name, 'guest') -> a logger
@@ -91,6 +94,18 @@ module.exports = function guestapi(deps) {
                 + 'so there is nothing for an artifact to belong to.\n');
         }
 
+        //AND WHETHER A RUN OF THIS KIND MAY HAND ONE BACK AT ALL, asked of
+        //../../permissions rather than assumed. Both kinds may today and the
+        //reasons differ — a task's file sits beside its commits, a judgement's
+        //IS the deliverable because it may not push. A job has no kind and is
+        //let through above.
+        if (doing) {
+            var allowed = may(doing.kind, 'artifact');
+            if (!allowed.may) {
+                return text(at, 403, 'refused: ' + allowed.why + '\n');
+            }
+        }
+
         var bytes;
         try { bytes = await body(at); }
         catch (e) { return text(at, e.tooBig ? 413 : 400, e.message + '\n'); }
@@ -141,9 +156,17 @@ module.exports = function guestapi(deps) {
         }
 
         var doing = await whatIsOn(name);
-        if (!doing || doing.kind !== 'judgement') {
-            return text(at, 409, 'this machine is not reading a judgement, so there is nothing to record a '
+        if (!doing) {
+            return text(at, 409, 'this machine is not running anything, so there is nothing to record a '
                 + 'verdict against.\n');
+        }
+
+        //ASKED, NOT DECIDED. `doing.kind` says what this run is; ./server.js
+        //declared what a run of that kind may do here, and this refuses with
+        //the reason it gave rather than one written twice.
+        var allowedVerdict = may(doing.kind, 'verdict');
+        if (!allowedVerdict.may) {
+            return text(at, 403, 'refused: ' + allowedVerdict.why + '\n');
         }
 
         try {

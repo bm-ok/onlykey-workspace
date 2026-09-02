@@ -14,7 +14,10 @@
 
 var makeGuestApi = require('./guestapi');
 
-plugin.consumes = ['app', 'log', 'archive', 'guestApi', 'whatIsOn', 'judge'];
+plugin.consumes = ['app', 'log', 'archive', 'guestApi', 'whatIsOn', 'judge',
+    //THE RULES THIS DOOR ENFORCES ARE DECLARED THERE, beside the code that
+    //refuses by them. See the `permissions.rule` calls below.
+    'permissions'];
 plugin.provides = [];
 async function plugin(imports, register) {
 
@@ -24,10 +27,45 @@ async function plugin(imports, register) {
     //pane goes on saying nothing arrived.
     var artifacts = imports.archive.store('artifacts');
 
+    //---- WHAT A RUN MAY DO AT THIS DOOR ------------------------------------
+    //
+    //TWO DOORS AND THE SPLIT IS EXACTLY INVERTED FROM THE GIT ONE. A task
+    //pushes and hands files back alongside; a judgement may not push at all, so
+    //what it hands back is not a footnote, it IS the deliverable.
+    var undeclare = [
+        imports.permissions.rule({
+            kind: 'task', door: 'artifact', may: true,
+            at: 'runners/handback/guestapi.js',
+            why: 'a task delivers on its branch, and a file handed back is what it wants read alongside '
+                + 'the commits — a log, a screenshot, the thing that explains the diff.'
+        }),
+        imports.permissions.rule({
+            kind: 'judgement', door: 'artifact', may: true,
+            at: 'runners/handback/guestapi.js',
+            why: 'a judgement changes nothing and may not push, so what it hands back is everything it '
+                + 'has to say. This is the deliverable rather than a footnote to one.'
+        }),
+        imports.permissions.rule({
+            kind: 'task', door: 'verdict', may: false,
+            at: 'runners/handback/guestapi.js',
+            why: 'a verdict is recorded against a judgement, and a task is not reading one — there is '
+                + 'nothing for it to be a verdict about.'
+        }),
+        imports.permissions.rule({
+            kind: 'judgement', door: 'verdict', may: true,
+            at: 'runners/handback/guestapi.js',
+            why: 'saying what it concluded is what a judgement is for. It writes `concluded`, which is '
+                + 'a recommendation; only somebody at the window writes the decision.'
+        })
+    ];
+
     var stopServing = imports.guestApi.api(makeGuestApi({
         whatIsOn: imports.whatIsOn,
         artifacts: artifacts,
         say: imports.log.on,
+        //ASKED OF ../../permissions, so the refusal a machine reads and the
+        //sentence the Worker and Judge tabs show are one string.
+        may: function (kind, door) { return imports.permissions.may(kind, door); },
 
         //THROUGH THE JUDGE'S OWN STORE, so the rules about what a verdict is and
         //when one may be recorded stay in one place — see ../../judge/store.js,
@@ -47,7 +85,7 @@ async function plugin(imports, register) {
     }));
 
     await register(null, {
-        onDestroy: function () { stopServing(); }
+        onDestroy: function () { stopServing(); undeclare.forEach(function (f) { f(); }); }
     });
 }
 module.exports = plugin;
