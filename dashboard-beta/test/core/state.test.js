@@ -270,6 +270,22 @@ test('a drawer hides the host\'s half and keeps the workspace\'s', async () => {
         'the drawer does not hide sessions/, so the first worker run puts a tar of everything '
         + 'it was told in front of `git add`: ' + rules.join(' | '));
 
+    //AND WHAT A RUN HANDED BACK, which is the same omission one folder along and
+    //was found by looking for it after `sessions/`. `artifacts/` is whatever
+    //work PRODUCED -- a built binary, a screenshot, a log carrying command
+    //output -- up to 64 MB a file.
+    //
+    //WORSE THAN A SESSION IN ONE RESPECT. A session is a transcript this host
+    //made; an artifact is a file this host did not choose, written by a worker
+    //deciding for itself what was worth handing over.
+    //
+    //THE FOLDER AND NOT ITS LANES. `artifacts/worker/`, `artifacts/judge/` and
+    //`artifacts/job/` are all under it, and naming three would be three chances
+    //to add a fourth lane and forget.
+    assert.ok(rules.includes('artifacts/'),
+        'the drawer does not hide artifacts/, so the first file a run hands back is staged for '
+        + 'commit -- and what is in one was chosen by a worker: ' + rules.join(' | '));
+
     //THE GUARD ITSELF IS TRACKED, or a clone arrives with no guard at all and
     //the first `add -A` there commits the tokens.
     assert.ok(!rules.includes('.gitignore'),

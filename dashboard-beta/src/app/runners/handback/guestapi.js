@@ -122,7 +122,28 @@ module.exports = function guestapi(deps) {
                     number: doing.item && doing.item.number,
                     title: doing.title || null,
                     //WHAT IT WAS ABOUT, for a judgement: the change it read.
-                    reads: doing.reads || null
+                    reads: doing.reads || null,
+
+                    //AND THE BRANCH CUT IT BELONGS TO, WRITTEN DOWN RATHER THAN
+                    //REACHED FOR.
+                    //
+                    //It was not kept, and the file outlives the record that
+                    //could have answered it. ../../core/archive files these by
+                    //uid and reads them back from the DIRECTORY rather than from
+                    //whatever points at it — deliberately, so a file whose task
+                    //was thrown away is still findable. The cost was that such a
+                    //file's cut became unanswerable at the same moment: nothing
+                    //on this host could say what line it had been delivering on.
+                    //
+                    //A JUDGEMENT'S IS `reads` AND A TASK'S IS `branch`, and they
+                    //are not the same fact — one is the change being read, the
+                    //other is where work lands — so both are kept and neither is
+                    //made to stand in for the other.
+                    //
+                    //../../worker/sessions DOES NOT NEED THIS because its key IS
+                    //the cut: `worker--cut--<branch>`. This drawer is keyed by
+                    //uid, so the cut has to be carried.
+                    branch: (doing.item && doing.item.branch) || null
                 }
                 : { run: job };
 

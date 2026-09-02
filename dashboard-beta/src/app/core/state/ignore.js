@@ -31,6 +31,16 @@
 //    else opening the workspace has their own machines and their own runs, and
 //    the folder grows by megabytes a task. Named as a FOLDER because that is
 //    what it is: one directory per key, holding `claude.tgz`.
+//  * WHAT A RUN HANDED BACK. `artifacts/` is whatever work PRODUCED and gave to
+//    this host — a built binary, a screenshot, a log with command output in it.
+//    It is capped at 64 MB a file and at nothing in total, and what is in one
+//    was chosen by a worker rather than by anybody here. A FOLDER, so the lanes
+//    under it — worker, judge, job — are covered without naming three.
+//
+//    THE SAME OMISSION AS `sessions/`, FOUND THE SAME WAY: both are invisible
+//    until real work runs, and by then they are already staged. This one is
+//    worse in one respect — a session is a transcript this host made, an
+//    artifact is a file this host did not choose.
 //
 //`cached-*` IS A PATTERN AND NOT TWO FILENAMES, because the names are built
 //rather than written: ../cached/server.js does `doc('cached-' + name)`, so
@@ -72,5 +82,10 @@ module.exports = [
     '# made by a machine this host lent a credential to. Megabytes a task, and',
     '# every turn it was told.',
     'sessions/',
+    '',
+    '# What a run handed back: a built binary, a screenshot, a log with command',
+    '# output in it. Chosen by a worker rather than by anybody here, up to 64 MB',
+    '# a file. A folder, so worker/, judge/ and job/ are all covered.',
+    'artifacts/',
     ''
 ].join('\n');
