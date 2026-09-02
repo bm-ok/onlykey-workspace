@@ -15,7 +15,7 @@ module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Toggle, Views, Linky, Plus, Cog, Dot, Finder, Sorter, Form, Field, Skeleton, Notice, Banner, Link, Spec,
+        Button, Toggle, Views, Linky, Plus, Cog, Dot, Swatch, Finder, Sorter, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Diff, Term, ask
     } = theme;
 
@@ -103,7 +103,7 @@ module.exports = function kit(theme) {
                     <Toggle on={lend} onChange={setLend} protect>Lend this machine out</Toggle>
                 </Row>
                 <Note>
-                    Guarded, and purple means here what it means everywhere: a person&apos;s. It is an
+                    Purple means here what it means everywhere: a person&apos;s. It is an
                     <Mono>input</Mono> underneath, so <Mono>windowControls</Mono> reports its label, its
                     kind and which way it is set &mdash; a switch the driver can READ rather than one it
                     flips blind. A protected one withholds its value by the same rule that withholds a
@@ -152,11 +152,12 @@ module.exports = function kit(theme) {
                     alone rather than being a piece.
 
                     The middle is the small vocabulary: marks, controls, fields,
-                    and the sentences the app says. `The gate` sits directly above
-                    `Guarded` because they are one idea in two halves — the gate
-                    is what opens before an act that cannot be taken back, purple
-                    is what says the act is a person's — and reading them apart
-                    made each look like a detail of something else.
+                    and the sentences the app says. `The gate` and the purple
+                    marks are one idea in two halves — the gate is what opens
+                    before an act that cannot be taken back, purple is what says
+                    the act is a person's — so the purple controls sit with the
+                    ordinary ones of their own kind, and `Colors` says what the
+                    colour means once for all of them.
 
                     The wide one is arrangements and surfaces: how a pane is laid
                     out, and the three things that show somebody else's bytes.
@@ -191,6 +192,98 @@ module.exports = function kit(theme) {
                     </Col>
 
                     <Col>
+                        <Shelf title="Colors" about="every colour the theme has a name for, shown as itself">
+                            <Row>
+                                <Swatch token="bg" is="the page" />
+                                <Swatch token="panel" is="a panel on it" />
+                                <Swatch token="panel-2" is="a panel inside one" />
+                                <Swatch token="line" is="every border" />
+                            </Row>
+                            <Row>
+                                <Swatch token="text" is="what is written" />
+                                <Swatch token="muted" is="said quieter" />
+                                <Swatch token="accent" is="a link, a chosen row" />
+                            </Row>
+
+                            {/* THE THREE THAT ANSWER &ldquo;HOW IS IT DOING&rdquo;. */}
+                            <Row>
+                                <Swatch token="ok" is="it worked" />
+                                <Swatch token="warn" is="worth reading" />
+                                <Swatch token="fail" is="it did not" />
+                            </Row>
+                            <Note>
+                                Green, amber and red are the only three that answer <em>how is it
+                                doing</em>. Everything else on this shelf is furniture, and purple
+                                answers a different question entirely.
+                            </Note>
+
+                            {/* AND THE THREE THAT ARE ONE HEX. */}
+                            <Row>
+                                <Swatch token="running" is="something is happening now" />
+                                <Swatch token="human" is="a person&apos;s press" />
+                                <Swatch token="guarded" is="attached to the old app" />
+                            </Row>
+                            <Note>
+                                The same purple, under three names on purpose &mdash; so that changing
+                                one of the three meanings cannot silently change the other two. It does
+                                not say <em>how is it doing</em>; it says <em>is this yours</em>. The
+                                test for a fourth one is never &ldquo;is it important&rdquo;, because
+                                everything on a dashboard is important to somebody.
+                            </Note>
+                        </Shelf>
+                        <Shelf title="The dot" about="a state as a mark, small enough to sit in front of a row">
+                            <Row>
+                                <Dot tone="ok" title="working normally" />
+                                <Dot tone="guarded" title="attached to the dashboard being ported from" />
+                                <Dot tone="fail" title="this window cannot reach its own server" />
+                            </Row>
+                            <Note>
+                                Three sizes of news and no words. It is the smallest thing here that
+                                says anything, which is why it can go where a badge cannot.
+                            </Note>
+
+                            {/* IN FRONT OF A ROW, WHICH IS WHAT IT IS FOR AS
+                                MUCH AS THE CORNER. A badge needs a word and a
+                                place to put it; a dot needs neither, so a list
+                                can carry one per row without the rows growing.
+
+                                IT DID NOT USED TO SIZE HERE. `.dot` is a span
+                                with a width, and width does nothing to an
+                                inline one -- in the corner it sizes only
+                                because the topbar is a flex row. In front of a
+                                line of text it collapsed to nothing. */}
+                            <Row>
+                                <Mono><Dot tone="ok" title="up" /> ok-runner1</Mono>
+                            </Row>
+                            <Row>
+                                <Mono><Dot tone="guarded" title="a person is in it" /> ok-diy1</Mono>
+                            </Row>
+                            <Row>
+                                <Mono><Dot tone="fail" title="cannot be reached" /> ok-super1</Mono>
+                            </Row>
+                            <Note>
+                                One per row, read down the left. A badge says which state in a word and
+                                costs a word&apos;s width; this says it in eight pixels, so a long list
+                                can carry it without every row growing to fit.
+                            </Note>
+
+                            {/* AND THE CORNER, WHICH IS THE ONE USE THAT IS NOT
+                                ABOUT A ROW. */}
+                            <Note>
+                                In the corner of every screen it is about the whole app rather than a
+                                row. Green is this app answering everything itself, which is what the
+                                port is FOR. Red is this window unable to reach its own server, the only
+                                one that means something is wrong here.
+                            </Note>
+                            <Note>
+                                Purple there is the odd one: it is on while this app is still attached
+                                to the dashboard being ported from, and that app is the one thing
+                                nothing in this repository may write to. So it is not a status &mdash;
+                                nothing is wrong, and MORE works in this state than in the green one.
+                                It is the same warning a purple button carries, said about the whole
+                                screen at once. It goes away for good when that stops being true.
+                            </Note>
+                        </Shelf>
                         <Shelf title="Badges" about="a state, in one word">
                             <Badges>
                                 <Badge kind="ok">ok</Badge>
@@ -208,6 +301,39 @@ module.exports = function kit(theme) {
                                 <Button kind="danger">Destroy</Button>
                                 <Button disabled title="this is why">Not yet</Button>
                             </Row>
+
+                            {/* AND THE ONE THAT IS A PERSON&apos;S. Purple is
+                                the one colour that means this is yours: the
+                                point of these is that somebody read what it is
+                                about and decided, so ../../core/drive will not
+                                press one. */}
+                            <Row>
+                                <Button protect>Merge it</Button>
+                                <Button protect kind="danger">Send it</Button>
+                                <Button protect disabled title="nothing to send">Send it</Button>
+                            </Row>
+                            <Note>
+                                Refused from the command line even with testing mode on &mdash; testing
+                                mode says the window may be driven, not that every press in it may be a
+                                model&apos;s.
+                            </Note>
+
+                            {/* THE SAME MARK ON A PHRASE, for a sentence that
+                                ends in a repair. The trouble banner is a list of
+                                sentences and a button planted at the end of one
+                                reads as chrome the sentence is wrapped around &mdash;
+                                so the weight changes and nothing else does. */}
+                            <Row>
+                                <Linky protect>Take it back</Linky>
+                                <Linky>Read them</Linky>
+                            </Row>
+                            <Note>
+                                A person&apos;s on the left, ordinary on the right. Both are buttons
+                                underneath, so both answer to <Mono>windowControls</Mono> and to the
+                                keyboard, and the purple one is refused the same way the purple buttons
+                                above are. Use it where the act belongs to a sentence rather than to a
+                                row of controls.
+                            </Note>
                         </Shelf>
                         <Shelf title="Two views of one subject"
                             about="inside a pane — the row above picks the subject, this picks the question">
@@ -294,70 +420,6 @@ module.exports = function kit(theme) {
                             them are together, and a purple thing that is not
                             catalogued here makes the sentence above false
                             without making anything fail. */}
-                        <Shelf title="Guarded" about="purple is the one colour that means: this is yours, not a model's">
-                            <Row>
-                                <Button protect>Merge it</Button>
-                                <Button protect kind="danger">Send it</Button>
-                                <Button protect disabled title="nothing to send">Send it</Button>
-                            </Row>
-                            <Note>
-                                A guarded button is refused from the command line even with testing mode
-                                on — testing mode says the window may be driven, not that every press in
-                                it may be a model&apos;s.
-                            </Note>
-
-                            {/* THE SAME GUARD ON A PHRASE, for a sentence that
-                                ends in a repair. The trouble banner is a list of
-                                sentences and a button planted at the end of one
-                                reads as chrome the sentence is wrapped around —
-                                so the weight changes and nothing else does. */}
-                            <Row>
-                                <Linky protect>Take it back</Linky>
-                                <Linky>Read them</Linky>
-                            </Row>
-                            <Note>
-                                Guarded on the left, ordinary on the right. Both are buttons underneath,
-                                so both answer to <Mono>windowControls</Mono> and to the keyboard; the
-                                purple one is refused the same way the purple buttons above are. Use it
-                                where the act belongs to a sentence rather than to a row of controls.
-                            </Note>
-                            <Form>
-                                <Field f={{ name: 'tok', label: 'A guarded field', protect: true, placeholder: 'typed here and nowhere else', hint: 'neither read nor written from outside — a value written is a value known, so writing is a way of learning that does not look like reading' }} value="" onChange={function () { }} />
-                            </Form>
-                            <Note>
-                                It still appears in <Mono>windowControls</Mono> with its label and whether
-                                anything is in it. &ldquo;Is the token set&rdquo; has to be answerable, and
-                                it is not the secret.
-                            </Note>
-
-                            {/* THE FOURTH MARK, AND THE ONLY ONE THAT IS NOT A
-                                CONTROL. It is in the corner of every screen,
-                                which is why it is a piece rather than markup
-                                buried in the topbar — this shelf is where the
-                                purple things are counted. */}
-                            <Row>
-                                <Dot tone="ok" title="working normally" />
-                                <Dot tone="guarded" title="attached to the dashboard being ported from" />
-                                <Dot tone="fail" title="this window cannot reach its own server" />
-                            </Row>
-                            <Note>
-                                The dot in the corner, at its three sizes of news. Green is working
-                                normally &mdash; this app answering everything itself, which is what the
-                                port is FOR. Red is this window unable to reach its own server, the only
-                                one that means something is wrong here.
-                            </Note>
-                            <Note>
-                                Purple is the odd one and it belongs on this shelf rather than beside the
-                                badges: it is on while this app is still attached to the dashboard being
-                                ported from, and that app is the one thing nothing in this repository may
-                                write to. So it is not a status &mdash; nothing is wrong, and MORE works
-                                in this state than in the green one. It is the same warning the buttons
-                                above carry, said about the whole screen at once: while it is purple, some
-                                of what you are looking at is not this app&apos;s, and reaching for it
-                                reaches somewhere out of bounds. It goes away for good when that stops
-                                being true.
-                            </Note>
-                        </Shelf>
                         <Shelf title="Nothing here" about="and nothing here that should not be — two different sentences">
                             <Empty>No line names a branch that is not already a default.</Empty>
                             <Empty bad>No repository here has a default branch, which should not be possible.</Empty>
@@ -380,12 +442,24 @@ module.exports = function kit(theme) {
                                     find all of them.
 
                                     IT IS `--fail` AND NOT PURPLE. Purple means
-                                    "this is the person's and a model may not
-                                    use it"; spending it on a required mark would
-                                    make the Guarded shelf's sentence false. */}
+                                    "this is the person's"; spending it on a
+                                    required mark would make that untrue of
+                                    every other purple thing on this pane. */}
                                 <Field f={{ name: 'e', label: 'One the door refuses without', needed: true, placeholder: 'a red star, not a colour change', hint: 'a real character in a real span — a pseudo-element would be invisible to windowControls, which reads labels to say what is on screen' }} value="" onChange={function () { }} />
                                 <Field f={{ name: 'd', type: 'checkbox', label: 'A tick', hint: 'its label goes beside it, not over it' }} value={false} onChange={function () { }} />
+                                {/* AND A PERSON&apos;S, WHICH IS THE ONE THAT
+                                    WITHHOLDS ITS VALUE. The other purple marks
+                                    refuse a press; this refuses a read as well,
+                                    because a value written is a value known and
+                                    writing is a way of learning that does not
+                                    look like reading. */}
+                                <Field f={{ name: 'tok', label: 'A field that is yours', protect: true, placeholder: 'typed here and nowhere else', hint: 'neither read nor written from outside — a value written is a value known, so writing is a way of learning that does not look like reading' }} value="" onChange={function () { }} />
                             </Form>
+                            <Note>
+                                It still appears in <Mono>windowControls</Mono> with its label and whether
+                                anything is in it. &ldquo;Is the token set&rdquo; has to be answerable, and
+                                it is not the secret.
+                            </Note>
                         </Shelf>
                         <Shelf title="Waiting" about="a shape, not the word loading — it holds the layout still">
                             <Skeleton rows={2} sample />

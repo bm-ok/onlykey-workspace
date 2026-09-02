@@ -89,6 +89,22 @@ function Badge({ children, kind, title }) {
 }
 function Badges({ children }) { return <div className="badges">{children}</div>; }
 
+//A COLOUR OF THE THEME, SHOWN AS ITSELF.
+//
+//`token` IS THE NAME WITHOUT THE DASHES, so the swatch reads the same variable
+//a stylesheet rule would and cannot drift from it. Naming the hex here instead
+//would make this a second copy of the palette, and a catalogue that can be
+//wrong about what it is cataloguing is worse than none.
+function Swatch({ token, is }) {
+    return (
+        <span className="swatch">
+            <b style={{ background: 'var(--' + token + ')' }} />
+            {'--' + token}
+            <span>{is}</span>
+        </span>
+    );
+}
+
 //The counts above a list, and a filter when they are pressable. `b` inside is
 //the number, dimmed — the word is what is being counted and reads first.
 function Chips({ children }) { return <div className="chips">{children}</div>; }
@@ -561,7 +577,7 @@ function KvSub({ children }) { return <div className="sub muted">{children}</div
 module.exports = {
     useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted, Quoted,
-    Badge, Badges, Chips, Chip, Views,
+    Badge, Badges, Swatch, Chips, Chip, Views,
     Button, Toggle, Plus, Cog, Finder, Sorter, Form, HeadRow, Controls,
     Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, KvSub, Part, PartWhy, Group, Head, Act, ago, openOut, setOpener
 };
