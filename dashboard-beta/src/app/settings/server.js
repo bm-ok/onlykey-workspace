@@ -174,26 +174,6 @@ var DEFAULTS = {
     //verdict. APPROVE from this host's token is this host's owner approving.
     githubReviewDirect: false,
 
-    //WHETHER THE QUEUE COMES UP RUNNING, and it is off until somebody says
-    //otherwise.
-    //
-    //ON MEANS: every time this app starts, it begins handing queued work to free
-    //machines without being asked — rolling one back to its base snapshot,
-    //handing it a credential, and running instructions on it unattended.
-    //
-    //WHAT MAKES THAT SAFE IS NOT THIS SETTING, and it is worth being exact about
-    //where the safety actually is. Nothing can be waiting in that queue that was
-    //not built from a job, a prompt and a contract somebody READ AND APPROVED,
-    //and approving is refused over the wire — ../library/server.js says it: "a
-    //model may write one and may not ratify its own." The gate is on the work.
-    //This only decides whether somebody has to press the same button again after
-    //every restart, and a `main.js` edit is a restart.
-    //
-    //IT IS AN ORDINARY SETTING, not one of ATTHEWINDOW below, and that follows
-    //from the same sentence. Guarding it would be the second gate all over
-    //again, one level further out.
-    queueAutoStart: false,
-
     //WHICH SIGN-IN THE SUPERVISOR USES, by name, until somebody switches it.
     //
     //A supervisor holds one identity for as long as it is up, and this host can
@@ -386,7 +366,7 @@ async function plugin(imports, register) {
     //machine and its keyring, and it is the same fact whichever folder is open.
     var FOLLOWS_THE_FOLDER = [
         'testsEnabled', 'testsFor', 'testsAsked', 'testsSandbox',
-        'supervisorWakes', 'watchGitHub', 'queueAutoStart',
+        'supervisorWakes', 'watchGitHub',
         'githubTrusted', 'githubMarker',
         'githubReplyDirect', 'githubCloseDirect', 'githubReviewDirect'
     ];

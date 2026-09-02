@@ -508,7 +508,7 @@ test('a switch armed in one folder is off in the next, and comes back on returni
     const { settings, go } = await anApp();
 
     await settings.write({
-        watchGitHub: true, supervisorWakes: true, queueAutoStart: true,
+        watchGitHub: true, supervisorWakes: true,
         githubReplyDirect: true, githubMarker: 'okc', githubTrusted: ['bmatusiak']
     });
     const armed = await settings.read();
@@ -519,7 +519,6 @@ test('a switch armed in one folder is off in the next, and comes back on returni
     const fresh = await settings.read();
     assert.equal(fresh.watchGitHub, false, 'the new folder arrived watching GitHub');
     assert.equal(fresh.supervisorWakes, false, 'the new folder arrived able to wake a supervisor');
-    assert.equal(fresh.queueAutoStart, false);
     assert.equal(fresh.githubReplyDirect, false, 'the new folder arrived sending replies nobody reads');
     assert.equal(fresh.githubMarker, '', 'a marker set for another project made its comments requests here');
     assert.deepEqual(fresh.githubTrusted, [], 'a trusted list decided elsewhere applied here');

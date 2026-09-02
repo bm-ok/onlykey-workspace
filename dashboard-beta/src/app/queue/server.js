@@ -183,11 +183,24 @@ async function plugin(imports, register) {
     //generic scheduler, where every other job had to be read as "not that one".
     //That is gone with it, and cron is a scheduler again.
     //
-    //SO WHETHER IT COMES UP RUNNING IS A SETTING, off until somebody says
-    //otherwise — see `queueAutoStart` in ../settings/server.js for what turning
-    //it on is a statement of. It is read HERE, once, at registration: ./
-    //../core/cron only honours `autoStart` for a job it has not seen before, so
-    //a save cannot restart a queue somebody stopped on purpose.
+    //SO IT COMES UP RUNNING, LIKE `github-watch` BELOW AND EVERY OTHER TIMER
+    //THIS APP HAS. That was a setting for a while — `queueAutoStart`, off until
+    //somebody said otherwise — and the setting was the same mistake as the guard
+    //before it, one step quieter: a host whose whole job is handing work to
+    //machines came up not doing it, and the only sign was work sitting still.
+    //
+    //THE SWITCH ANSWERED A QUESTION NOBODY HAS TWICE. Somebody who does not want
+    //work given out stops the queue, or does not queue any; wanting it off
+    //PERMANENTLY, across every restart, is not a state this app was ever left
+    //in — it was left on, and the switch existed to undo a default nobody
+    //wanted.
+    //
+    //STOPPING IT STILL WORKS, AND SURVIVES A SAVE, which is the property that
+    //made a setting look necessary and does not need one. ../core/cron honours
+    //`autoStart` only for a job it has not seen before, and this half is rebuilt
+    //on every save while the job is not — so a save cannot restart a queue
+    //somebody stopped on purpose. Only starting the app does that, which is what
+    //starting the app should mean.
     var cron = imports.cron;
     var JOB = 'queue';
 
@@ -200,18 +213,11 @@ async function plugin(imports, register) {
     //`run` reports itself unarmed rather than pretending — see `armed` below,
     //which the board draws.
     //
-    //`autoStart` READ THROUGH A try, because a settings document that cannot be
-    //read must not be the thing that stops the queue existing. Off is the
-    //answer that needs no explanation.
-    var autoStart = false;
-    try { autoStart = (await imports.settings.read()).queueAutoStart === true; }
-    catch (e) { autoStart = false; }
-
     cron.add({
         name: JOB,
         every: TICK,
         about: 'Gives waiting work to free machines on this host',
-        autoStart: autoStart
+        autoStart: true
     });
 
     //ASKED OF THE JOB EACH TIME RATHER THAN REMEMBERED. This half is rebuilt on
@@ -1618,14 +1624,6 @@ async function plugin(imports, register) {
             run: async function () {
                 unreachable = [];
 
-                //READ UP HERE BECAUSE IT IS A QUESTION ABOUT THE OPEN FOLDER
-                //NOW. The switch followed the workspace, so answering it means
-                //resolving which one is open — which cannot be done in the
-                //middle of building an object literal.
-                var willAutoStart = false;
-                try { willAutoStart = (await imports.settings.read()).queueAutoStart === true; }
-                catch (e) { willAutoStart = false; }
-
                 var machines = await relayed('vmList');
                 var vms = (machines && machines.vms) || [];
 
@@ -1759,22 +1757,15 @@ async function plugin(imports, register) {
                     every: (TICK / 1000) + 's',
                     tickHere: clock.armed(),
 
-                    //---- AND WHETHER IT WILL COME UP RUNNING NEXT TIME -------
+                    //`autoStart` IS NOT ON THIS ANSWER ANY MORE, because it is no
+                    //longer a question. The queue comes up running, always — see
+                    //the argument at `cron.add` above. What is left is `ticking`,
+                    //which is what is happening NOW, and that was always the half
+                    //somebody actually wanted.
                     //
-                    //READ FRESH RATHER THAN REPORTING THE `autoStart` THE JOB
-                    //WAS REGISTERED WITH, and the difference is the whole reason
-                    //this is on the answer. The job takes its copy once, at
-                    //registration; the setting can be changed after that. A
-                    //board reporting the job's copy would say "off" to somebody
-                    //who had just switched it on, which reads as the switch not
-                    //working.
-                    //
-                    //SO THESE ARE TWO FACTS AND BOTH ARE SHOWN: `autoStart` is
-                    //what will happen NEXT time, and `ticking` is what is
-                    //happening now. Switching it on does not start the queue —
-                    //there is a Start for that, and conflating them would make
-                    //one press mean two things.
-                    autoStart: willAutoStart,
+                    //A READER THAT STILL ASKS FOR IT GETS `undefined` RATHER THAN
+                    //`false`, and that is the honest answer: false would mean "it
+                    //will not come up running", which is not true of any host.
 
                     //AND WHAT COULD NOT BE READ, NAMED. An empty board with this
                     //list on it is a different sentence from an empty board
@@ -1881,8 +1872,10 @@ async function plugin(imports, register) {
     //
     //LAST, DELIBERATELY. Everything above is a declaration; this is the line
     //after which this host can give a real machine real work. Arming is not
-    //starting: whether it comes up running is `queueAutoStart`, read where the
-    //job is registered at the top of this file.
+    //starting, and the two stay apart: a job with no `run` reports itself
+    //unarmed rather than pretending. Whether it comes up RUNNING is decided
+    //where the job is registered at the top of this file, and the answer is
+    //always yes.
     //
     //ADOPTION FIRST, ON EVERY TICK BEFORE THE FIRST DISPATCH. A restart can
     //leave a task in `given` with no run and a machine still holding one, and

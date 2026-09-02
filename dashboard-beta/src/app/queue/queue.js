@@ -1,7 +1,7 @@
 var React = require('react');
 
 module.exports = function queue(theme, okc, shell) {
-    var { Pane, Panel, Badge, Button, Empty, Note, Mono, Linky, Row, Toggle, Skeleton,
+    var { Pane, Panel, Badge, Button, Empty, Note, Mono, Linky, Row, Skeleton,
         Stack, Card, CardTitle, CardSub } = theme;
 
     //---- whether any of this is going to happen -----------------------------
@@ -23,29 +23,21 @@ module.exports = function queue(theme, okc, shell) {
     //gate is on the WORK: nothing is waiting below that was not built from a
     //job, a prompt and a contract somebody approved, and approving is what
     //refuses over the wire. See ./server.js.
-    //---- and whether it will come up running next time ----------------------
+    //---- THERE IS NO "START IT NEXT TIME" SWITCH, AND THERE WAS ------------
     //
-    //THE SWITCH LIVES HERE AND NOT ON THE CRON PANE, which is where somebody
-    //pressing Start actually is. That pane draws every job the same way and
-    //takes no view on any of them — putting one job's setting on it is how a
-    //guard belonging to the queue ended up in the generic scheduler in the first
-    //place, which is the thing that was just taken back out.
+    //`Start the queue when the app starts` was a Toggle here, over
+    //`queueAutoStart`. It is gone and the queue always comes up running, like
+    //every other timer this app has — see the argument at `cron.add` in
+    //./server.js.
     //
-    //IT DOES NOT START THE QUEUE. Two facts, kept apart: this is what happens
-    //NEXT time the app starts, and the note above is what is happening now. One
-    //press meaning both is a press whose effect depends on when it was made.
-    function AutoStart({ state, again }) {
-        return (
-            <Row>
-                <Toggle
-                    on={!!state.autoStart}
-                    onChange={function (on) {
-                        okc.call('settingSet', { name: 'queueAutoStart', value: on ? 'true' : 'false' })
-                            .then(function () { if (again) again(); });
-                    }}>Start the queue when the app starts</Toggle>
-            </Row>
-        );
-    }
+    //WHAT IT COST WAS A PAGE THAT LOOKED FINE. A host whose whole job is handing
+    //work to machines came up not doing it, and the only sign was work sitting
+    //still — which looks exactly like no machine being free.
+    //
+    //AND IT PUT TWO CLOCKS ON ONE SCREEN. This switch was what happens NEXT
+    //time; the note above it is what is happening NOW. Two nearly identical
+    //sentences a line apart, and the one somebody read first decided what they
+    //believed. One of them is enough, and it is the one about now.
 
     function Standing({ state }) {
         var waiting = (state.waiting || []).length;
@@ -75,15 +67,13 @@ module.exports = function queue(theme, okc, shell) {
                         //something to lose by not reading it.
                         ? waiting + ' waiting, ' + free + ' machine(s) free, and none of it moves until it is started. '
                         : 'Nothing is waiting, so nothing is being missed. ')
-                    //AND WHY IT IS STOPPED, WHICH IS THE ACTIONABLE HALF. "It
-                    //came up this way" and "somebody stopped it" call for
-                    //different things — and with the switch below on, the second
-                    //is the only explanation left, so saying the first would send
-                    //somebody to a setting that is already the way they want it.
-                    + (state.autoStart
-                        ? 'It is set to start with the app, so something stopped it after that — a press, or a '
-                            + 'restart since the setting was changed. '
-                        : 'It comes up this way, and an app restart is enough to do it. ')}
+                    //AND WHY IT IS STOPPED, WHICH IS THE ACTIONABLE HALF — and
+                    //there is only one answer now. The queue comes up running on
+                    //every start, so a stopped one was stopped by somebody or by
+                    //something asking on their behalf. "It came up this way" used
+                    //to be the other possibility and no longer is.
+                    + 'It comes up running on every start, so something stopped it after that — a press, or '
+                    + 'a call to queueStop. '}
                 <Linky onClick={function () { shell.go('Settings', 'Cron'); }}>Start it under Settings, Cron</Linky>
             </Note>
         );
@@ -232,7 +222,6 @@ module.exports = function queue(theme, okc, shell) {
                 {said ? <Note kind={said.bad ? 'bad' : 'ok'}>{said.text}</Note> : null}
 
                 <Standing state={state} />
-                <AutoStart state={state} again={again} />
 
                 <div className="cols">
                     <div className="col">

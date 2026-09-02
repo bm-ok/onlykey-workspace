@@ -44,8 +44,12 @@ module.exports = function workspace(theme, okc) {
                     said: s.watchGitHub ? 'yes — issues and pull requests here are swept every five minutes' : 'no' },
                 { what: 'Supervisor may wake itself', on: s.supervisorWakes === true,
                     said: s.supervisorWakes ? 'yes — it starts a machine and spends tokens on its own' : 'no' },
-                { what: 'Queue starts by itself', on: s.queueAutoStart === true,
-                    said: s.queueAutoStart ? 'yes' : 'no' },
+                //NO "Queue starts by itself" ROW, because it is no longer a
+                //thing about this workspace that could be otherwise. The queue
+                //comes up running on every host — see `cron.add` in
+                //../queue/server.js. A row that reads "yes" on every machine
+                //there will ever be is a row nobody can learn anything from, and
+                //this list is what is ARMED HERE as against somewhere else.
                 { what: 'Whose word counts', on: (s.githubTrusted || []).length > 0,
                     said: (s.githubTrusted || []).length
                         ? (s.githubTrusted || []).map(function (x) { return x && x.login ? x.login : x; }).join(', ')

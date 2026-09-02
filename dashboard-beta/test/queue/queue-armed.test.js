@@ -178,40 +178,55 @@ test('and the clock is given the tick, rather than being left unarmed', async ()
         'the job is registered and unarmed — the board would draw a switch that does nothing');
 });
 
-test('it comes up stopped unless the setting says otherwise', async () => {
+test('it comes up running, like every other timer this app has', async () => {
     //IT USED TO COME UP STOPPED WITH NO SETTING THAT COULD CHANGE IT, and only a
-    //person could start it. Both are gone: the gate is on the WORK, not on the
-    //clock — nothing is waiting in this queue that was not built from a job, a
-    //prompt and a contract somebody approved, and approving is what refuses over
-    //the wire. A second gate on the timer meant the queue stopped dead on every
-    //restart, and a main.js edit IS a restart.
+    //person could start it. Then it was a setting, `queueAutoStart`, off by
+    //default. Both are gone, and for one reason: the gate is on the WORK, not on
+    //the clock — nothing is waiting in this queue that was not built from a job,
+    //a prompt and a contract somebody approved, and approving is what refuses a
+    //machine. A gate on the timer as well meant a host whose whole job is handing
+    //work to machines came up not doing it.
     //
-    //OFF IS STILL THE DEFAULT, which is the half worth keeping: a host nobody
-    //has said anything about does not begin handing out work.
+    //THE SETTING WAS THE QUIETER VERSION OF THE SAME FAULT. Nothing on the page
+    //said the tick was off; work simply sat still, which looks exactly like no
+    //machine being free.
     await aQueue();
-    assert.equal(jobs.queue.autoStart, false, 'the queue started itself with nobody having asked');
+    assert.equal(jobs.queue.autoStart, true,
+        'the queue does not come up running, so a restart leaves this host holding work it will not give out');
 });
 
-test('and it reads that setting rather than deciding for itself', async () => {
-    await aQueue({ settings: { read: () => ({ queueAutoStart: true }) } });
-    assert.equal(jobs.queue.autoStart, true, 'queueAutoStart was on and the queue ignored it');
-});
+test('and no settings read decides it, however the document reads', async () => {
+    //THE SETTING IS NOT CONSULTED AT ALL ANY MORE, and this asserts that rather
+    //than trusting the line above: a document still carrying the old key, or one
+    //that throws, must reach the same answer. It used to be read through a `try`
+    //for exactly the second case.
+    await aQueue({ settings: { read: () => ({ queueAutoStart: false }) } });
+    assert.equal(jobs.queue.autoStart, true, 'a stale queueAutoStart still decides whether the queue runs');
 
-test('a settings document that cannot be read leaves it off', async () => {
-    //OFF IS THE ANSWER THAT NEEDS NO EXPLANATION. A settings read that throws
-    //must not be the thing that stops the queue existing, and it must not be the
-    //thing that starts it either.
     await aQueue({ settings: { read: () => { throw new Error('no document'); } } });
-    assert.equal(jobs.queue.autoStart, false);
+    assert.equal(jobs.queue.autoStart, true,
+        'a settings document that will not read stops the queue coming up — the queue no longer asks it anything');
 });
 
-test('only true turns it on, not a string that looks like it', async () => {
-    //THE COMMAND LINE HAS NO TYPES. ../../src/app/settings/server.js coerces on
-    //the way in, and this is the check on the reading end — the same shape as
-    //the live defect its header describes, where the STRING "false" was stored
-    //and was truthy.
-    await aQueue({ settings: { read: () => ({ queueAutoStart: 'false' }) } });
-    assert.equal(jobs.queue.autoStart, false);
+test('stopping it still survives a save, which is what the setting was protecting', async () => {
+    //THE PROPERTY THAT MADE A SETTING LOOK NECESSARY, and it never came from the
+    //setting. ../../src/app/core/cron honours `autoStart` only for a job it has
+    //NOT SEEN BEFORE, and this half is rebuilt on every save while the job is
+    //not — so a save cannot restart a queue somebody stopped on purpose. Only
+    //starting the app does that.
+    //
+    //ASSERTED THROUGH THE SAME `cron.add` THE APP CALLS, so what is checked is
+    //what the scheduler is told rather than what this file believes about it.
+    await aQueue();
+    const first = jobs.queue;
+    assert.equal(first.autoStart, true);
+
+    //A SECOND REGISTRATION IS WHAT A SAVE IS. The job carries `autoStart: true`
+    //again; whether that RESTARTS anything is cron's to decide, and it decides
+    //no for a name it already holds.
+    await aQueue();
+    assert.equal(jobs.queue.autoStart, true,
+        'the queue asks for a different thing on a save than it does on a start');
 });
 
 //---- and it owns both ends of the board ---------------------------------------
