@@ -63,6 +63,41 @@ function compose(bits) {
                 text: (mine ? 'replied on ' : (asked ? 'tagged on ' : 'commented on ')) + key + ': "' + short(c.text != null ? c.text : c.body, 140) + '"'
             });
         });
+
+        //---- AND WHATEVER POINTED AT IT FROM SOMEWHERE ELSE ----------------
+        //
+        //ALWAYS COMING IN, and from outside this issue by definition: a
+        //cross-reference is another issue or pull request — often in a
+        //repository nobody here works in — saying that this one is relevant to
+        //it. That is the same kind of arrival as a comment and belongs in the
+        //same column.
+        //
+        //ONLY THIS DIRECTION EXISTS. GitHub records who cited this and never
+        //what this cited, so there is no matching `dir: 'out'` moment to write
+        //— see `citedBy` in ../repos/server.js for the measurement.
+        (issue.citedBy || []).forEach(function (c) {
+            var it = c.on + '#' + c.number;
+            add({
+                at: c.at, kind: 'github', dir: 'in', who: c.by, ref: it, url: c.url,
+                text: (c.kind === 'pull' ? 'pull request ' : 'issue ') + it + ' referenced ' + key
+                    + (c.title ? ' — "' + short(c.title, 80) + '"' : '')
+            });
+        });
+
+        //---- AND WHAT IT POINTED AT, WHICH HAD TO BE FOUND BACKWARDS -------
+        //
+        //GOING OUT, because this issue is the one that did it. There is no
+        //event on this issue saying so — the caller worked it out by asking the
+        //other end who cited IT — so this is the one moment here assembled from
+        //somebody else's timeline rather than read off this one.
+        (b.cites || []).forEach(function (c) {
+            var it = c.on + '#' + c.number;
+            add({
+                at: c.at, kind: 'github', dir: 'out', who: null, ref: it, url: c.url,
+                text: key + ' referenced ' + (c.kind === 'pull' ? 'pull request ' : 'issue ') + it
+                    + (c.title ? ' — "' + short(c.title, 80) + '"' : '')
+            });
+        });
     }
 
     //---- the branch, cut for it --------------------------------------------

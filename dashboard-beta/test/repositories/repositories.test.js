@@ -1706,6 +1706,106 @@ test('the story of an issue gathers the branch cut for it, its task, and the thr
     for (let i = 1; i < said.entries.length; i++) assert.ok(said.entries[i - 1].at >= said.entries[i].at);
 });
 
+//---------------------------------------------------------------------------
+//AND WHAT AN ISSUE POINTED AT, FOUND BACKWARDS.
+//
+//There is no field for it and no event on the issue that does the linking, so
+//it is worked out from the other end: every issue this workspace reads is
+//asked who cited IT, and one that names this issue is something this issue
+//referenced. No prose is read anywhere.
+//
+//ITS HORIZON IS THE POINT AND IS ASSERTED BELOW. It can only find links to
+//issues in repositories this workspace reads; a link to somebody else's
+//project — the ordinary case for a fork — is invisible to it.
+//---------------------------------------------------------------------------
+
+function aStoryApp(answers) {
+    return anApp(answers, undefined, undefined, WAKING).then(function (app) {
+        ['branchBoard', 'tasks', 'judging', 'prCuts'].forEach(function (n) {
+            app.actions.define(n, { about: 'a stand-in', run: async () => ({ branches: [], tasks: [], judgements: [], cuts: [] }) });
+        });
+        app.actions.define('events', { about: 'a stand-in', run: async () => ({ events: [] }) });
+        app.actions.define('githubHeld', { about: 'a stand-in', run: async () => ({ login: 'bmatusiak' }) });
+        return app;
+    });
+}
+
+test('an issue that cited another one says so, found from the other end', async () => {
+    const answers = Object.assign({}, REPO_OK, {
+        //TWO ISSUES THIS WORKSPACE READS, so there is somebody to ask.
+        '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7), ISSUE_ROW(9)] },
+        '/repos/anowner/arepo/issues/9': { status: 200, body: ISSUE_ROW(9, { body: 'see the other', html_url: 'u9', state: 'open', labels: [], created_at: '2026-08-28T06:00:00Z' }) },
+        '/repos/anowner/arepo/issues/9/comments': { status: 200, body: [] },
+        //NOTHING CITED #9 ITSELF.
+        '/repos/anowner/arepo/issues/9/timeline': { status: 200, body: [] },
+        //AND #7 CARRIES THE EVENT, because #9 is what linked to it.
+        '/repos/anowner/arepo/issues/7/timeline': {
+            status: 200,
+            body: [{
+                event: 'cross-referenced', created_at: '2026-08-28T06:00:05Z',
+                source: { issue: { number: 9, repository: { full_name: 'anowner/arepo' } } }
+            }]
+        }
+    });
+
+    const { actions } = await aStoryApp(answers);
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const said = await actions.call('issueStory', { on: 'anowner/arepo', number: 9 });
+    assert.deepEqual(said.cites.map((c) => c.on + '#' + c.number), ['anowner/arepo#7']);
+    assert.deepEqual(said.citedBy, [], 'nothing cited this one');
+
+    const out = said.entries.filter((e) => e.ref === 'anowner/arepo#7')[0];
+    assert.ok(out, 'the link it made is not in the story');
+    assert.equal(out.dir, 'out');
+    assert.match(out.text, /^anowner\/arepo#9 referenced issue anowner\/arepo#7/);
+});
+
+test('a cross-reference from a different issue is not mistaken for this one', async () => {
+    //THE MATCH IS ON BOTH HALVES. Two forks in a chain both have a #9, so the
+    //number alone names nothing — the repository has to agree too.
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7), ISSUE_ROW(9)] },
+        '/repos/anowner/arepo/issues/9': { status: 200, body: ISSUE_ROW(9, { html_url: 'u9', state: 'open', labels: [], created_at: '2026-08-28T06:00:00Z' }) },
+        '/repos/anowner/arepo/issues/9/comments': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/9/timeline': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/7/timeline': {
+            status: 200,
+            body: [{
+                event: 'cross-referenced', created_at: '2026-08-28T06:00:05Z',
+                //THE SAME NUMBER, SOMEWHERE ELSE ENTIRELY.
+                source: { issue: { number: 9, repository: { full_name: 'someone/else' } } }
+            }]
+        }
+    });
+
+    const { actions } = await aStoryApp(answers);
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const said = await actions.call('issueStory', { on: 'anowner/arepo', number: 9 });
+    assert.deepEqual(said.cites, [], 'it claimed a link made by an issue in another repository');
+});
+
+test('a link to a repository this workspace does not read is invisible, and that is the horizon', async () => {
+    //THE LIMIT, ASSERTED RATHER THAN LEFT TO BE DISCOVERED. This is the real
+    //case for a fork: the issue points at somebody else's project, GitHub
+    //records it on THEIR issue, and this workspace never reads that repository.
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(9)] },
+        '/repos/anowner/arepo/issues/9': { status: 200, body: ISSUE_ROW(9, { body: 'https://github.com/far/away/issues/42', html_url: 'u9', state: 'open', labels: [], created_at: '2026-08-28T06:00:00Z' }) },
+        '/repos/anowner/arepo/issues/9/comments': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/9/timeline': { status: 200, body: [] }
+    });
+
+    const { actions, asked } = await aStoryApp(answers);
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const said = await actions.call('issueStory', { on: 'anowner/arepo', number: 9 });
+    assert.deepEqual(said.cites, [], 'it found a link it has no way of knowing about');
+    assert.ok(!asked.some((a) => /far\/away/.test(a)),
+        'it went to a repository this workspace does not read — which would mean it had parsed the body');
+});
+
 test('a pull request reads whole through issueRead, and says it is one', async () => {
     const answers = Object.assign({}, REPO_OK, {
         '/repos/anowner/arepo/issues/5': {
@@ -1727,6 +1827,114 @@ test('a pull request reads whole through issueRead, and says it is one', async (
     assert.match(got.conversation, /okc-pull-5/);
     assert.match(got.conversation, /the pull request as it was opened/);
     assert.ok(!asked.some((a) => /sub_issues/.test(a)), 'it went looking for sub-issues under a pull request');
+});
+
+//---------------------------------------------------------------------------
+//WHAT REFERENCED AN ISSUE.
+//
+//GitHub keeps one half of a link. Paste a link to issue B into issue A and it
+//writes a `cross-referenced` event on B naming A, and writes nothing on A —
+//measured on a real pair, where the far end carried the event within the same
+//second the issue was opened and this end's timeline was empty.
+//
+//AND IT IS NOT ON `/comments`. That is the reason none of this was visible: an
+//issue could have its whole thread read here with no sign that anything
+//pointed at it, because the two are different endpoints.
+//---------------------------------------------------------------------------
+
+const CITED = (extra) => Object.assign({}, REPO_OK, {
+    '/repos/anowner/arepo/issues/9': {
+        status: 200,
+        body: { number: 9, title: 'is this fixed?', body: 'asking', state: 'open', html_url: 'u', labels: [],
+            user: { login: 'bmatusiak', type: 'User' }, created_at: '2026-08-28T06:00:00Z' }
+    },
+    '/repos/anowner/arepo/issues/9/comments': { status: 200, body: [] }
+}, extra || {});
+
+const XREF = (src) => ({ event: 'cross-referenced', created_at: '2026-08-28T09:00:00Z', source: { type: 'issue', issue: src } });
+
+test('an issue says what referenced it, from the timeline', async () => {
+    const { actions } = await anApp(CITED({
+        '/repos/anowner/arepo/issues/9/timeline': {
+            status: 200,
+            body: [
+                { event: 'commented', created_at: '2026-08-28T07:00:00Z' },
+                XREF({
+                    number: 42, title: 'the far end', state: 'open', html_url: 'fu',
+                    user: { login: 'somebody' },
+                    //A CROSS-REFERENCE MAY COME FROM ANYWHERE, which is the
+                    //point of it — so the repository is on the source and must
+                    //not be assumed to be this one.
+                    repository: { full_name: 'far/away' }
+                })
+            ]
+        }
+    }), undefined, undefined, WAKING);
+
+    const got = await actions.call('issueRead', { on: 'anowner/arepo', number: 9 });
+    assert.deepEqual(got.citedBy, [{
+        on: 'far/away', number: 42, kind: 'issue', title: 'the far end',
+        state: 'open', url: 'fu', by: 'somebody', at: '2026-08-28T09:00:00Z'
+    }]);
+    assert.equal(got.citedPartly, null);
+});
+
+test('a pull request that cites it is marked as one', async () => {
+    const { actions } = await anApp(CITED({
+        '/repos/anowner/arepo/issues/9/timeline': {
+            status: 200,
+            body: [XREF({ number: 3, title: 'fix it', html_url: 'pu', user: { login: 'dev' },
+                repository: { full_name: 'o/b' }, pull_request: { html_url: 'pu' } })]
+        }
+    }), undefined, undefined, WAKING);
+
+    const got = await actions.call('issueRead', { on: 'anowner/arepo', number: 9 });
+    assert.equal(got.citedBy[0].kind, 'pull');
+});
+
+test('one issue citing it twice is one fact, kept at the earlier time', async () => {
+    //An edit, or a second mention in a reply, is the same issue pointing at
+    //this one — not two moments in its story.
+    const { actions } = await anApp(CITED({
+        '/repos/anowner/arepo/issues/9/timeline': {
+            status: 200,
+            body: [
+                XREF({ number: 42, title: 'the far end', html_url: 'fu', repository: { full_name: 'far/away' } }),
+                { event: 'cross-referenced', created_at: '2026-08-29T09:00:00Z',
+                    source: { issue: { number: 42, title: 'the far end', html_url: 'fu', repository: { full_name: 'far/away' } } } }
+            ]
+        }
+    }), undefined, undefined, WAKING);
+
+    const got = await actions.call('issueRead', { on: 'anowner/arepo', number: 9 });
+    assert.equal(got.citedBy.length, 1);
+    assert.equal(got.citedBy[0].at, '2026-08-28T09:00:00Z', 'it kept the later mention rather than when the link was made');
+});
+
+test('a timeline of nothing but other events reads as nothing cited', async () => {
+    const { actions } = await anApp(CITED({
+        '/repos/anowner/arepo/issues/9/timeline': {
+            status: 200,
+            body: [{ event: 'labeled', created_at: '2026-08-28T07:00:00Z' }, { event: 'closed', created_at: '2026-08-28T08:00:00Z' }]
+        }
+    }), undefined, undefined, WAKING);
+
+    const got = await actions.call('issueRead', { on: 'anowner/arepo', number: 9 });
+    assert.deepEqual(got.citedBy, []);
+});
+
+test('a timeline that will not read is said, and the issue still reads', async () => {
+    //THE THREAD IS THE POINT AND THIS IS NOT. An issue whose timeline is
+    //refused must still hand back its words, with the gap named — the same
+    //rule the replies follow one field up.
+    const { actions } = await anApp(CITED({
+        '/repos/anowner/arepo/issues/9/timeline': { status: 403, body: { message: 'no' } }
+    }), undefined, undefined, WAKING);
+
+    const got = await actions.call('issueRead', { on: 'anowner/arepo', number: 9 });
+    assert.deepEqual(got.citedBy, []);
+    assert.match(got.citedPartly, /could not be read/);
+    assert.equal(got.title, 'is this fixed?', 'a refused timeline took the issue with it');
 });
 
 test('what arrived is recorded before the note is filed, so a sweep cut short between them is not lost', async () => {

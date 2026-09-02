@@ -2196,9 +2196,67 @@ async function plugin(imports, register) {
                 var events = (((await relayedTo('events', { limit: 3000 })) || {}).events || []);
                 var held = (await relayedTo('githubHeld')) || {};
 
+                //---- AND WHAT THIS ISSUE POINTED AT, FROM THE OTHER END ----
+                //
+                //GITHUB KEEPS ONE HALF OF A LINK. `citedBy` on the issue is who
+                //pointed HERE; there is no field anywhere for what this pointed
+                //at, because linking out leaves no trace on the issue that does
+                //it. The only other place the fact exists is the body text, and
+                //reading prose to find links is not what this does.
+                //
+                //SO IT IS FOUND BACKWARDS. Every issue this workspace reads is
+                //asked who cited IT, and any that names this one is something
+                //this one referenced. Pure data, no parsing — and its horizon is
+                //exact and worth stating: it can only ever find links to issues
+                //in repositories this workspace reads. A link to somebody
+                //else's project, which is the ordinary case for a fork, is
+                //invisible to it and always will be.
+                //
+                //ONE CONDITIONAL REQUEST EACH, which is what makes this
+                //affordable on a pane polled every fifteen seconds: ../../github
+                //sends `If-None-Match` and GitHub does not charge a 304 against
+                //the hourly quota. The first sweep pays; the rest cost a header.
+                var cites = [];
+                var citesPartly = null;
+                var CAP = 25;
+
+                //FROM THE LAST SWEEP, NOT FROM GITHUB. `issues` answers out of
+                //what `repositoriesCheck` gathered, so choosing who to ask costs
+                //nothing.
+                var known = (((await actions.call('issues', {})) || {}).issues) || [];
+                var mine = known.filter(function (y) {
+                    return !(y.on === on && Number(y.number) === number);
+                });
+                if (mine.length > CAP) {
+                    citesPartly = 'looked at ' + CAP + ' of ' + mine.length + ' issues this workspace reads';
+                    mine = mine.slice(0, CAP);
+                }
+
+                for (var ci = 0; ci < mine.length; ci++) {
+                    var y = mine[ci];
+                    var yb = String(y.on || '').split('/');
+                    if (yb.length !== 2) continue;
+                    var yt = await github.all('/repos/' + yb[0] + '/' + yb[1] + '/issues/' + y.number + '/timeline');
+                    if (!yt.ok || !Array.isArray(yt.items)) continue;
+                    for (var ei = 0; ei < yt.items.length; ei++) {
+                        var ev = yt.items[ei];
+                        if (!ev || ev.event !== 'cross-referenced') continue;
+                        var from = ev.source && ev.source.issue;
+                        if (!from || Number(from.number) !== number) continue;
+                        var lived = (from.repository && from.repository.full_name) || null;
+                        if (lived !== on) continue;
+                        cites.push({
+                            on: y.on, number: y.number, kind: y.kind === 'pull' ? 'pull' : 'issue',
+                            title: y.title || null, url: y.url || null, at: ev.created_at || null
+                        });
+                        break;
+                    }
+                }
+
                 var entries = storyOf.compose({
                     issue: issue, note: branches.length ? branches[0].note : null, cuts: cuts,
-                    tasks: tasks, judgements: judgements, events: events, hostLogin: held.login || null
+                    tasks: tasks, judgements: judgements, events: events, hostLogin: held.login || null,
+                    cites: cites
                 });
                 //EVERY BRANCH CUT FOR IT, not only the first: the composer
                 //takes one note; the rest are told here.
@@ -2209,6 +2267,13 @@ async function plugin(imports, register) {
                 entries.sort(function (x, y) { return String(y.at).localeCompare(String(x.at)); });
                 return {
                     on: on, number: number, key: key, branches: names, entries: entries,
+                    //WHAT THIS FOUND AND WHAT IT CANNOT: said on the answer,
+                    //because "nothing referenced" and "nothing this could see
+                    //referenced" are different facts and only one of them is
+                    //about the issue.
+                    cites: cites,
+                    citesPartly: citesPartly,
+                    citedBy: issue.citedBy || [],
                     note: entries.length
                         ? entries.length + ' moment(s), newest first. The last one is where it started.'
                         : 'Nothing is recorded about ' + key + ' beyond the thread.'
@@ -2349,6 +2414,69 @@ async function plugin(imports, register) {
                     partly = 'the replies could not be read: ' + ((replies && (replies.why || replies.status)) || 'no answer');
                 }
 
+                //---- WHAT REFERENCED THIS, WHICH IS THE ONLY DIRECTION -------
+                //
+                //GITHUB MODELS ONE HALF OF A LINK AND NOT THE OTHER. Paste a
+                //link to issue B into issue A and GitHub writes a
+                //`cross-referenced` event on B, naming A. It writes NOTHING on
+                //A. Measured on a real pair rather than assumed: the far end
+                //carried the event within the same second the issue was opened,
+                //and this end's timeline was empty.
+                //
+                //SO "WHO CITED ME" IS DATA AND "WHAT I CITED" IS PROSE, and only
+                //the first can be read. The second exists solely as text in a
+                //body, which is why this reads a timeline and parses nothing.
+                //
+                //AND IT IS NOT ON `/comments`. Comments and timeline are
+                //different endpoints and a cross-reference is invisible in the
+                //first — which is why an issue could sit here with its whole
+                //thread read and no sign that anything pointed at it.
+                //
+                //ONE REQUEST, UNCONDITIONALLY, and that is the cost. Unlike
+                //sub-issues there is no summary field saying whether there are
+                //any, so there is nothing to check first. It is charged on a
+                //pane that asks GitHub on purpose rather than on a timer.
+                var citedBy = [];
+                var citedPartly = null;
+                var story = await github.all('/repos/' + bits[0] + '/' + bits[1] + '/issues/' + number + '/timeline');
+                if (story.ok && Array.isArray(story.items)) {
+                    citedPartly = story.more ? story.why : null;
+                    var seen = {};
+                    story.items.forEach(function (e) {
+                        if (!e || e.event !== 'cross-referenced') return;
+                        var src = e.source && e.source.issue;
+                        if (!src || !src.number) return;
+                        //`repository` IS ON THE SOURCE, because the thing that
+                        //cited this may live anywhere — that is the whole point
+                        //of a cross-reference and the reason the repository
+                        //cannot be assumed to be this one.
+                        var lives = (src.repository && src.repository.full_name) || on;
+                        var key2 = lives + '#' + src.number;
+                        //THE SAME ISSUE CAN CITE THIS ONE MORE THAN ONCE — an
+                        //edit, a second mention in a reply — and it is one fact
+                        //about one issue, not two moments. The earliest is kept
+                        //because that is when the link was made.
+                        if (seen[key2]) return;
+                        seen[key2] = true;
+                        citedBy.push({
+                            on: lives, number: src.number,
+                            //A PULL REQUEST CITES THINGS TOO, and it is not the
+                            //same news as an issue doing it: one is somebody
+                            //talking about this, the other is code that says it
+                            //is about this.
+                            kind: src.pull_request ? 'pull' : 'issue',
+                            title: src.title || null,
+                            state: src.state || null,
+                            url: src.html_url || null,
+                            by: (src.user && src.user.login) || null,
+                            at: e.created_at || src.created_at || null
+                        });
+                    });
+                } else {
+                    citedPartly = 'what references this could not be read: '
+                        + ((story && (story.why || story.status)) || 'no answer');
+                }
+
                 //THE LAST REQUEST WINS, the same rule the sweep uses: a thread is
                 //read in order and somebody who asked and then said "actually,
                 //no" has said the second thing.
@@ -2395,6 +2523,11 @@ async function plugin(imports, register) {
                     //drawing a tree needs the shape.
                     parent: tree.parent,
                     subIssues: tree.children,
+                    //WHAT POINTS AT THIS, from the timeline. Beside `subIssues`
+                    //because they are the same kind of fact: a link GitHub holds
+                    //as data rather than as words in a body.
+                    citedBy: citedBy,
+                    citedPartly: citedPartly,
                     conversation: trust.conversationOf(asIssue, said, reading, tree),
                     //AND EVERY TURN STILL SEPARATELY, fenced on its own, for
                     //anything that wants to walk them rather than read them.

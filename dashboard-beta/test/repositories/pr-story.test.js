@@ -94,3 +94,82 @@ test('nothing in, nothing out', () => {
     assert.deepEqual(compose({}), []);
     assert.deepEqual(compose(null), []);
 });
+
+//---------------------------------------------------------------------------
+//WHAT REFERENCED THE ISSUE, WHICH IS THE ONLY HALF GITHUB KEEPS.
+//
+//Paste a link to issue B into issue A and GitHub writes a `cross-referenced`
+//event on B naming A, and writes nothing on A. Measured on a real pair: the
+//far end carried the event within the same second the issue was opened, and
+//this end's timeline was empty. So there is a `dir: 'in'` moment for being
+//cited and there can never be a matching `out` one for citing.
+//---------------------------------------------------------------------------
+
+test('a cross-reference is a moment, and it comes in', () => {
+    const s = compose({
+        hostLogin: 'me',
+        issue: {
+            on: 'o/a', number: 17, title: 'off white', by: 'maint', at: '2026-08-28T06:00:00Z', url: 'iu',
+            reading: { kind: 'request' }, said: [],
+            citedBy: [{
+                on: 'far/away', number: 42, kind: 'issue', title: 'is this fixed?',
+                state: 'open', url: 'fu', by: 'somebody', at: '2026-08-28T09:00:00Z'
+            }]
+        }
+    });
+
+    const it = s.filter((e) => e.ref === 'far/away#42')[0];
+    assert.ok(it, 'nothing said that another issue pointed at this one');
+    assert.equal(it.dir, 'in', 'being cited is something arriving, not something sent');
+    assert.equal(it.kind, 'github');
+    assert.equal(it.url, 'fu', 'the moment does not lead anywhere');
+    assert.match(it.text, /issue far\/away#42 referenced o\/a#17/);
+    assert.match(it.text, /is this fixed\?/);
+});
+
+test('a pull request citing it is different news from an issue doing it', () => {
+    //One is somebody talking about this; the other is code that says it is
+    //about this.
+    const s = compose({
+        issue: {
+            on: 'o/a', number: 17, at: '2026-08-28T06:00:00Z', said: [],
+            citedBy: [{ on: 'o/b', number: 3, kind: 'pull', title: 'fix it', url: 'pu', by: 'dev', at: '2026-08-28T10:00:00Z' }]
+        }
+    });
+    assert.match(s.filter((e) => e.ref === 'o/b#3')[0].text, /^pull request o\/b#3 referenced/);
+});
+
+test('an issue nothing has cited reads exactly as it did before', () => {
+    const bare = { on: 'o/a', number: 17, at: '2026-08-28T06:00:00Z', said: [] };
+    const without = compose({ issue: bare });
+    const withEmpty = compose({ issue: Object.assign({}, bare, { citedBy: [] }) });
+    assert.deepEqual(withEmpty, without, 'an empty list added a moment');
+    assert.equal(without.length, 1, 'only the opening should be there');
+});
+
+test('what it referenced goes out, and what referenced it comes in', () => {
+    //THE TWO HALVES ARE NOT SYMMETRICAL AND MUST NOT LOOK IT. Being cited is
+    //read off this issue's own timeline; citing is worked out by asking the
+    //other end who cited IT, because GitHub records nothing on the issue that
+    //does the linking.
+    const s = compose({
+        issue: {
+            on: 'o/a', number: 17, at: '2026-08-28T06:00:00Z', said: [],
+            citedBy: [{ on: 'far/away', number: 42, kind: 'issue', title: 'asked', url: 'fu', by: 'them', at: '2026-08-28T09:00:00Z' }]
+        },
+        cites: [{ on: 'o/b', number: 8, kind: 'issue', title: 'the other one', url: 'ou', at: '2026-08-28T07:00:00Z' }]
+    });
+
+    const out = s.filter((e) => e.ref === 'o/b#8')[0];
+    assert.equal(out.dir, 'out', 'pointing at something read as arriving');
+    assert.match(out.text, /^o\/a#17 referenced issue o\/b#8/);
+
+    const inn = s.filter((e) => e.ref === 'far/away#42')[0];
+    assert.equal(inn.dir, 'in');
+    assert.match(inn.text, /^issue far\/away#42 referenced o\/a#17/);
+});
+
+test('no cites is the same story as before', () => {
+    const bare = { on: 'o/a', number: 17, at: '2026-08-28T06:00:00Z', said: [] };
+    assert.deepEqual(compose({ issue: bare, cites: [] }), compose({ issue: bare }));
+});
