@@ -71,6 +71,64 @@ test('a file is kept in the workspace’s drawer, under its own kind', async () 
         'kept outside the workspace drawer: ' + kept.path);
 });
 
+test('a store name may be a path, so one ignore rule covers every lane under it', async () => {
+    //`artifacts/worker` IS A DRAWER INSIDE A DRAWER. What a run hands back is
+    //filed by lane — worker, judge, or a bare job — and `.gitignore` carries the
+    //single rule `artifacts/` to cover all of them, including a lane added later
+    //by somebody who never reads core/archive.
+    const files = archive.store('artifacts/worker');
+    const kept = await files.keep('task-uid-1', 'NOTES.md', bytes('hello'), { run: 'r1' });
+
+    const here = await state.here.where();
+    assert.ok(kept.path.startsWith(path.join(here, 'artifacts', 'worker', 'task-uid-1')),
+        'a lane is not nested under its drawer, so one ignore rule cannot cover it: ' + kept.path);
+});
+
+test('and a `..` segment is dropped, so a nested name cannot write upwards', async () => {
+    //THIS FAILED WHEN IT WAS FIRST WRITTEN, and the hole was in the change it
+    //was written for. `safe()` permits dots — a file is called `firmware.bin` —
+    //so `safe('..')` returns `..` unchanged. Harmless while the whole store name
+    //was ONE segment, where this flattened to the silly folder
+    //`artifacts_.._.._escape`. Splitting on `/` turned it into a real climb and
+    //this landed OUTSIDE the drawer, in the workspace beside the repositories.
+    const files = archive.store('artifacts/../../escape');
+    const kept = await files.keep('u', 'a.txt', bytes('x'), {});
+
+    const here = await state.here.where();
+
+    //EXACTLY WHERE IT SHOULD BE, not merely "somewhere under the drawer". The
+    //`..` segments are removed and what is left still nests, so this is
+    //`artifacts/escape` — a folder nobody wanted, inside the drawer, which is
+    //the correct outcome for a name nobody should have written.
+    assert.equal(path.dirname(kept.path), path.join(here, 'artifacts', 'escape', 'u'),
+        'a store name reached somewhere it was not given: ' + kept.path);
+});
+
+test('a backslash is a separator too, and cannot smuggle a climb past the split', async () => {
+    //ON THIS PLATFORM `\` IS WHAT A PATH IS MADE OF, so a name split only on `/`
+    //would hand the rest to `safe()` in one piece and lose the same argument
+    //from the other side.
+    const files = archive.store('artifacts\\..\\..\\escape');
+    const kept = await files.keep('u', 'a.txt', bytes('x'), {});
+
+    const here = await state.here.where();
+    assert.equal(path.dirname(kept.path), path.join(here, 'artifacts', 'escape', 'u'),
+        'a backslash in a store name was not treated as a separator: ' + kept.path);
+});
+
+test('a uid with a slash in it still flattens rather than nesting', async () => {
+    //THE OTHER HALF, AND IT MUST NOT FOLLOW THE NAME. A store name is written in
+    //this app's own source; a uid comes from work and, at the guest door, from
+    //something a machine said. Letting one nest would be a machine choosing
+    //where on this host its file lands.
+    const files = archive.store('artifacts');
+    const kept = await files.keep('../../../etc/passwd', 'a.txt', bytes('x'), {});
+
+    const here = await state.here.where();
+    assert.ok(kept.path.startsWith(path.join(here, 'artifacts')),
+        'a uid with separators escaped its drawer: ' + kept.path);
+});
+
 test('a second workspace does not see the first one’s files', async () => {
     const files = archive.store('artifacts');
     await files.keep('task-uid-1', 'firmware.bin', bytes('one'), {});

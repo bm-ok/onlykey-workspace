@@ -164,7 +164,45 @@ async function plugin(imports, register) {
     //            for a store whose contents are command output
     function store(name, opts) {
         var o = opts || {};
-        var kind = safe(name);
+
+        //A NAME MAY BE A PATH, AND EACH SEGMENT IS MADE SAFE SEPARATELY.
+        //
+        //`store('artifacts/worker')` is a drawer INSIDE a drawer, which is what
+        //lets one ignore rule — `artifacts/` — cover every lane under it,
+        //including one added later by somebody who never reads this file.
+        //
+        //ONE `safe()` OVER THE WHOLE STRING WOULD NOT DO IT. It replaces
+        //anything outside `[A-Za-z0-9._-]`, so a slash became an underscore and
+        //`artifacts/worker` quietly became the single folder `artifacts_worker`
+        //— beside the drawer rather than within it, and outside the rule written
+        //to cover it. Nothing would have failed; the files would simply have
+        //been staged for commit.
+        //
+        //`..` IS DROPPED EXPLICITLY, AND `safe()` IS NOT ENOUGH ON ITS OWN.
+        //
+        //This was written first as split-then-`safe()` and it opened a hole the
+        //moment it was tested: `safe()` permits dots, because a file is called
+        //`firmware.bin` — so `safe('..')` returns `..` unchanged. That was
+        //harmless while the whole name was ONE segment, where
+        //`artifacts/../../escape` flattened to the single silly folder
+        //`artifacts_.._.._escape`. Splitting on `/` turned the same string into
+        //a real climb, and `store('artifacts/../../escape')` wrote OUTSIDE the
+        //drawer entirely, into the workspace beside the repositories.
+        //
+        //A SEGMENT IS A NAME, and `.` and `..` are not names — they are
+        //instructions about where to go. So they are removed before `safe()`
+        //rather than passed through it.
+        //
+        //`dirFor` BELOW IS DELIBERATELY NOT CHANGED. A uid comes from work and,
+        //at the guest door, from something a machine said — a slash in one must
+        //keep FLATTENING rather than nesting, or a machine would choose where on
+        //this host its file lands. This is about a name written in this app's
+        //own source, which is a different kind of value entirely.
+        var kind = String(name == null ? '' : name)
+            .split(/[\\/]/)
+            .filter(function (s) { return s !== '' && s !== '.' && s !== '..'; })
+            .map(safe)
+            .join(path.sep) || safe('');
         var most = o.most || MOST;
         var readable = o.readable || READABLE;
         var clean = o.clean || function (t) { return t; };
