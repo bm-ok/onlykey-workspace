@@ -142,31 +142,7 @@ async function plugin(imports, register) {
         actions.define('windowControls', {
             about: 'What is on screen right now: the buttons that can be pressed and the fields that can be filled',
             run: async function () {
-                var seen = await drive({ do: 'controls' });
-
-                //EVERY READ FILLS THE CATALOGUE, and this is the right place for
-                //it rather than the guards pane. That pane can only ever see the
-                //screen it is standing on — which for most of its life is
-                //itself — so the list it offered was one pane deep. Here, every
-                //look by anything adds what it saw, so walking the tabs from the
-                //command line builds the list of what this app has to guard.
-                //
-                //NOTHING IS INVENTED. A control is in the list because it was on
-                //a screen when something looked, which also means the list is
-                //honest about its gaps: a pane nobody has opened is not in it.
-                try {
-                    var mine = (seen.buttons || [])
-                        .filter(function (b) { return !b.picks && !b.nav; })
-                        .map(function (b) { return { label: b.label, kind: 'button', where: seen.on, proposed: !!b.protected }; })
-                        .concat((seen.fields || []).map(function (f) {
-                            return { label: f.label, kind: 'field', where: seen.on, proposed: !!f.protected };
-                        }));
-                    if (mine.length) await actions.call('guardsSeen', { controls: mine });
-                } catch (e) {
-                    //Recording is a side benefit. Failing to record must not
-                    //turn "what is on screen" into an error.
-                }
-                return seen;
+                return await drive({ do: 'controls' });
             }
         }),
 
