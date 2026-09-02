@@ -402,7 +402,12 @@ async function plugin(imports, register) {
                     tags: (was.tags && was.tags.length) ? was.tags.slice() : (was.spec || {}).tags
                 });
 
-                if (was.installing) {
+                //ACTUALLY INSTALLING, WHICH MEANS RUNNING. `installing` is a
+                //stamp nothing clears when an install falls over, so this
+                //refused for ever on a machine that was powered off -- and the
+                //way out it names, Remove, was disabled in the window by the
+                //same flag. See `reallyInstalling` in ../../vms/ours/records.
+                if (records.reallyInstalling(was)) {
                     throw new Error('"' + name + '" is installing. Let it finish or remove it, rather than '
                         + 'destroying a machine mid-install.');
                 }

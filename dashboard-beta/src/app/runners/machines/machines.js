@@ -6,6 +6,9 @@ var { useState } = React;
 //why: the queue, this pane and any drill have to give the same answer, and
 //they only do by asking in one place.
 var roles = require('../../vms/ours/roles');
+//AND THE RULES ABOUT A RECORD, from the module that owns them — see
+//`reallyInstalling` there, which is why a failed install can be got rid of.
+var records = require('../../vms/ours/records');
 
 module.exports = function machines(theme, okc, remember) {
     var {
@@ -63,20 +66,11 @@ module.exports = function machines(theme, okc, remember) {
 
     //---- AN INSTALL THAT FAILED IS NOT AN INSTALL ---------------------------
     //
-    //`installing` IS A STAMP AND NOTHING CLEARS IT WHEN AN INSTALL FALLS OVER.
-    //The machine ends up powered off with the record still saying it is
-    //installing, for ever — and Rebuild and Remove were disabled on that flag
-    //alone. So the one machine somebody most wants rid of is the one the window
-    //will not let them touch, and the reason it gives is "it is installing"
-    //about a machine that is off.
-    //
-    //THE GUARD WAS ALWAYS ABOUT A LIVE INSTALLER — not destroying a disk out
-    //from under one. A powered-off machine has no installer to be under, so the
-    //question is whether it is ACTUALLY installing, which means running.
-    //
-    //THE OTHER TWO REFUSALS ARE UNTOUCHED. A held sign-in and a claimed branch
-    //are about losing something, and being switched off does not change either.
-    function reallyInstalling(v) { return !!v.installing && !!v.running; }
+    //`records.reallyInstalling` — the rule lives with the record, beside
+    //`dirty`, so this pane and `vmRebuild` refuse on the same question. It was
+    //written here as a local helper and then called nowhere at all, so the
+    //thing it was written to fix stayed broken with its own explanation sitting
+    //above it.
 
     function Acts({ v, again, setSaid, setPicked }) {
         if (!v) return <Panel><Empty>pick a machine on the left</Empty></Panel>;
@@ -309,8 +303,8 @@ module.exports = function machines(theme, okc, remember) {
                         refuses all three as well — a rule the window enforces
                         alone is a rule the command line does not have. */}
                     <Button kind="danger" protect
-                        disabled={!!v.installing || !!v.holdsCredential || !!v.branch}
-                        title={v.installing
+                        disabled={records.reallyInstalling(v) || !!v.holdsCredential || !!v.branch}
+                        title={records.reallyInstalling(v)
                             ? 'it is installing'
                             : v.holdsCredential
                                 ? 'it is holding a sign-in — take that back first, or it goes with the disk'
@@ -323,8 +317,8 @@ module.exports = function machines(theme, okc, remember) {
                         for the same reason — both destroy the disk — with one
                         difference that matters: nothing comes back. */}
                     <Button kind="danger" protect
-                        disabled={!!v.installing || !!v.holdsCredential || !!v.branch}
-                        title={v.installing
+                        disabled={records.reallyInstalling(v) || !!v.holdsCredential || !!v.branch}
+                        title={records.reallyInstalling(v)
                             ? 'it is installing'
                             : v.holdsCredential
                                 ? 'it is holding a sign-in — take that back first, or it goes with the disk'

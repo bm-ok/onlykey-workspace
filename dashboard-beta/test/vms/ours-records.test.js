@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { asRecorded, newRecord, stageOf, STAGES, keptBackByThem } = require('../../src/app/vms/ours/records');
+const { asRecorded, newRecord, stageOf, STAGES, keptBackByThem, reallyInstalling } = require('../../src/app/vms/ours/records');
 
 //---------------------------------------------------------------------------
 //what a record is, and where the machine it describes has got to.
@@ -271,4 +271,35 @@ test('a machine that is not kept back at all is not kept back by anybody', () =>
     //AND THE FIELD ALONE IS NOT THE ANSWER: a stale `keptBackBy` on a machine
     //that is back in the pool says nothing about it.
     assert.equal(keptBackByThem({ forTasks: true, keptBackBy: 'diy' }), false);
+});
+
+//---------------------------------------------------------------------------
+//WHETHER IT IS ACTUALLY INSTALLING.
+//
+//`installing` is a stamp and nothing clears it when an install falls over, so
+//the machine sits powered off with the record still saying it is installing,
+//for ever. Rebuild and Remove were both refused on that flag alone — the one
+//machine somebody most wants rid of was the one they could not touch, and the
+//reason given was "it is installing" about a machine that is off.
+//
+//AND THE WAY OUT WAS SHUT BY THE SAME FLAG. `vmRebuild` refuses with "let it
+//finish or remove it", and Remove was disabled by `installing` too — while the
+//action behind Remove has no such guard at all, so the command line could do
+//what the window would not.
+//---------------------------------------------------------------------------
+
+test('a machine mid-install is protected, because there is an installer under it', () => {
+    assert.equal(reallyInstalling({ installing: true, running: true }), true);
+});
+
+test('a failed install is not an install, and can be got rid of', () => {
+    //THE CASE THE GUARD MADE UNREACHABLE.
+    assert.equal(reallyInstalling({ installing: true, running: false }), false);
+    assert.equal(reallyInstalling({ installing: true }), false);
+});
+
+test('and a machine that is simply running is not installing', () => {
+    assert.equal(reallyInstalling({ running: true }), false);
+    assert.equal(reallyInstalling({}), false);
+    assert.equal(reallyInstalling(null), false);
 });

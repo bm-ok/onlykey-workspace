@@ -158,6 +158,28 @@ function dirty(vm) {
     return String(v.dirtySince) > String(v.cleanSince);
 }
 
+//---- AND WHETHER IT IS ACTUALLY INSTALLING ---------------------------------
+//
+//`installing` IS A STAMP AND NOTHING CLEARS IT WHEN AN INSTALL FALLS OVER. The
+//machine ends up powered off with the record still saying it is installing, for
+//ever.
+//
+//WHICH IS THE ONE MACHINE SOMEBODY MOST WANTS RID OF. Rebuild and Remove were
+//both refused on that flag alone, so the window would not let them touch it,
+//and the reason it gave was "it is installing" about a machine that is off.
+//`vmRebuild`'s own error says "let it finish or remove it" -- and Remove was
+//disabled by the same flag, so the way out it names was shut.
+//
+//THE GUARD WAS ALWAYS ABOUT A LIVE INSTALLER, not about destroying a disk out
+//from under one. A powered-off machine has no installer to be under.
+//
+//THE OTHER REFUSALS ARE UNTOUCHED. A held sign-in and a claimed branch are
+//about losing something, and being switched off changes neither.
+function reallyInstalling(vm) {
+    var v = vm || {};
+    return !!v.installing && !!v.running;
+}
+
 //---- WHOSE KEEP-BACK IT IS -------------------------------------------------
 //
 //`forTasks: false` WORE TWO DIFFERENT FACTS. A person taking a machine out of
@@ -184,6 +206,7 @@ module.exports = {
     newRecord: newRecord,
     dirty: dirty,
     keptBackByThem: keptBackByThem,
+    reallyInstalling: reallyInstalling,
     stageOf: stageOf,
     STAGES: STAGES
 };
