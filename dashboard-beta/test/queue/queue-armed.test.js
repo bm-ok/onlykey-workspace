@@ -91,13 +91,28 @@ async function aQueue(over) {
         //null found a real hole in the board's reader — the guard around it
         //caught a throw and not an answer — which is now fixed and is not what
         //this file is for.
-        artifact: { read: async () => ({ delivered: false, summary: null, commits: [], repos: [] }) },
-        archive: {
-            store: () => ({
+        //AND THE DRAWER IS ON THE SAME SERVICE NOW. ../artifact owns both halves
+        //of "what did this work produce" — the branch above, and what a run
+        //handed back. `handedBack(lane)` returns a store, so the queue's calls
+        //are the same ones it made when it opened `archive.store('artifacts')`
+        //itself.
+        artifact: {
+            read: async () => ({ delivered: false, summary: null, commits: [], repos: [] }),
+            handedBack: () => ({
                 list: async () => [], read: async () => null,
-                has: async () => false, keep: async () => ({})
+                has: async () => false, keep: async () => ({}),
+                forget: async () => ({}), everything: async () => [],
+                dirFor: async () => null, root: async () => null
             })
         },
+        //NO `archive` STUB, BECAUSE THE QUEUE NO LONGER TAKES ONE. It opened
+        //`archive.store('artifacts')` for what a task handed back, and that
+        //drawer is ../artifact's now. The `archive` inside the plugin is
+        //src/app/queue/archive.js — the run-LOG store, in this host's own data
+        //folder — which is a different thing that happens to share a word.
+        //
+        //A STUB FOR A SERVICE NOTHING CONSUMES IS WORSE THAN NONE: it reads as
+        //proof the plugin needs it.
         cron: {
             add: (j) => { jobs[j.name] = Object.assign({}, j, { run: null }); },
             does: (name, fn) => { jobs[name].run = fn; return () => { jobs[name].run = null; }; },

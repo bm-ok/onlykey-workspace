@@ -138,7 +138,21 @@ async function anApp({ cuts = null, lines: stored = null } = {}) {
     let artifact = null;
     await artifactPlugin({
         app: { host: { actions } }, log: { on: () => logger },
-        git: git_, workspace, lines
+        git: git_, workspace, lines,
+        //THE DRAWER HALF, WHICH THIS FILE DOES NOT EXERCISE. `artifact` answers
+        //two questions now -- what a branch carries, which is everything below,
+        //and what a run handed back, which is covered in ../core/archive and by
+        //the callers that read it.
+        //
+        //STUBBED AS `store(name)` RATHER THAN AS THE ANSWER, because the plugin
+        //opens three drawers at build -- one per lane -- and a stand-in that
+        //returned nothing would make the constructor throw rather than the test
+        //fail for a reason anybody could read.
+        archive: { store: () => ({
+            list: async () => [], read: async () => null, has: async () => false,
+            keep: async () => ({}), forget: async () => ({}),
+            everything: async () => [], dirFor: async () => null, root: async () => null
+        }) }
     }, async (_e, s) => { artifact = s.artifact; });
 
     return { actions, artifact, lines };

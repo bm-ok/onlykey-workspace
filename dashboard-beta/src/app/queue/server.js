@@ -99,7 +99,16 @@ var makeDispatching = require('./dispatching');
 //cycle means nothing builds at all.
 var makeWatching = require('./watching');
 
-plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron', 'busy',
+//`archive` IS NO LONGER TAKEN, and the reason is worth a line because the name
+//survives in this file. `var archive` below is ./archive — the run-LOG store,
+//kept in this host's own data folder — and it is a different thing from
+//../core/archive, which this consumed only to open the handed-back drawer. That
+//drawer is ../artifact's now, so the dependency went with it.
+//
+//A CONSUMES ENTRY NOTHING READS IS A FALSE EDGE. It says this cannot start until
+//that has, which stops being true the moment the last reader goes and is
+//invisible until somebody is untangling the graph for a different reason.
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'cron', 'busy',
     'guests', 'judge', 'ours', 'refs', 'channel', 'workspace', 'settings', 'repositories', 'meter'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
@@ -509,10 +518,15 @@ async function plugin(imports, register) {
         //fills, because a judgement's log is a run's log and somebody looking
         //for it should not have to know which kind of work produced it.
         logs: archive,
-        //AND WHAT A JUDGEMENT HANDED BACK is ../judge's, opened here by the same
-        //name it opens it by. Two drawers, two subjects: one is what a run SAID,
-        //the other is what it DELIVERED.
-        findings: imports.archive.store('artifacts'),
+        //AND WHAT A JUDGEMENT HANDED BACK. Two drawers, two subjects: one is
+        //what a run SAID, the other is what it DELIVERED.
+        //
+        //THE JUDGE LANE, AND IT WAS ALWAYS THIS ONE. Both readers below —
+        //./papers, which gives a task the findings it is meant to work from, and
+        //./onejudgement, which reads a judgement's own — want a JUDGEMENT's
+        //files. The name `findings` said so; the store it was opened from did
+        //not, and would have answered with a task's just as readily.
+        findings: imports.artifact.handedBack('judge'),
 
         //WHAT THIS HOST HAS SPENT, beside the rest of its state.
         meter: imports.meter,
@@ -641,10 +655,19 @@ async function plugin(imports, register) {
     //owns where those are kept and how they are read back; this plugin only
     //knows that a task's are filed under its uid.
     //
-    //THE SAME DRAWER THE JUDGE OPENS. A judgement's findings are handed over the
-    //same way and filed the same way, so both ask ../core/archive for
-    //`artifacts` rather than one of them owning it and the other reaching in.
-    var artifacts = imports.archive.store('artifacts');
+    //WHAT A TASK HANDED BACK, asked of ../artifact rather than opened here.
+    //
+    //THIS SAID "THE SAME DRAWER THE JUDGE OPENS … so both ask ../core/archive
+    //rather than one of them owning it and the other reaching in". The worry was
+    //right and the answer was that nobody owned it: four plugins opened this
+    //store directly, and the agreement was held together by everyone spelling it
+    //the same way. ../artifact owns it now.
+    //
+    //THE WORKER LANE, NAMED ONCE. A task's files and a judgement's are separate
+    //drawers, so `taskFiles` cannot answer with a judgement's by being handed a
+    //uid that happens to exist — which is what a single drawer keyed by uid
+    //allowed, and what nothing was checking.
+    var artifacts = imports.artifact.handedBack('worker');
 
     var undo = [];
     undo.push(stopWatching);

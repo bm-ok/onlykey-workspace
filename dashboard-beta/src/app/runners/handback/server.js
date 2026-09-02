@@ -14,18 +14,29 @@
 
 var makeGuestApi = require('./guestapi');
 
-plugin.consumes = ['app', 'log', 'archive', 'guestApi', 'whatIsOn', 'judge',
+plugin.consumes = ['app', 'log', 'guestApi', 'whatIsOn', 'judge',
+    //WHERE WHAT IS HANDED BACK GOES. ../../artifact owns that drawer — see its
+    //header — so this door does not open one of its own.
+    'artifact',
     //THE RULES THIS DOOR ENFORCES ARE DECLARED THERE, beside the code that
     //refuses by them. See the `permissions.rule` calls below.
     'permissions'];
 plugin.provides = [];
 async function plugin(imports, register) {
 
-    //THE SAME DRAWER ../../queue READS. `taskFiles` and `taskFileRead` answer out
-    //of `artifacts`, so a file handed back has to land in that one and not in a
-    //second store with the same idea — which is how a hand-over succeeds and the
-    //pane goes on saying nothing arrived.
-    var artifacts = imports.archive.store('artifacts');
+    //THE SAME DRAWER EVERYTHING ELSE READS, AND NOW BY ASKING RATHER THAN BY
+    //AGREEING.
+    //
+    //This opened `archive.store('artifacts')` directly, and so did ../../judge
+    //and ../../queue — twice, once of those under the name `findings`. Four
+    //openings of one drawer, each correct, none of them the owner. The comment
+    //here used to say "the same drawer ../../queue reads … not a second store
+    //with the same idea", which is the right worry answered by everyone
+    //remembering to spell it the same way.
+    //
+    //../../artifact OWNS IT NOW and this asks. A hand-over landing somewhere the
+    //pane does not read is no longer possible to write.
+    var artifacts = imports.artifact.handedBack;
 
     //---- WHAT A RUN MAY DO AT THIS DOOR ------------------------------------
     //

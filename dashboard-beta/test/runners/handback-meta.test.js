@@ -32,12 +32,16 @@ function aDoor(over) {
         whatIsOn: async () => (o.doing === undefined ? aTask() : o.doing),
         may: () => ({ may: true }),
         say: () => ({ good() {}, warn() {}, bad() {}, info() {} }),
-        artifacts: {
+        //ASKED FOR A LANE AND THEN USED AS A STORE, the way
+        //../../src/app/artifact hands one over. The lane is recorded rather than
+        //ignored, because which drawer a delivery lands in is this door's
+        //decision and is not visible anywhere else.
+        artifacts: (lane) => ({
             keep: async (uid, name, bytes, meta) => {
-                kept.push({ uid, name, bytes, meta });
+                kept.push({ lane, uid, name, bytes, meta });
                 return { bytes: bytes.length };
             }
-        },
+        }),
         verdictFor: async () => ({})
     });
 
@@ -97,6 +101,11 @@ test('a task hands a file back and the branch cut is written beside it', async (
 
     //AND FILED UNDER THE UID, which is what makes the directory findable at all.
     assert.equal(kept[0].uid, 'mtkgedhj00125r');
+
+    //IN THE WORKER LANE, said as `task` because that is what the WORK calls
+    //itself. ../../src/app/artifact turns the two vocabularies into one; this
+    //door passes on what it was told and does not translate.
+    assert.equal(kept[0].lane, 'task', 'a task did not file in the worker lane');
 });
 
 test('a judgement records both the branch and what it read, and they are not merged', async () => {
@@ -112,6 +121,7 @@ test('a judgement records both the branch and what it read, and they are not mer
     assert.equal(meta.reads, 'test/session', 'what it read was lost');
     assert.equal(meta.branch, 'test/session', 'the branch cut was lost');
     assert.equal(meta.kind, 'judgement');
+    assert.equal(kept[0].lane, 'judgement', 'a judgement did not file in the judge lane');
 });
 
 test('a run with no branch records null rather than inventing one', async () => {
@@ -145,4 +155,6 @@ test('a bare job files under its run and claims no branch at all', async () => {
     assert.equal(kept[0].uid, 'job-api-tour-20260902190000', 'a bare job was not filed under its run');
     assert.equal(kept[0].meta.branch, undefined,
         'a run belonging to no work item claimed a branch cut');
+    assert.equal(kept[0].lane, 'job',
+        'a bare job was filed as a worker or a judge, in a drawer claiming work it never did');
 });

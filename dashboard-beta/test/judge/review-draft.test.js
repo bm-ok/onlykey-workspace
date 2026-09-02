@@ -56,8 +56,11 @@ function aJudge(over) {
                 allowed: { check: () => ({ allowed: true, stale: false }) }
             },
             refs: { origin: async () => null, heads: async () => ({}) },
-            archive: {
-                store: () => ({
+            //THE LANE-BOUND DRAWER ../../src/app/artifact hands over.
+            //`handedBack('judge')` returns a store, so the calls after it are
+            //unchanged from when this plugin opened one itself.
+            artifact: {
+                handedBack: () => ({
                     list: async () => files,
                     read: async (uid, file) => ({ text: bodies[file] || '' }),
                     keep: async () => ({}), has: async () => false

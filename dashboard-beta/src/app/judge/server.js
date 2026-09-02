@@ -74,7 +74,10 @@ function trim(s, n) {
     return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
-plugin.consumes = ['app', 'log', 'state', 'prcuts', 'refs', 'archive', 'github'];
+//`archive` IS GONE FROM HERE. What a judgement handed back was the only thing
+//this opened it for, and ../artifact owns that drawer now — see the note beside
+//`handedBack` below.
+plugin.consumes = ['app', 'log', 'state', 'prcuts', 'refs', 'artifact', 'github'];
 plugin.provides = ['judge'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -91,10 +94,19 @@ async function plugin(imports, register) {
     //../repositories/refs, the group's one reader.
     var refs = imports.refs;
 
-    //WHAT A JUDGEMENT HANDED BACK. ../core/archive owns where these are kept
-    //and how they are read; the same drawer ../queue opens for a task's, because
-    //they arrive the same way and are filed the same way.
-    var artifacts = imports.archive.store('artifacts');
+    //WHAT A JUDGEMENT HANDED BACK, asked of ../artifact rather than opened here.
+    //
+    //THIS OPENED `archive.store('artifacts')` ITSELF, and so did ../queue —
+    //twice, once under the name `findings` — and so did the door that writes
+    //into it. Four openings of one drawer, every one correct, none of them the
+    //owner. The comment here used to say it was "the same drawer ../queue opens
+    //… because they arrive the same way", which is a shared fact held together
+    //by everyone remembering to spell it identically.
+    //
+    //AND THE LANE IS NAMED ONCE, HERE. A judgement's files are in the judge
+    //drawer and a task's in the worker one, so this cannot read the other's by
+    //passing a uid that happens to exist.
+    var artifacts = imports.artifact.handedBack('judge');
 
     var store = makeJudgements({
         judging: function () { return state.here.doc('judging'); },

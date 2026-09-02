@@ -1,11 +1,29 @@
 //---------------------------------------------------------------------------
-//WHAT CAME BACK, READ THE WAY A PULL REQUEST IS READ.
+//WHAT WORK PRODUCED. TWO HALVES, AND THEY ANSWER ONE QUESTION.
 //
-//A task delivers a BRANCH, and this is the only place that says what is on it.
-//Everything here is read from the repositories on this host — never from the
-//machine, and never from the worker's account of itself. That is the whole
-//point: a run says what it believes it did, and the branch says what actually
-//arrived. Where those differ, the branch is right.
+//    the branch      what a task DELIVERED: commits, and the diff against what
+//                    the branch was cut from. Read from the repositories on this
+//                    host — never from the machine, never from the worker's
+//                    account of itself. A run says what it believes it did and
+//                    the branch says what arrived; where those differ the branch
+//                    is right.
+//    the drawer      what a run HANDED BACK: a file it produced and gave to this
+//                    host over the guest door. A built binary, a screenshot, a
+//                    log. For a judgement it is the whole deliverable, because a
+//                    judge may not push.
+//
+//BOTH ARE "WHAT DID THIS WORK PRODUCE", asked of the two places an answer can
+//be. A task usually has both and either may be empty; a judgement has only the
+//second.
+//
+//---- the drawer had no owner, and that is why it is here -------------------
+//
+//`archive.store('artifacts')` WAS OPENED FOUR TIMES, DIRECTLY — by the door that
+//writes into it, by ../judge, and twice by ../queue, once of those under a
+//different name. ../core/archive owns where the bytes live; nothing owned what a
+//handed-back file IS. So the card, the dialog and the reading were about to be
+//written a second time for the Worker, which is the fault the paragraph below
+//was already written about.
 //
 //---- why it is its own plugin ---------------------------------------------
 //
@@ -22,6 +40,30 @@
 //back the other way: `branchArtifacts` lives HERE rather than in Repositories,
 //which is what keeps the graph one-directional.
 //
+//THE SAME SENTENCE DECIDED WHERE THE DRAWER WENT. ../core/archive consumes only
+//`state`, ../queue already consumes this, and nothing this takes consumes it
+//back — so owning the drawer here costs the graph nothing and stops ../judge
+//having to reach into a store ../queue also opens.
+//
+//---- one drawer per LANE, and the lane is in the path ----------------------
+//
+//    artifacts/worker/<uid>/     what a task handed back
+//    artifacts/judge/<uid>/      what a judgement handed back
+//    artifacts/job/<run>/        a run belonging to no work item
+//
+//`worker` AND `judge` RATHER THAN `task` AND `judgement`, because that is the
+//vocabulary ../worker/sessions/keying.js already uses for the same split. Two
+//words for one distinction is how the two come to disagree.
+//
+//WHICH DRAWER ANSWERED IS THE LANE, so `everything()` below does not read a
+//sidecar to find out what a row is. That was the alternative and it is worse: a
+//sidecar can be missing, and a missing one would have to mean something.
+//
+//`job/` IS NOT `diy/`. `whatIsOn` answers null unless a machine was GIVEN queued
+//work, so a job run on a machine holding nothing files under its own run id.
+//DIY is not a producer today and would land here without anything being added if
+//it became one — the lane is about what the run WAS, not who started it.
+//
 //---- and it never runs git itself -----------------------------------------
 //
 //The app this is ported from spawned git here, with its own `--git-dir` and its
@@ -30,7 +72,7 @@
 //one — ../git — and the read door is a list of subcommands it will accept. This
 //asks it. What was a promise in a comment is a refusal in another file.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log', 'git', 'workspace', 'lines'];
+plugin.consumes = ['app', 'log', 'git', 'workspace', 'lines', 'archive'];
 plugin.provides = ['artifact'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -44,6 +86,94 @@ async function plugin(imports, register) {
     //draws, not an export — a task that touched two hundred files should say so
     //in one line rather than arriving as two hundred.
     var SHOW = 20;
+
+    //=======================================================================
+    //WHAT A RUN HANDED BACK.
+    //=======================================================================
+    //
+    //ONE DRAWER PER LANE. See the header for why the lane is in the path rather
+    //than only in a sidecar.
+    //
+    //`LANES` IS A MAP AND NOT A LIST, because every caller arrives holding the
+    //word the rest of the app uses. ../runners/handback knows `doing.kind`,
+    //which is `task` or `judgement`; the panes and the actions think in `worker`
+    //and `judge`. Translating in one place is what stops a fifth spelling
+    //appearing the next time somebody adds a caller.
+    var LANES = {
+        worker: imports.archive.store('artifacts/worker'),
+        judge: imports.archive.store('artifacts/judge'),
+        job: imports.archive.store('artifacts/job')
+    };
+
+    //THE TWO VOCABULARIES, JOINED HERE AND NOWHERE ELSE.
+    function laneFor(what) {
+        var said = String(what == null ? '' : what).toLowerCase();
+        if (said === 'judge' || said === 'judgement') return 'judge';
+        if (said === 'worker' || said === 'task') return 'worker';
+        if (said === 'job') return 'job';
+        return null;
+    }
+
+    //A LANE THAT IS NOT ONE IS REFUSED, NOT GUESSED. Filing a delivery in the
+    //wrong drawer is worse than failing to file it: the file is then somewhere
+    //nobody looks, and the drawer it landed in claims a kind of work it did not
+    //come from. Every caller knows its own lane, so there is nothing to infer.
+    function drawerFor(what) {
+        var lane = laneFor(what);
+        if (!lane) {
+            throw new Error('"' + what + '" is not a lane. What a run hands back is filed under worker, '
+                + 'judge or job, and which it is comes from the work rather than from the file.');
+        }
+        return LANES[lane];
+    }
+
+    //ASKED FOR A LANE ONCE, AND THEN USED AS A STORE.
+    //
+    //`handedBack('judge')` HANDS BACK THE DRAWER ITSELF, so every call after that
+    //is `list(uid)`, `read(uid, file)` — exactly what these callers were already
+    //written against when each opened its own. Threading a lane through every
+    //call site instead would have been forty edits to say one thing, and forty
+    //places for the next person to say it differently.
+    //
+    //THE LANE IS NAMED AT THE TOP OF THE FILE THAT USES IT, which is where
+    //somebody reading ../judge or ../queue wants to see it.
+    function handedBack(what) {
+        return drawerFor(what);
+    }
+
+    //---- AND EVERYTHING, ACROSS THE LANES ---------------------------------
+    //
+    //EACH ROW SAYS WHICH DRAWER ANSWERED. That is the lane, known from where the
+    //row was found rather than from a sidecar — which can be missing, and a
+    //missing one would then have to mean something.
+    //
+    //ONE LANE WHEN ASKED FOR ONE, because `taskFiles` with no id wants every
+    //task's and not every judgement's. A bound drawer answers its own
+    //`everything()` for that; this is the form that spans them.
+    handedBack.everything = async function (what) {
+        var want = what == null ? null : laneFor(what);
+        if (what != null && !want) return [];
+
+        var lanes = want ? [want] : Object.keys(LANES);
+        var out = [];
+
+        for (var i = 0; i < lanes.length; i++) {
+            var rows = await LANES[lanes[i]].everything();
+            for (var n = 0; n < rows.length; n++) {
+                out.push(Object.assign({}, rows[n], { lane: lanes[i] }));
+            }
+        }
+
+        //NEWEST FIRST ACROSS ALL OF THEM, since each drawer sorted only its own
+        //and a caller asking for everything wants one list.
+        return out.sort(function (a, b) {
+            return String(b.last || '').localeCompare(String(a.last || ''));
+        });
+    };
+
+    //THE LANES THERE ARE, for anything that has to show all of them without
+    //knowing the words in advance.
+    handedBack.lanes = function () { return Object.keys(LANES); };
 
     //=======================================================================
     //ONE REPOSITORY'S HALF OF THE ANSWER.
@@ -262,11 +392,15 @@ async function plugin(imports, register) {
 
     await register(null, {
         artifact: {
+            //---- what a branch carries ------------------------------------
             read: read,
             inRepo: inRepo,
             diff: diff,
             sides: sides,
-            SHOW: SHOW
+            SHOW: SHOW,
+
+            //---- and what a run handed back --------------------------------
+            handedBack: handedBack
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });

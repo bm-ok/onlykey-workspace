@@ -69,8 +69,12 @@ function aJudge(over) {
             state: { here: { doc: () => ({ read: (f) => f, write: (v) => v }) } },
             prcuts: {},
             refs: { origin: async () => ({ owner: 'someone', repo: 'their-repo' }), heads: async () => ({}) },
-            archive: {
-                store: () => ({
+            //WHAT A JUDGEMENT HANDED BACK, asked of ../../src/app/artifact,
+            //which owns that drawer. Stubbed as the LANE-BOUND form the plugin
+            //uses -- `handedBack('judge')` hands over a store, and everything
+            //after that is `list(uid)` and `read(uid, file)` as before.
+            artifact: {
+                handedBack: () => ({
                     list: async () => files,
                     read: async (uid, file) => ({ text: bodies[file] })
                 })

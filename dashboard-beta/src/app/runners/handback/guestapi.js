@@ -26,7 +26,7 @@ module.exports = function guestapi(deps) {
     //(kind, door) -> { may, why }. Declared in ./server.js beside the code that
     //refuses by it, so this door and the pane that lists it read one string.
     var may = d.may;
-    var artifacts = d.artifacts;    //keep(uid, name, body, meta)
+    var artifacts = d.artifacts;    //keep(lane, uid, name, body, meta) -- ../../artifact
     var verdictFor = d.verdictFor;  //(judgement, verdict, note) -> recorded
     var say = d.say;                //(who, name, 'guest') -> a logger
     var MOST = d.MOST || (64 * 1024 * 1024);
@@ -147,7 +147,14 @@ module.exports = function guestapi(deps) {
                 }
                 : { run: job };
 
-            var kept = await artifacts.keep(doing ? doing.uid || doing.id : job, called, bytes, meta);
+            //THE LANE COMES FROM THE WORK, and this is the one door where it is
+            //not known until the request arrives — every other caller names its
+            //lane once at the top of its own file. `doing.kind` is `task` or
+            //`judgement`; ../../artifact turns those into the `worker` and
+            //`judge` drawers and refuses anything else rather than guessing. A
+            //machine running nothing has no kind, and its run is a `job`.
+            var kept = await artifacts(doing ? doing.kind : 'job')
+                .keep(doing ? doing.uid || doing.id : job, called, bytes, meta);
             say('vm', name, 'guest').good(name + ' handed over "' + called + '" ('
                 + Math.round((kept && kept.bytes ? kept.bytes : bytes.length) / 1024) + ' KB) for '
                 + (doing ? (doing.ref || doing.id) : job));
