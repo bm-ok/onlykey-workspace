@@ -151,6 +151,91 @@ test('a source that declares what it is NOT reading has that counted too', async
         'a gap a source owns was not carried through');
 });
 
+//---------------------------------------------------------------------------
+//AND THE LIST OF GAPS HAS TO SHRINK, WHICH IT DID NOT.
+//
+//`STILL_TO_COME` says of itself that it "only shrinks — each line leaves here
+//on the day the plugin that owns it registers a source of its own". Nothing
+//removed lines. Every one of them was reported whether or not a source had
+//since been written, so the inbox went on saying it was not reading changes
+//sent and not merged while ../../src/app/repositories/pr had a source doing
+//exactly that, worded slightly differently, at the foot of its file.
+//
+//THAT IS THE WORST THING THIS LIST CAN DO. Its whole purpose is to say where
+//the answer is incomplete; a stale line makes it UNDERSTATE itself, and an
+//answer that understates itself is one nobody trusts when it says zero.
+//---------------------------------------------------------------------------
+
+test('a gap a source covers stops being reported as a gap', async () => {
+    const { inbox, ask } = await anInbox();
+
+    const before = await ask();
+    assert.ok(before.notCounted.indexOf('changes sent and not merged') >= 0,
+        'the fixture does not have the gap this is about');
+
+    inbox.source({
+        name: 'changes that are out and not merged',
+        covers: 'changes sent and not merged',
+        waiting: () => []
+    });
+
+    const after = await ask();
+    assert.equal(after.notCounted.indexOf('changes sent and not merged'), -1,
+        'the inbox still says it cannot see something a registered source reads');
+    //AND ONLY THAT ONE. Covering a gap says nothing about the others.
+    assert.ok(after.notCounted.indexOf('changes written and not sent') >= 0);
+});
+
+test('a gap comes back when the source that covered it goes', async () => {
+    //WORKED OUT AT ANSWER TIME rather than by deleting the line, so the list
+    //describes what THIS app, as it is running now, cannot see. A server half
+    //that failed to reload is one whose sources are gone, and the gaps are
+    //real again.
+    const { inbox, ask } = await anInbox();
+
+    const stop = inbox.source({
+        name: 'changes that are out and not merged',
+        covers: 'changes sent and not merged',
+        waiting: () => []
+    });
+    assert.equal((await ask()).notCounted.indexOf('changes sent and not merged'), -1);
+
+    stop();
+    assert.ok((await ask()).notCounted.indexOf('changes sent and not merged') >= 0,
+        'the gap stayed closed after the source that closed it was gone');
+});
+
+test('a source covering a gap nobody listed is refused', async () => {
+    //A `covers` WITH A TYPO IN IT CLOSES NOTHING, silently — which is the same
+    //failure this whole mechanism exists to stop, one level down.
+    const { inbox } = await anInbox();
+    assert.throws(() => inbox.source({
+        name: 'something',
+        covers: 'changes sent and not merged yet',
+        waiting: () => []
+    }), /not one of the gaps/);
+});
+
+test('covering several at once is allowed, and each has to be real', async () => {
+    const { inbox, ask } = await anInbox();
+
+    inbox.source({
+        name: 'two of them',
+        covers: ['changes sent and not merged', 'changes written and not sent'],
+        waiting: () => []
+    });
+
+    const out = await ask();
+    assert.equal(out.notCounted.indexOf('changes sent and not merged'), -1);
+    assert.equal(out.notCounted.indexOf('changes written and not sent'), -1);
+
+    assert.throws(() => inbox.source({
+        name: 'one real one not',
+        covers: ['repositories whose remote points nowhere', 'something nobody wrote down'],
+        waiting: () => []
+    }), /not one of the gaps/);
+});
+
 //---- the refusals ---------------------------------------------------------
 
 test('a source with no name is refused, because a refusal has to name one', async () => {

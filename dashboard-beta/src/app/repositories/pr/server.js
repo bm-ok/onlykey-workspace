@@ -2028,6 +2028,11 @@ async function plugin(imports, register) {
     if (imports.inbox) {
         undo.push(imports.inbox.source({
             name: 'changes that are out and not merged',
+            //THE GAP THIS CLOSES, named exactly as ../../inbox lists it. Without
+            //this the inbox went on reporting that it was not reading changes
+            //sent and not merged, while this source read them -- the two are
+            //worded differently, which is why nobody noticed for so long.
+            covers: 'changes sent and not merged',
             waiting: async function () {
                 var all = await read(landings);
                 if (!all) return [];

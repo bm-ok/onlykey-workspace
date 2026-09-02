@@ -129,9 +129,36 @@ async function plugin(imports, register) {
                 + 'items that need a person.');
         }
 
+        //---- AND WHICH GAP IT CLOSES, IF ANY ---------------------------
+        //
+        //THE LIST ABOVE SAYS IT "ONLY SHRINKS" AND NOTHING SHRANK IT. Every
+        //line of `STILL_TO_COME` was reported as not counted whether or not
+        //somebody had since registered a source for it -- so the inbox went on
+        //saying "it is not reading changes sent and not merged" while
+        //../repositories/pr had a source doing exactly that, named slightly
+        //differently, at the foot of its file.
+        //
+        //THAT IS THE WORST THING THIS LIST CAN DO. Its whole purpose is to say
+        //where the answer is incomplete, and a stale entry makes it understate
+        //itself -- which is how somebody reads "nothing is waiting" as
+        //untrustworthy and goes looking by hand.
+        //
+        //REFUSED IF IT NAMES SOMETHING THAT IS NOT THERE, because a `covers`
+        //with a typo in it is a source that quietly closes nothing, which is
+        //the same failure again one level down.
+        var covers = it.covers == null ? [] : [].concat(it.covers);
+        covers.forEach(function (c) {
+            if (STILL_TO_COME.indexOf(c) < 0) {
+                throw new Error('"' + name + '" says it covers "' + c + '", which is not one of the gaps '
+                    + 'this list knows about. It has to match a line in STILL_TO_COME exactly, or the '
+                    + 'line stays and this source closes nothing.');
+            }
+        });
+
         var one = {
             name: name,
             waiting: it.waiting,
+            covers: covers,
             //WHAT THIS SOURCE KNOWS IT IS NOT LOOKING AT. Declared beside the
             //thing that would do the looking, so the gap is owned rather than
             //remembered somewhere else.
@@ -168,7 +195,18 @@ async function plugin(imports, register) {
                     }
                 }
 
-                STILL_TO_COME.forEach(function (n) { notCounted.push(n); });
+                //WHAT IS STILL NOT READ, WHICH IS NOT THE WHOLE LIST. A gap
+                //a registered source covers is no longer a gap, and saying it
+                //is makes this answer understate itself.
+                //
+                //WORKED OUT AT ANSWER TIME rather than by deleting the line,
+                //so a plugin that is not loaded puts its gap back -- the list
+                //describes what THIS app, as it is running now, cannot see.
+                var covered = {};
+                sources.forEach(function (s2) {
+                    (s2.covers || []).forEach(function (c) { covered[c] = true; });
+                });
+                STILL_TO_COME.forEach(function (n) { if (!covered[n]) notCounted.push(n); });
 
                 //---- AND THE SAME COUNT, SPLIT BY THE TAB IT IS ON --------
                 //
