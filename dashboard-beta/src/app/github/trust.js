@@ -214,12 +214,35 @@ function readingOf(entry, how) {
     }
 
     if (!saidIt) {
+        //---- NO MARKER SET IS A DIFFERENT SENTENCE FROM THE WRONG MARKER -----
+        //
+        //BLANK IS OFF AND BLANK IS WHAT IT SHIPS AS — see the head of this file.
+        //With none set, nothing on GitHub can ever be a request, whoever wrote
+        //it, and that is the safe default rather than a fault.
+        //
+        //IT SAID IT AS IF ONE WERE SET. The marker was interpolated straight
+        //into the sentence, so an unset one read:
+        //
+        //    "bmatusiak" is trusted, and this does not carry the "" marker
+        //
+        //which is nonsense to read and looks like a comparison that is broken. A
+        //supervisor reported exactly that as a fault to fix — reasonably, because
+        //nothing in the sentence says a marker is a thing somebody sets.
+        //
+        //SO THE OFF STATE SAYS IT IS OFF, and where to turn it on. The other
+        //branch is unchanged: a marker that IS set and absent from this comment
+        //is the ordinary case, and its wording was already right.
+        var word = String(o.marker == null ? '' : o.marker).trim();
         return said({
             kind: 'evidence',
             by: who,
             markedIt: false,
-            why: '"' + who + '" is trusted, and this does not carry the "' + String(o.marker || '')
-                + '" marker — so it is something they wrote, not something they asked for'
+            why: word
+                ? '"' + who + '" is trusted, and this does not carry the "' + word
+                    + '" marker — so it is something they wrote, not something they asked for'
+                : '"' + who + '" is trusted, but this host has no marker set — so nothing on GitHub can be '
+                    + 'read as a request to it, whoever wrote it. That is the shipped default. Set one in '
+                    + 'Settings → Trust to turn the route on.'
         });
     }
 
