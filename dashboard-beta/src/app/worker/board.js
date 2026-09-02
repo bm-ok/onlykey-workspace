@@ -29,7 +29,7 @@ module.exports = function board(theme, okc, remember, whatItHandedBack) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Spec,
-        Kv, KvRow, Notice, ask
+        Kv, KvRow, Notice, Part, PartWhy, ask
     } = theme;
 
     //WHAT THIS TASK HANDED BACK, drawn by ../artifact — the same component the
@@ -125,6 +125,31 @@ module.exports = function board(theme, okc, remember, whatItHandedBack) {
         var [only, setOnly] = remember.use('tasks', 'only', null);
         var [picked, setPicked] = remember.use('tasks', 'picked', null);
         var [said, setSaid] = useState(null);
+
+        //---- WHAT IS ACTUALLY ON THE BRANCH, WHEN SOMEBODY ASKS FOR IT -------
+        //
+        //THE SAME SHAPE ../diy USES, because it answers the same question better
+        //than this pane did. "1 commit(s) in onlykey-testing" says a change
+        //arrived and nothing about WHAT: not which commit, not what it was for.
+        //../diy names the repository, badges the count and puts the top commit's
+        //SUBJECT underneath, which is the line somebody is actually looking for.
+        //
+        //ASKED FOR, NOT ASSUMED — and that is ../diy's reasoning too, kept rather
+        //than dropped because this pane happens to be smaller. `branchArtifacts`
+        //is a log and a diff in every repository the branch is cut in, which on
+        //nine repositories is seconds. A wait somebody CHOSE is a different thing
+        //from a tab that hangs, and this pane already refreshes every ten.
+        //
+        //`okc.use(null)` SUBSCRIBES TO NOTHING, which is what makes that
+        //affordable: the call is not made until a branch is named.
+        var [reading, setReading] = useState(null);
+        var { state: carries } = okc.use(reading ? 'branchArtifacts' : null, { branch: reading });
+
+        //ONLY THE ONES CARRYING SOMETHING. A branch is cut in every repository,
+        //so nine rows of "nothing here" is a wall that hides the one row that
+        //matters — ../diy says the same and filters the same way.
+        var carrying = (((carries && carries.git && carries.git.repos) || [])
+            .filter(function (r) { return r.ahead > 0; }));
 
         if (!got && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!got) return <Pane><Skeleton rows={5} /></Pane>;
@@ -358,6 +383,60 @@ module.exports = function board(theme, okc, remember, whatItHandedBack) {
                                     {typeof on.artifact == 'string'
                                         ? <Note>{on.artifact}</Note>
                                         : null}
+
+                                    {/*---- AND WHICH COMMIT, WHEN ASKED -------
+                                        The count above says something arrived.
+                                        This says what: the repository, how far
+                                        ahead it is, and the subject of the commit
+                                        on top — which is the line somebody came
+                                        here to read.
+
+                                        BEHIND A PRESS, the way ../diy does it,
+                                        and the button says what it costs. A press
+                                        with no idea of the cost is one somebody
+                                        makes twice and then decides the app is
+                                        broken. */}
+                                    {(on.commits || 0) > 0 || on.branch ? (
+                                        reading !== on.branch
+                                            ? <div>
+                                                <Part right={<Button onClick={function () { setReading(on.branch); }}>Read it</Button>}>
+                                                    what is on the branch
+                                                </Part>
+                                                <PartWhy>
+                                                    A log and a diff in each repository this branch is cut in —
+                                                    seconds rather than instant, so it is read when you ask.
+                                                </PartWhy>
+                                            </div>
+                                            : !carries
+                                                ? <Skeleton rows={2} />
+                                                : carrying.length
+                                                    ? carrying.map(function (r) {
+                                                        var top = (r.commits || [])[0];
+                                                        return (
+                                                            <div key={r.repo}>
+                                                                <Part right={<Badge kind="ok">
+                                                                    {r.ahead + (r.ahead === 1 ? ' commit' : ' commits')}
+                                                                </Badge>}>
+                                                                    <Mono>{r.repo}</Mono>
+                                                                </Part>
+                                                                {/* THE SUBJECT, AND THE SHA BESIDE IT. The
+                                                                    subject says what it was for; the sha is
+                                                                    what somebody types to go and look. */}
+                                                                <PartWhy>
+                                                                    {top
+                                                                        ? (top.sha ? top.sha + '  ' : '')
+                                                                            + (top.subject || top.message || top.id || '')
+                                                                        : 'ahead of ' + r.base}
+                                                                </PartWhy>
+                                                            </div>
+                                                        );
+                                                    })
+                                                    //LEVEL WITH ITS BASE IS A REAL ANSWER, and a
+                                                    //different one from the count above being zero:
+                                                    //this has looked at every repository.
+                                                    : <Empty>Nothing is on this branch that is not on the line it was cut
+                                                        from — every repository it is cut in is level with its base.</Empty>
+                                    ) : null}
                                 </Panel>
 
                                 {on.session
