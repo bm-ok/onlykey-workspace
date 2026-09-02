@@ -327,7 +327,7 @@ module.exports = function board(theme, okc, remember) {
                                     ? <Panel>
                                         <CardTitle>The session</CardTitle>
                                         <CardSub><Mono>{String(on.session)}</Mono></CardSub>
-                                        <Note>What it was actually asked and what it said is on Runners → Claude Sessions.</Note>
+                                        <Note>What it was actually asked and what it said is on Claude Sessions, the pane next to this one.</Note>
                                     </Panel>
                                     : null}
 
