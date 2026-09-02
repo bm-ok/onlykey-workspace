@@ -387,16 +387,17 @@ module.exports = function repos(theme, okc) {
                                             title; the direction is the glyph. */}
                                         {busy == b.branch ? '…' : canPush(b) ? '↑' : '↓'}
                                     </Button>
-                                    {/* THE GLYPH IS NOT ITS NAME. A button
-                                        whose children are not plain text has
-                                        nothing for the guards pane to list or
-                                        the driver to match on, so `guard` says
-                                        what it is -- see ../../ui/theme/bits.
-                                        The other button on this row is three
-                                        acts and gets its name from `title`
-                                        instead; this one is always the same
-                                        act, so it can be named once. */}
-                                    <Button kind="small danger" guard="Delete branch"
+                                    {/* THE GLYPH IS NOT ITS NAME, and nothing
+                                        here gives it one. The driver matches a
+                                        button by its words, and this one's
+                                        words are a single character -- so it
+                                        is reachable from the command line only
+                                        as its glyph, which several buttons
+                                        share. `title` says what it does for a
+                                        person; an aria-label would say it to
+                                        the driver and to a screen reader both,
+                                        and is the fix if that day comes. */}
+                                    <Button kind="small danger"
                                         disabled={!canDelete(b) || busy == b.branch}
                                         title={canDelete(b)
                                             ? 'Delete ' + b.branch + ' from ' + repo + ' — this repository only'

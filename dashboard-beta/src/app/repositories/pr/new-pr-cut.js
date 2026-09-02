@@ -604,7 +604,6 @@ module.exports = function writer(theme, okc, remember) {
                                                 one is a person's press. */}
                                             <Button kind="ok" disabled={busy}
                                                 protect={!!existing}
-                                                guard={existing ? 'Write it to all' : undefined}
                                                 title={existing
                                                     ? 'Changes the title and description of every pull request in this cut'
                                                     : 'Keeps this text against these two lines. It appears on PR cuts as "not sent", and that is where it goes out'}

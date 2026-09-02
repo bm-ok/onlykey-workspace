@@ -147,14 +147,8 @@ function Views({ names, on, onPick }) {
 //SPELT `protect` RATHER THAN `protected` because `protected` is reserved in
 //strict mode and cannot be destructured out of props. The class is `protected`,
 //which is the word that shows up in the markup and in what the driver reports.
-function Button({ children, kind, protect, guard, ...rest }) {
-    //THE WORDS ON THE BUTTON ARE ITS NAME. That is what the driver matches on,
-    //what the guards pane lists, and what a person reads — three things that
-    //have to agree, and only agree by being the same string. `guard` is the
-    //override for a button whose children are not plain text.
-    var label = guard || (typeof children == 'string' ? children : null);
-    var on = useGuard(label, protect);
-    var cls = 'btn' + (kind ? ' ' + kind : '') + (on ? ' protected' : '');
+function Button({ children, kind, protect, ...rest }) {
+    var cls = 'btn' + (kind ? ' ' + kind : '') + (useGuard(null, protect) ? ' protected' : '');
     return <button className={cls} {...rest}>{children}</button>;
 }
 
@@ -321,12 +315,8 @@ function Banner({ kind, children }) {
 //by the same class, the guards pane lists it by the same words. What changes is
 //only the weight: a sentence with a repair at the end of it wants a phrase, not a
 //control sitting in the middle of the paragraph.
-function Linky({ children, onClick, title, protect, guard }) {
-    //THE WORDS ON IT ARE ITS NAME, the same rule as Button: that is what the
-    //driver matches, what the guards pane lists and what a person reads, and the
-    //three only agree by being one string.
-    var label = guard || (typeof children == 'string' ? children : null);
-    var on = useGuard(label, protect);
+function Linky({ children, onClick, title, protect }) {
+    var on = useGuard(null, protect);
     return <button className={'linky' + (on ? ' protected' : '')} onClick={onClick} title={title}>{children}</button>;
 }
 
@@ -349,9 +339,8 @@ function Linky({ children, onClick, title, protect, guard }) {
 //up as well as back — `n.closest('label')` — so the words are its name for the
 //driver, for the guards pane and for a person, which is the same rule Button
 //keeps.
-function Toggle({ children, on, onChange, disabled, title, protect, guard }) {
-    var label = guard || (typeof children == 'string' ? children : null);
-    var marked = useGuard(label, protect);
+function Toggle({ children, on, onChange, disabled, title, protect }) {
+    var marked = useGuard(null, protect);
     return (
         <label className={'toggle' + (disabled ? ' disabled' : '')} title={title}>
             <input type="checkbox" className={marked ? 'protected' : undefined}
