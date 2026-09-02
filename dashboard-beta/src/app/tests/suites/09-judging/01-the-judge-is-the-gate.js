@@ -43,13 +43,20 @@ it('a task written over the wire without a judgement is refused', async ({ okc, 
   assert.needs(job, 'no runnable working job to write a task under')
   state.job = job.id
 
-  // `_overTheWire` is what `call()` sets for anything that is not the window.
-  // The drills go through the same door a supervisor does, which is the only
-  // way this check means anything: asked as the window, it is allowed.
+  // `_fromMachine` IS WHAT THE SUPERVISOR'S OWN DOOR SETS — see
+  // src/app/supervisor/guestapi.js, which stamps the name of the machine that
+  // dialled in. The drills go through the same door a supervisor does, which is
+  // the only way this check means anything: asked as a person, it is allowed.
+  //
+  // IT USED TO SAY `_overTheWire`, AND THAT STOPPED BEING THE RIGHT QUESTION.
+  // The local pipe stamps that too, so the gate was refusing the developer at
+  // their own terminal — somebody who can read every file the judgement would
+  // have reported on. The rule is about a caller that CANNOT see the code, and
+  // that is a machine.
   await assert.refuses(
     () => okc('taskCreate', {
       task: { title: 'drill: a task with nothing behind it', brief: 'Written by a drill. It should not be written at all.', branch: state.branch, job: job.id },
-      _overTheWire: true
+      _fromMachine: 'a-drill-standing-in-for-a-supervisor'
     }),
     'judgement|becauseOf|rumour',
     'a task was written over the wire with no judgement behind it'
@@ -79,7 +86,7 @@ it('and naming a judgement that has not finished is not enough', async ({ okc, a
     () => okc('taskCreate', {
       task: { title: 'drill: a task behind an unfinished judgement', brief: 'Written by a drill.', branch: state.branch, job: state.job },
       becauseOf: asked.ref,
-      _overTheWire: true
+      _fromMachine: 'a-drill-standing-in-for-a-supervisor'
     }),
     'has not finished|not finished reading|established nothing',
     `a task was written behind ${asked.ref}, which has not read anything yet`
@@ -93,7 +100,7 @@ it('and a judgement that does not exist is not a way round it', async ({ okc, as
     () => okc('taskCreate', {
       task: { title: 'drill: a task behind a judgement that is not there', brief: 'Written by a drill.', branch: state.branch, job: state.job },
       becauseOf: 'J99999',
-      _overTheWire: true
+      _fromMachine: 'a-drill-standing-in-for-a-supervisor'
     }),
     'no judgement|there is no',
     'a task was written behind a judgement that does not exist'

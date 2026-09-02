@@ -84,9 +84,9 @@ const planWith = (machines) => async (entry) => {
 //THE JUDGE IS THE GATE BETWEEN A SUPERVISOR AND A TASK.
 //---------------------------------------------------------------------------
 
-test('over the wire, a task must name the judgement that established the work is real', async () => {
+test('a machine writing a task must name the judgement that established the work is real', async () => {
     await assert.rejects(
-        () => doors.create(aTask(), { overTheWire: true }),
+        () => doors.create(aTask(), { fromMachine: 'ok-super1' }),
         /work commissioned from a rumour/
     );
 });
@@ -95,7 +95,7 @@ test('and that judgement has to have finished — a queued one has established n
     await setUp({ judgement: async () => ({ ref: 'J4', id: 'j4', state: 'queued' }) });
 
     await assert.rejects(
-        () => doors.create(aTask(), { overTheWire: true, becauseOf: 'J4' }),
+        () => doors.create(aTask(), { fromMachine: 'ok-super1', becauseOf: 'J4' }),
         /has not finished reading yet, so it has established nothing/
     );
 });
@@ -103,7 +103,7 @@ test('and that judgement has to have finished — a queued one has established n
 test('a finished judgement lets it through, and is kept on the task', async () => {
     await setUp({ judgement: async () => ({ ref: 'J4', id: 'j4-uid', state: 'done' }) });
 
-    const made = await doors.create(aTask(), { overTheWire: true, becauseOf: 'J4' });
+    const made = await doors.create(aTask(), { fromMachine: 'ok-super1', becauseOf: 'J4' });
 
     //Six weeks later "why was this done" is answerable by reading the judgement
     //it came from rather than by asking whoever was supervising that afternoon.
@@ -119,9 +119,44 @@ test('at the window it is ordinary, and nothing is required', async () => {
     assert.equal(made.number, 1);
 });
 
+//---------------------------------------------------------------------------
+//AND THE COMMAND LINE IS THE SAME PERSON.
+//
+//THE GATE USED TO TURN ON `_overTheWire`, WHICH THE LOCAL PIPE STAMPS. That
+//made the refusal fire at somebody sitting at their own terminal, inside the
+//workspace, with every file in front of them — told by a sentence beginning
+//"you cannot see the code" that they had commissioned work from a rumour.
+//
+//IT IS ASSERTED SEPARATELY FROM THE WINDOW CASE ABOVE, and deliberately so: the
+//two are the same answer for DIFFERENT reasons, and a single test would go on
+//passing if somebody reconnected the gate to `_overTheWire` tomorrow. This one
+//fails the moment it comes back.
+test('and so is the command line — the developer is not a machine', async () => {
+    //WHAT THE PIPE ACTUALLY SENDS. ../../src/app/core/ipc/main.js drops every
+    //`_` key off what arrives and then sets `_overTheWire` and nothing else, so
+    //this is the whole of what the door is told about a call from `okc.js`.
+    const made = await doors.create(aTask(), { overTheWire: true });
+
+    assert.equal(made.becauseOf, null,
+        'writing a task from the command line demanded a judgement — the developer is being held to a rule '
+        + 'written for a supervisor that cannot see the code');
+    assert.equal(made.number, 1);
+});
+
+test('a machine is refused even though it never says it is over the wire', async () => {
+    //THE GUEST DOOR SETS BOTH, and this asserts the gate reads the one that
+    //means "a model asked" rather than the one that means "not the window".
+    //Without this, keying on either flag would pass the test above.
+    await assert.rejects(
+        () => doors.create(aTask(), { fromMachine: 'ok-super1' }),
+        /work commissioned from a rumour/,
+        'a supervisor wrote a task with no judgement behind it'
+    );
+});
+
 test('a judgement that does not exist is named, not silently ignored', async () => {
     await assert.rejects(
-        () => doors.create(aTask(), { overTheWire: true, becauseOf: 'J99' }),
+        () => doors.create(aTask(), { fromMachine: 'ok-super1', becauseOf: 'J99' }),
         /There is no judgement "J99"/
     );
 });

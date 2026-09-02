@@ -50,9 +50,13 @@ would read a change under rules written for changing it.
 rule there is: a judgement reads work that is already waiting on it, so anything
 behind it in the queue is waiting twice.
 
-**The judge is the gate.** `taskCreate` over the wire refuses without
-`becauseOf` — the ref of a *finished* judgement. A supervisor cannot see the
-codebase, so a task written without one is work commissioned from a rumour.
+**The judge is the gate.** `taskCreate` refuses without `becauseOf` — the ref of
+a *finished* judgement — when **a machine** is the one writing it. A supervisor
+cannot see the codebase, so a task written without one is work commissioned from
+a rumour. It is measured by `_fromMachine`, which the supervisor's own door sets
+and the local pipe never does: the window and the command line are both the
+person building this app, and that person can read what the judgement would have
+reported on.
 `prCutMake` refuses without a current judgement that is not a rejection, and
 "current" is measured against the tips the judgement recorded: a judgement made
 before another push is a judgement of something else.

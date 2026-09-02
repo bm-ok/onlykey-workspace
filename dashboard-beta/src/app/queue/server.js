@@ -757,12 +757,20 @@ async function plugin(imports, register) {
                 + 'that established the work is real',
             takes: ['task', 'becauseOf'],
             //THE GATE IS INSIDE ./doors.js AND NOT HERE, because it is a rule
-            //about what a task IS rather than about this table. `_overTheWire`
-            //is the only thing this half knows that the door cannot.
+            //about what a task IS rather than about this table. WHO ASKED is the
+            //only thing this half knows that the door cannot.
+            //
+            //`_fromMachine` AND NOT `_overTheWire`. The judgement gate is about a
+            //caller that cannot see the code, which is a machine — the command
+            //line is the person building this app and reads every file in the
+            //workspace. ../supervisor/guestapi.js sets `_fromMachine` to the name
+            //of the machine that dialled in; the pipe in ../core/ipc never sets
+            //it, and both doors strip every `_` key off what arrives first, so it
+            //cannot be claimed. See the argument beside the gate in ./doors.js.
             run: async function (args) {
                 var a = args || {};
                 return await doors.create(a.task, {
-                    overTheWire: !!a._overTheWire,
+                    fromMachine: a._fromMachine || null,
                     becauseOf: a.becauseOf
                 });
             }

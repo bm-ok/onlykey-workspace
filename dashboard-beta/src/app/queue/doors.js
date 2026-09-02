@@ -180,7 +180,7 @@ module.exports = function doors(store, ask, log) {
         var it = typeof input === 'string' ? JSON.parse(input) : input;
         if (!it || typeof it !== 'object') throw new Error('Pass the task as an object.');
         it = Object.assign({}, it);
-        var over = !!(how && how.overTheWire);
+        var byAMachine = !!(how && how.fromMachine);
 
         //---- THE JUDGE IS THE GATE BETWEEN A SUPERVISOR AND A TASK --------
         //
@@ -195,15 +195,37 @@ module.exports = function doors(store, ask, log) {
         //something that was never wrong — and then a second judgement to find
         //out that nothing was.
         //
-        //SO WORK OVER THE WIRE NAMES THE JUDGEMENT THAT ESTABLISHED IT IS REAL,
-        //and that judgement has to have FINISHED. A queued one has established
-        //nothing yet.
+        //SO A MACHINE WRITING WORK NAMES THE JUDGEMENT THAT ESTABLISHED IT IS
+        //REAL, and that judgement has to have FINISHED. A queued one has
+        //established nothing yet.
         //
-        //NOT AT THE WINDOW. A person writing a task has read the code, or has
-        //decided they do not need to, and either is their business — the same
-        //boundary as approving a job, which is refused down the pipe and
-        //ordinary at the window.
-        if (over) {
+        //---- AND IT ASKS WHETHER A MACHINE ASKED, NOT WHETHER THE WINDOW DID -
+        //
+        //THIS USED TO TURN ON `_overTheWire`, AND THAT WAS A PROXY THAT WENT
+        //STALE. When it was written, the pipe WAS how a supervisor drove this
+        //app, so "not the window" and "a model" were the same set. Then the
+        //supervisor moved into its own VM with its own door, and
+        //../supervisor/guestapi.js began stamping `_fromMachine` on top of
+        //`_overTheWire` — from that moment the two came apart, and nothing came
+        //back here.
+        //
+        //WHAT WAS LEFT WAS A RULE THAT CAUGHT THE DEVELOPER. ../core/ipc stamps
+        //`_overTheWire` on the local named pipe, which is a person at their own
+        //terminal, in the workspace, with every file in front of them — told they
+        //had commissioned work from a rumour by a sentence that begins "you
+        //cannot see the code". They can. That is the one thing the rule is about,
+        //and it was the one thing it had stopped checking.
+        //
+        //`_fromMachine` IS THE HONEST SIGNAL AND IT CANNOT BE FORGED. Both doors
+        //drop every `_` key off what arrives before setting their own, so a
+        //machine cannot declare itself a person — see the note in ../core/ipc and
+        //the matching one in ../supervisor/guestapi.js. The pipe never sets it;
+        //the guest door always does.
+        //
+        //SO THE SUPERVISOR MEETS EXACTLY THE REFUSAL IT MET BEFORE, and the
+        //window and the command line are the same thing, which is what they are:
+        //two ways for the person building this to say what work should happen.
+        if (byAMachine) {
             var ref = String((how && how.becauseOf) || it.becauseOf || '').trim();
             if (!ref) {
                 throw new Error('Say which judgement established this work is real — pass becauseOf with its ref, '
