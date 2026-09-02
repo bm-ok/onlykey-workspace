@@ -579,7 +579,25 @@ async function plugin(imports, register) {
                 var handed = await artifacts.list(it.uid);
 
                 if (!a.file) {
-                    return Object.assign(whose(it), {
+                    //---- THE FILES, AND NOT THE JUDGEMENT'S OWN FACTS ---------
+                    //
+                    //THIS FOLDED `whose(it)` IN — ref, reads, state, verdict and
+                    //contractName — and the pane drew them as a badge and a
+                    //subtitle on the handed-back card. Those are facts about a
+                    //JUDGEMENT wearing a file card's clothes, and carrying them
+                    //here was the only thing that made this answer differ in
+                    //shape from a task's.
+                    //
+                    //`ref` IS KEPT because it is this answer's own identity —
+                    //which judgement's files these are — and somebody reading the
+                    //JSON has nothing else to tell them by.
+                    //
+                    //THE REST COME FROM `judging`, which already answers "that
+                    //one in full". The judgement API answers judgement facts; this
+                    //answers files. Asking one door two questions is how a pane
+                    //ends up with two sources for one truth.
+                    return {
+                        ref: it.ref,
                         files: handed.map(function (f) {
                             return { name: f.file, bytes: f.bytes, kept: f.kept || null };
                         }),
@@ -603,7 +621,7 @@ async function plugin(imports, register) {
                                         + 'away. Exit ' + lastExit(it) + '.'
                                     : 'It read the change and handed nothing back. That is an answer: there is '
                                         + 'no finding, and nothing about the code is known from it.'
-                    });
+                    };
                 }
 
                 //---- BY THE NAME SOMEBODY WOULD USE, not only the one on disk

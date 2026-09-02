@@ -36,7 +36,10 @@ var makeBoard = require('./board');
 //before it, and wrong about the run that had just lost its work. So this shows
 //what the dashboard now computes and does not try to be clever about it.
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library', 'whatItMayDo'];
+//`whatItHandedBack` IS ../artifact's, and the Judge draws the same one. What a
+//run produced is one subject with one pane.
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library', 'whatItMayDo',
+    'whatItHandedBack'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc, remember, library } = imports;
@@ -58,7 +61,10 @@ async function plugin(imports, register) {
 
     //THE TAB IS THE PLUGIN'S NAME NOW — see the header for why it was not.
     shell.tab({ name: 'Worker', order: 20 });
-    shell.pane({ tab: 'Worker', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember) });
+    shell.pane({
+        tab: 'Worker', name: 'Board', order: 10,
+        Component: makeBoard(theme, okc, remember, imports.whatItHandedBack)
+    });
 
     //---- AND THE SET OF THINGS A WORKER MAY BE GIVEN ---------------------
     //

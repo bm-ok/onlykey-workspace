@@ -24,7 +24,11 @@ var makeJudgements = require('./judgements');
 //looked" and "somebody looked and would not say" — and half of the ones on this
 //host that said nothing said nothing because they CRASHED.
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library', 'whatItMayDo'];
+//`whatItHandedBack` IS ../artifact's, and the Worker renders the same one. What
+//a run produced is one subject with one pane — see ../artifact/handedback.js for
+//why this stopped living in ./judgements.js.
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library', 'whatItMayDo',
+    'whatItHandedBack'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc, remember, library } = imports;
@@ -45,7 +49,10 @@ async function plugin(imports, register) {
     //was the same shape from the other direction.
 
     shell.tab({ name: 'Judge', order: 40 });
-    shell.pane({ tab: 'Judge', name: 'Judgement', order: 10, Component: makeJudgements(theme, okc, remember) });
+    shell.pane({
+        tab: 'Judge', name: 'Judgement', order: 10,
+        Component: makeJudgements(theme, okc, remember, imports.whatItHandedBack)
+    });
     //PAINTED BY ../library, LIKE THE THREE PANES BELOW IT. This was `./judges.js`
     //and the Worker tab had nothing like it — see ../library/chains.js for why a
     //copy fitted for the worker would have been the drift this app keeps finding.

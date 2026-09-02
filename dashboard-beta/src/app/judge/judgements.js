@@ -17,148 +17,47 @@ var { useState, useEffect } = React;
 //what it is.
 //---------------------------------------------------------------------------
 
-module.exports = function judgements(theme, okc, remember) {
+module.exports = function judgements(theme, okc, remember, whatItHandedBack) {
     var { Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono,
         Kv, KvRow, Notice, Code, ask } = theme;
 
-    //The line a judge is asked to end on. Three vocabularies, one shape: the
-    //last line that looks like a verdict.
-    var ENDS = /^(RECOMMENDATION|CLAIM|RECOMMEND|VERDICT)\s*:\s*(.+)$/i;
-    function lastWord(text) {
-        var lines = String(text || '').split('\n');
-        for (var i = lines.length - 1; i >= 0; i--) {
-            var m = lines[i].trim().match(ENDS);
-            if (m) return { field: m[1].toUpperCase(), said: m[2].trim() };
-        }
-        return null;
-    }
+    //---- WHAT IT HANDED BACK IS ../artifact's PANE NOW --------------------
+    //
+    //THIS FILE HELD THE ONLY COPY, and the Worker was about to get a second:
+    //same list, same per-file press, same reader, same skeleton, differing only
+    //in which action it asked. It was lifted to ../artifact/handedback.js, which
+    //owns the drawer these come out of.
+    //
+    //WHAT MADE THIS LOOK JUDGE-SPECIFIC WAS NOT THE FILES. `judgementFindings`
+    //folded the judgement's own facts into the same answer — its verdict, what it
+    //read, the contract it was held to — and this card drew them as a badge and a
+    //subtitle. Those are facts about a JUDGEMENT wearing a file card's clothes.
+    //They are on the Verdict card above now, where the rest of them are.
+    //
+    //TWO CALLS INTO ONE ACTION, which is why ../artifact takes functions rather
+    //than action names: a judgement reads its list and its files from
+    //`judgementFindings`, with a name and without, while a task reads from two
+    //separate actions. Neither shape is more right and this file should not have
+    //to know the other one.
+    var Findings = whatItHandedBack({
+        list: function (id) { return okc.call('judgementFindings', { id: id }); },
 
-    //THE HANDED-BACK COLUMN. Declared rather than returned: in findings.js this
-    //was the whole file's export, and pasting that `return` in here made
-    //everything below it unreachable -- the pane, its card, KINDS, all of it --
-    //so the factory handed back the column and the Judgement pane rendered
-    //nothing at all.
-    function Findings({ id }) {
-        var [list, setList] = useState(null);
-        var [pick, setPick] = useState(null);
-        var [body, setBody] = useState(null);
-        var [err, setErr] = useState(null);
+        //ALWAYS WITH THE FILE NAME. The form without one returns a truncated
+        //note, and the truncation removes the END — which is where the answer is.
+        read: function (id, file) { return okc.call('judgementFindings', { id: id, file: file }); },
 
-        useEffect(function () {
-            setList(null); setPick(null); setBody(null); setErr(null);
-            if (!id) return;
-            var alive = true;
-            okc.call('judgementFindings', { id: id }).then(function (d) {
-                if (!alive) return;
-                setList(d);
-                //NOT OPENED ON SIGHT. The old pane offers "Read it" per file
-                //rather than loading one — these run to twelve kilobytes and
-                //reading one is a decision, not a side effect of clicking a
-                //judgement in a list.
-            }, function (e) { if (alive) setErr(e.message); });
-            return function () { alive = false; };
-        }, [id]);
-
-        useEffect(function () {
-            if (!id || !pick) { setBody(null); return; }
-            var alive = true;
-            //ALWAYS WITH THE FILE NAME. See the header: the form without one
-            //returns a truncated note, and the truncation removes the end,
-            //which is where the answer is.
-            okc.call('judgementFindings', { id: id, file: pick }).then(function (d) {
-                if (alive) setBody(d);
-            }, function (e) { if (alive) setErr(e.message); });
-            return function () { alive = false; };
-        }, [id, pick]);
-
-        if (!id) return <Panel><Empty>nothing picked</Empty></Panel>;
-        if (err) return <Panel><Note kind="bad">{err}</Note></Panel>;
-        if (!list) return <Panel><Skeleton rows={2} /></Panel>;
-
-        var files = list.files || [];
-        var text = body && (body.text || body.content || body.body || body.file || '');
-        var end = lastWord(text);
-
-        return (
-            <div>
-                <Panel>
-                    <CardTitle>
-                        {'Handed back — ' + files.length + ' file(s)'}
-                        {list.verdict ? <Badge kind={list.verdict == 'accepted' ? 'ok' : 'bad'}>{list.verdict}</Badge> : null}
-                    </CardTitle>
-                    <CardSub>
-                        {'read ' + (list.reads || '?') + (list.contractName ? ' · under "' + list.contractName + '"' : '')}
-                    </CardSub>
-                    {files.length ? (
-                        //ONE CARD PER FILE, each with its own "Read it". A row of
-                        //identical buttons under a list of names makes somebody
-                        //match the third button to the third name; a card puts the
-                        //press next to the thing it presses.
-                        <Stack>
-                            {files.map(function (f) {
-                                return (
-                                    <Card key={f.name}>
-                                        <CardTitle>
-                                            <Mono>{f.name}</Mono>
-                                            <Badge kind="muted">{Math.round(f.bytes / 1024) + ' KB'}</Badge>
-                                        </CardTitle>
-                                        <div className="row" style={{ marginTop: '6px' }}>
-                                            <Button kind={f.name == pick ? 'ok' : undefined}
-                                                onClick={function () { setPick(f.name); }}>
-                                                {f.name == pick ? 'Reading it' : 'Read it'}
-                                            </Button>
-                                        </div>
-                                    </Card>
-                                );
-                            })}
-                        </Stack>
-                    ) : (
-                        //NOTHING HANDED BACK IS THE ONE ANSWER WORTH ALARM. A
-                        //judgement that changes nothing and hands nothing back
-                        //has said nothing at all, however cleanly it exited.
-                        <Note kind="warn">
-                            It handed nothing back. A judgement changes nothing, so a run with no files
-                            is a run that said nothing &mdash; whatever its state says.
-                        </Note>
-                    )}
-                </Panel>
-
-                {/* THE LAST LINE, LIFTED OUT. For a check-a-claim this IS the
-                    answer, and it sits at the bottom of a file thousands of
-                    bytes long — which is how it gets missed and how the
-                    `verdict` field gets read instead. */}
-                {end ? (
-                    <Panel>
-                        <CardTitle>
-                            {'It ended on ' + end.field}
-                            <Badge kind={/^(true|yes|accept)/i.test(end.said) ? 'ok'
-                                : /^(false|no|reject)/i.test(end.said) ? 'bad' : 'warn'}>{end.said}</Badge>
-                        </CardTitle>
-                        <CardSub>
-                            This is the judge&apos;s own recommendation, in the words its prompt asked it to
-                            end on. For a check-a-claim it is the answer — the verdict field means something
-                            else and has pointed the other way.
-                        </CardSub>
-                    </Panel>
-                ) : null}
-
-                {/* ONLY WHEN SOMETHING IS BEING READ. An empty "nothing to
-                    read" panel under a list of files somebody has not pressed yet
-                    is a panel reporting on a question nobody asked. */}
-                {pick ? (
-                    <Panel>
-                        <CardTitle><Mono>{pick}</Mono></CardTitle>
-                        {body === null
-                            ? <Skeleton rows={3} />
-                            : text
-                                ? <Code text={text} tall />
-                                : <Empty>the file came back empty</Empty>}
-                    </Panel>
-                ) : null}
-            </div>
-        );
-    };
+        //NOTHING HANDED BACK IS THE ONE ANSWER WORTH ALARM, and this sentence is
+        //why `empty` is not a default in the shared component. It is true of a
+        //judgement and FALSE of a task, which delivers on its branch and may hand
+        //back nothing at all quite properly.
+        empty: (
+            <Note kind="warn">
+                It handed nothing back. A judgement changes nothing, so a run with no files
+                is a run that said nothing &mdash; whatever its state says.
+            </Note>
+        )
+    });
 
     //A CRASH AND A SILENCE ARE NOT ONE THING, and this tab could not tell them
     //apart at first. Both look identical here — done, no verdict, nothing
@@ -537,19 +436,23 @@ module.exports = function judgements(theme, okc, remember) {
                                             <div className="console short">{on.whyFailed}</div>
                                         </KvRow>
                                         : null}
-                                    {/* WHAT THE JUDGE RECOMMENDS AND WHETHER IT MAY
-                                        GO OUT, on two lines with two labels. */}
-                                    <KvRow label="it concluded">
-                                        {on.concluded
-                                            ? <Badge kind="ok">{on.concluded}</Badge>
-                                            : <span className="muted">it would not say</span>}
-                                    </KvRow>
-                                    <KvRow label="verdict">
-                                        {on.verdict
-                                            ? <Badge kind={on.verdict == 'accepted' ? 'ok' : 'bad'}>{on.verdict}</Badge>
-                                            : <span className="muted">none recorded &mdash; a check-a-claim writes none</span>}
-                                    </KvRow>
-                                    {on.note ? <KvRow label="because"><div className="console short">{on.note}</div></KvRow> : null}
+                                    {/* WHAT IT CONCLUDED AND WHAT WAS DECIDED ARE
+                                        NOT HERE ANY MORE. They are the Verdict
+                                        card at the top of the right-hand column,
+                                        above what it handed back.
+
+                                        MOVED RATHER THAN COPIED. This list is the
+                                        judgement's RECORD — what was asked, of
+                                        what, under which rules — and it runs to
+                                        fifteen rows. What came of it is a
+                                        different question and was the two rows
+                                        somebody actually came here for, three
+                                        quarters of the way down a table.
+
+                                        AND NOT DUPLICATED, deliberately. Two
+                                        places showing one fact is two places to
+                                        disagree, and the one somebody happens to
+                                        read decides what they believe. */}
                                     <KvRow label="judged by">{on.by || <span className="muted">not recorded</span>}</KvRow>
                                     <KvRow label="judge">{on.job || <span className="muted">none</span>}</KvRow>
                                     <KvRow label="told">{on.promptName || on.promptId || <span className="muted">none</span>}</KvRow>
@@ -618,6 +521,46 @@ module.exports = function judgements(theme, okc, remember) {
                     </Col>
 
                     <Col wide>
+                        {/* ---- WHAT CAME OF IT, ABOVE WHAT IT PRODUCED --------
+                            TWO FIELDS, TWO ROWS, AND THEY MUST NOT BE MERGED.
+                            They came apart badly once: a check-a-claim confirmed
+                            a reviewer's request — CLAIM: true, meaning "yes, that
+                            is worth doing" — and it was filed as `rejected`,
+                            which then read to the cut gate as a failed review of
+                            the branch. A confirmed, worth-doing improvement
+                            registering as a reason the change could not go out.
+
+                            `concluded`  what the JUDGE recommends, in the words
+                                         its own prompt asked it to end on.
+                            `verdict`    whether the change is fit to go out,
+                                         which only a person writes.
+
+                            A check-a-claim writes NO verdict on purpose, so
+                            "none recorded" is an ordinary state here rather than
+                            something missing. */}
+                        {on ? (
+                            <div>
+                                <h2>Verdict</h2>
+                                <Panel>
+                                    <Kv>
+                                        <KvRow label="it concluded">
+                                            {on.concluded
+                                                ? <Badge kind="ok">{on.concluded}</Badge>
+                                                : <span className="muted">it would not say</span>}
+                                        </KvRow>
+                                        <KvRow label="verdict">
+                                            {on.verdict
+                                                ? <Badge kind={on.verdict == 'accepted' ? 'ok' : 'bad'}>{on.verdict}</Badge>
+                                                : <span className="muted">none recorded &mdash; a check-a-claim writes none</span>}
+                                        </KvRow>
+                                        {on.note
+                                            ? <KvRow label="because"><div className="console short">{on.note}</div></KvRow>
+                                            : null}
+                                    </Kv>
+                                </Panel>
+                            </div>
+                        ) : null}
+
                         <h2>Handed back</h2>
                         <Findings id={on ? (on.ref || String(on.number)) : null} />
                     </Col>

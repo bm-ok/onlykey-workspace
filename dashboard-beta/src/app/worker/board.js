@@ -24,12 +24,49 @@ var { useState } = React;
 //machine up costs about thirty seconds before any work starts, every time.
 //---------------------------------------------------------------------------
 
-module.exports = function board(theme, okc, remember) {
+module.exports = function board(theme, okc, remember, whatItHandedBack) {
+
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Spec,
         Kv, KvRow, Notice, ask
     } = theme;
+
+    //WHAT THIS TASK HANDED BACK, drawn by ../artifact — the same component the
+    //Judge draws, asking different actions.
+    //
+    //BELOW THE DESTRUCTURE ABOVE, AND IT WAS NOT. `empty` holds real JSX, built
+    //once when this factory runs rather than at render, so `Empty` has to exist
+    //by the time this line does. Written above it, `var` hoisting made `Empty`
+    //undefined rather than throwing, React built an element from nothing, and the
+    //whole pane died with "element type is invalid" — a message that names React
+    //and not the line. `npm run check` was green throughout.
+    //
+    //TWO ACTIONS WHERE THE JUDGE HAS ONE, which is why ../artifact/handedback.js
+    //takes functions rather than action names. `taskFiles` lists and
+    //`taskFileRead` reads; a judgement does both through `judgementFindings`.
+    //Neither shape is more right, and the shared pane should not have to know
+    //which of them a caller uses.
+    var HandedBack = whatItHandedBack({
+        list: function (id) { return okc.call('taskFiles', { id: id }); },
+        read: function (id, file) { return okc.call('taskFileRead', { id: id, file: file }); }
+
+        //NO `empty`, AND THAT IS THE POINT RATHER THAN AN OMISSION.
+        //
+        //One was written here first and the pane drew two sentences saying the
+        //same thing, one above the other: `taskFiles` already answers "nothing
+        //was handed over — a run hands one over by calling okc-artifact <file>,
+        //which is on its PATH", and this added "nothing was handed back, a task
+        //delivers on its branch".
+        //
+        //THE ACTION'S IS THE BETTER OF THE TWO because it names the thing a
+        //person would do next, and it is written where the action is rather than
+        //where the pane is. ../artifact/handedback.js falls back to it.
+        //
+        //THE JUDGE DOES PASS ONE, because nothing handed back is an ALARM there
+        //and ordinary here — that is the whole of the difference between the two
+        //callers.
+    });
 
     var when = function (s) { return s ? String(s).replace('T', ' ').slice(0, 16) : null; };
     var secs = function (ms) { return ms == null ? '' : (ms / 1000).toFixed(1) + 's'; };
@@ -337,6 +374,25 @@ module.exports = function board(theme, okc, remember) {
                                         <CardSub>{String(on.verdict)}</CardSub>
                                     </Panel>
                                     : null}
+
+                                {/* ---- AND WHAT IT HANDED BACK ----------------
+                                    A SECOND CARD AND NOT A SECTION OF THE FIRST,
+                                    because these are two questions and either can
+                                    be empty while the other is not. Commits with
+                                    no files is ordinary; so is a file with no
+                                    commits, which is what a task that investigated
+                                    something and wrote up what it found looks
+                                    like.
+
+                                    THE SAME COMPONENT THE JUDGE DRAWS, from
+                                    ../artifact. A worker could hand a file back
+                                    long before this — the guest helper, the door
+                                    and the permission were all there — and
+                                    nothing on this page said so, which is why
+                                    every run so far looks like it produced
+                                    nothing but commits. */}
+                                <h2>Handed back</h2>
+                                <HandedBack id={on.id || on.uid} />
                             </div>
                         )}
                         <Note>{'read ' + reads + ' time(s), every 10s'}</Note>
