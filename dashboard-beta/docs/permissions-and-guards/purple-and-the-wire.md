@@ -45,12 +45,16 @@ are how you tell that one is held. `test/rules/no-secret-leaves.test.js`
 holds the rule; it was written the day `vmList` was found carrying every
 machine's bootstrap token out.
 
-## Guards you add
+## Where the refusal lives
 
-Settings → Guards lists every button and field the app has drawn
-(`guardsSeen`) and lets a person guard any of them (`guardSet`), which
-makes it purple everywhere and refused down the pipe. A proposed guard —
-one the app thinks should be a person's — shows first.
+Purple is decided in the code, by `protect` on the control, and nowhere else.
+
+There used to be a Settings → Guards pane that let a person guard any button
+or field by the words on it. It predates the agents running in their own
+machines: when a model might be driving the window, a refusal painted on a
+button was the boundary. It is not any more — each agent reaches this app
+through an API, so a refusal belongs there, named by the action. That is what
+`allowed.js` is, and it is the page before this one.
 
 ## Why the command line is the pipe
 

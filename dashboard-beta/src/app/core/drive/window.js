@@ -165,9 +165,9 @@ async function plugin(imports, register) {
                         || n.classList.contains('dlg-tab')
                         //A CHIP IS A FILTER, which is the same kind of thing as
                         //a tab: it changes what is being LOOKED AT and nothing
-                        //else. The guards pane listing its own "guarded 0" and
-                        //"open 3" chips as things somebody might want to guard
-                        //was how this became obvious.
+                        //else. It became obvious on a pane that catalogued every
+                        //control on screen: its own filter chips turned up in
+                        //the list as things somebody might want to guard.
                         || n.classList.contains('chip')
                         //AND THE BRAND, which is on every screen. Counted as a
                         //control it made every pane in the app look like it had

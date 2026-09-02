@@ -16,4 +16,3 @@ Pages in this suite:
 - the window-only settings (drills, trust, speaking in your name)
 - what a judge may not do to what it reads
 - what goes out under your name, and the draft step in front of it
-- the guards list at Settings → Guards, which is the complete answer

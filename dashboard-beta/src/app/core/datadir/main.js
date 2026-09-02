@@ -17,10 +17,6 @@ var path = require('node:path');
 //and the next launch looks in a directory that does not exist yet, finds
 //nothing, and behaves exactly as though this were a first run:
 //
-//  guards.json is not found      every guard the person turned off comes back
-//                                on, and every guard they added is gone. It
-//                                fails SHUT, which is the right direction, and
-//                                it still looks like the app forgot them.
 //  the nw profile is new         localStorage is empty, so the remembered tab,
 //                                pane and selection are gone. See ../remember.
 //  DevToolsActivePort is absent  `windowShot` cannot find the debugger and
@@ -37,12 +33,12 @@ var path = require('node:path');
 //reaches into the other's files, and neither should learn how.
 //
 //THE POINT OF PUTTING IT HERE: two plugins were each rebuilding this path from
-//`appPackage.name` on their own — guards for its file, shot for the debugger
-//port. Two derivations of one fact is how a rename becomes a mystery in one
-//place and not the other.
+//`appPackage.name` on their own — the guards plugin for its file, since removed,
+//and shot for the debugger port. Two derivations of one fact is how a rename
+//becomes a mystery in one place and not the other.
 //
 //WHAT BELONGS IN IT. Things the main side owns and the page may not reach:
-//guards, and anything else where being out of the page's reach is the point.
+//anything where being out of the page's reach is the point.
 //Not where somebody was looking — that is the browser's, and ../remember says
 //why. Not anything a person typed into a guarded field.
 //---------------------------------------------------------------------------

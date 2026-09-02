@@ -4,8 +4,8 @@
 //anything that must survive a save belongs. What arrives here is that same
 //object, handed over on the host.
 //
-//WHY BOTH HALVES WANT IT. `guards` is main-side because a permission must not
-//vanish on a reload; `todos` and `workspace` are server halves because they
+//WHY BOTH HALVES WANT IT. Some things are main-side because what they hold must
+//not vanish on a reload; `todos` and `workspace` are server halves because they
 //reload freely and nothing is lost when they do. Both keep something between
 //restarts, so both need this, and neither should be moved to the other side just
 //to reach it.

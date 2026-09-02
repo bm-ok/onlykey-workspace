@@ -37,7 +37,7 @@ retried with different words.
 | `issueHand` | a supervisor that hands itself work decides what it works on |
 | `*Approve`, `skillApprove`, `skillSave` | approvals |
 | every `vm*`, `guest*`, `key*` | machines and credentials |
-| `settingSet`, `guardSet` | what may run here and what goes out in your name |
+| `settingSet` | what may run here and what goes out in your name |
 | `docWrite`, `docRemove` | the wiki is people's |
 
 The list is a test fixture too: `test/tabs/supervisor-allowed.test.js`
