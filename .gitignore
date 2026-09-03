@@ -30,20 +30,9 @@ node_modules/
 npm-debug.log*
 *.tsbuildinfo
 
-# Local machine configuration -- names paths, VM names and a shared token that
-# are specific to one workstation. config.example.json is the tracked template.
-dashboard/config.json
-
-# Dashboard runtime state. It no longer lives here at all -- it moved to the
-# per-user data directory beside the certificate and the credentials, because
-# "ignored" is a rule and a rule can be changed, overridden with -f, or simply
-# not apply to whoever clones this next. A machine registry inside a working
-# tree is also one `git clean -xdf` away from every machine the app made
-# becoming unmanageable, with the machines still sitting there.
-#
-# Kept as a guard, not as a location: anything that writes here again is a
-# mistake, and this stops the mistake reaching a commit.
-dashboard/state/
+#hide/remove legacy dashboard files
+_dashboard/
+legacy/
 
 # Gate runtime state (declared sets, merge manifests). Same reasoning as above:
 # process state, not an artifact. The durable record of a merge is its merge
@@ -67,7 +56,6 @@ Thumbs.db
 desktop.ini
 push/
 scratch/
-legacy/
 
 
 # Performance traces exported from the NW.js devtools. Diagnostic output,
