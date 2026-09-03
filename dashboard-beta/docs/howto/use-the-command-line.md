@@ -37,7 +37,10 @@ Most writes are open from the command line — `taskCreate`, `docWrite`,
 refusals name their reason and, where there is one, the way that works:
 
     $ node tools/okc.js issueApprove --on o/r --number 2
-    Sending a reply is done in the window, by a person. ...
+    A waiting reply is released by a person at the window, in Repositories
+    → Issues. Something that can approve what it wrote has not written a
+    draft, it has posted with extra steps — which is the whole of why the
+    draft exists.
 
 ## Two habits
 
