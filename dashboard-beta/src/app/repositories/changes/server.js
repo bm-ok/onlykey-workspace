@@ -32,12 +32,11 @@
 //are repositories, ../../git runs the commands, and this decides what a
 //comparison MEANS across them. None of the three reaches into another's job, so
 //the day any one of them changes it changes alone.
-plugin.consumes = ['app', 'log', 'git', 'workspace', 'okc'];
+plugin.consumes = ['app', 'log', 'git', 'workspace'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var git = imports.git;
     var workspace = imports.workspace;
-    var okc = imports.okc;
     var log = imports.log.on('git');
     var actions = imports.app.host && imports.app.host.actions;
 
@@ -57,10 +56,9 @@ async function plugin(imports, register) {
     //choosing between two actions depending on what somebody picked, which is a
     //branch in the code for a difference the reader does not have.
     //
-    //LINES CAME FROM THE RELAY, and that sentence outlived the thing it
-    //described. `okc.call` is the pipe to the app being ported from and NOTHING
-    //ELSE — it rejects with "the dashboard is not listening" when that app is not
-    //running — while `lines` has since become an action of this one. So this
+    //LINES CAME FROM A RELAY ONCE, and that sentence outlived the thing it
+    //described. `okc.call` was the pipe to the app this one was ported from and
+    //NOTHING ELSE, while `lines` had since become an action of this one. So this
     //asked a dead pipe, the catch below turned the rejection into an empty list,
     //and every line name fell through to being treated as a branch.
     //
@@ -70,9 +68,9 @@ async function plugin(imports, register) {
     //failure this app is arranged against. Found by a drill that made a commit
     //and then could not see it.
     //
-    //`actions.call` IS THE ONE TO ASK. It tries this app's own table first and
-    //falls through to the pipe for anything not moved yet — so this keeps working
-    //either way round, which is the whole point of that order.
+    //`actions.call` IS THE ONE TO ASK. There is one table behind it and no pipe
+    //any more, so a name it does not have is refused rather than answered
+    //somewhere nobody can see.
     //
     //A name that is not a line is a branch — deliberately in that order, since a
     //line named after a branch is somebody meaning the line.

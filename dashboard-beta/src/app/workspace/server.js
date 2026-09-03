@@ -24,27 +24,24 @@ var path = require('path');
 //the keeping and the answering are one plugin's job, so a different one of any of
 //them changes one folder.
 //
-//AND IT ADOPTS THE DASHBOARD'S ON A FIRST RUN, rather than starting empty. That
-//app is still open on a folder and still answering most of this window's
-//questions; coming up with nothing selected would mean a pane comparing branches
-//in one workspace beside a pane listing repositories in another, with nothing on
-//screen saying why. So the borrowed answer is the DEFAULT and the kept one wins
-//once there is one — and the day core/workspaces moves across, the fallback is
-//the only part that goes.
+//IT ADOPTED THE OTHER APP'S ON A FIRST RUN, and that fallback has gone. While
+//it existed, a folder nobody had chosen here could be serving the whole window
+//— every pane, and `state.here` with them — on the strength of the old app
+//still answering. Its own header said the fallback was the only part that would
+//go the day this stood on its own, and this is that day.
 //
-//AND IT IS NOT ASKED FOR EVERY CALL. `folderOf` runs for every diff, every file
-//list and every log — three times a keystroke on a pane that is being read —
-//and each would be a round trip down the relay. Held for a few seconds, which is
-//far shorter than anybody changes workspace and far longer than one pane's worth
-//of questions.
+//THE ANSWER IS STILL HELD FOR A FEW SECONDS. `folderOf` runs for every diff,
+//every file list and every log — three times a keystroke on a pane being read —
+//and while that is now a local read rather than a round trip, holding it is
+//still far shorter than anybody changes workspace and far longer than one
+//pane's worth of questions.
 //---------------------------------------------------------------------------
 
 var HELD = 3000;
 
-plugin.consumes = ['app', 'okc', 'state', 'log'];
+plugin.consumes = ['app', 'state', 'log'];
 plugin.provides = ['workspace'];
 async function plugin(imports, register) {
-    var okc = imports.okc;
     var log = imports.log.on('workspace');
     var state = imports.state;
     var actions = imports.app.host && imports.app.host.actions;
@@ -57,34 +54,18 @@ async function plugin(imports, register) {
     var was = null;
     var at = 0;
 
-    //WHAT THE DASHBOARD IS OPEN ON. Not an error when it cannot be reached —
-    //this is a default, and a default that throws is not one.
-    //
-    //AND IT SAYS WHEN IT IS BORROWING, which it did not, and that silence cost a
-    //whole session of not knowing. Nothing here had ever chosen a workspace, so
-    //EVERY call to `dir()` went down the relay to `status` — and because the
-    //relay was always up, nothing ever hinted at it. The board, the drill
-    //results, the task store, anything through `state.here`: all of it was
-    //standing on one relayed answer, and none of it was in the count of relayed
-    //ACTIONS because it is not an action anybody calls.
+    //IT IS WORTH KEEPING WHY THERE WAS A DEFAULT HERE AT ALL. Nothing in this
+    //app had ever chosen a workspace, so every call to `dir()` went down the
+    //relay and asked the old app what IT had open — and because the relay was
+    //always up, nothing ever hinted at it. The board, the drill results, the
+    //task store, anything through `state.here`: all of it stood on one relayed
+    //answer, and none of it was in the count of relayed ACTIONS, because it was
+    //not an action anybody called.
     //
     //It surfaced by turning the other app off and watching a pane go dark that
     //had no business going dark. A dependency that only shows up when it breaks
-    //is one that should announce itself while it works.
-    var saidBorrowing = false;
-    async function borrowed() {
-        try {
-            var said = await okc.call('status', {});
-            var open = (said && said.workspace && said.workspace.dir) || null;
-            if (open && !saidBorrowing) {
-                saidBorrowing = true;
-                log.warn('no workspace has been chosen here, so this app is using the one the '
-                    + 'dashboard has open: ' + open + '. Everything kept per workspace depends on '
-                    + 'that app answering. Choose one in the Workspace tab to stand on its own.');
-            }
-            return open;
-        } catch (e) { return null; }
-    }
+    //is one that should announce itself while it works — and the surest way to
+    //make it announce itself was to take it out.
 
     async function dir() {
         if (was && Date.now() - at < HELD) return was;
@@ -92,11 +73,6 @@ async function plugin(imports, register) {
         var mine = kept.read({});
         var open = mine && mine.dir;
 
-        //A CLOSE IS NOT AN ABSENCE. See `close()`: borrowing is what this app
-        //does when it has never chosen one, and somebody who has just closed one
-        //has chosen. Without this, closing put the other app's folder back
-        //within three seconds.
-        if (!open && !(mine && mine.closed)) open = await borrowed();
         if (!open) throw new Error('no workspace is open, so there is nothing to read');
 
         was = open;
@@ -152,7 +128,7 @@ async function plugin(imports, register) {
 
         var mine = shaped(kept.read({}));
         var had = mine.known.some(function (k) { return k && k.dir === want; });
-        kept.write({ dir: mine.dir, at: mine.at, closed: mine.closed, known: withOne(mine.known, want) });
+        kept.write({ dir: mine.dir, at: mine.at, known: withOne(mine.known, want) });
         //`stillOpen` AND NOT `open`, because the action answers with `all()`
         //merged over this and `all().open` is a BOOLEAN. Two fields describing
         //different things under one name, and the more useful one loses — which
@@ -169,11 +145,6 @@ async function plugin(imports, register) {
         return {
             dir: (raw && raw.dir) || null,
             at: (raw && raw.at) || null,
-            //WHETHER SOMEBODY CLOSED IT ON PURPOSE. On the shape rather than
-            //read ad hoc, so a writer that goes through here cannot drop it —
-            //`add` did, which turned "remember a folder" into "start borrowing
-            //the other app's again".
-            closed: !!(raw && raw.closed),
             known: (raw && Array.isArray(raw.known)) ? raw.known : []
         };
     }
@@ -278,25 +249,18 @@ async function plugin(imports, register) {
 
     //EVERY ONE THIS APP KNOWS, AND WHICH IS OPEN.
     //
-    //`borrowed` IS ON THE ANSWER, and it is the field this whole thing was
-    //written for: it says the folder is the other app's rather than one chosen
-    //here, which is the difference between an app that stands on its own and one
-    //that looks like it does.
+    //IT CARRIED A `borrowed` FLAG, saying the open folder was the other app's
+    //rather than one chosen here. There is no way to be open on a folder nobody
+    //chose any more, so there is nothing for it to report.
     async function all() {
         var mine = shaped(kept.read({}));
         var open = null;
         try { open = await dir(); } catch (e) { open = null; }
 
         var known = mine.known.slice();
-        //THE BORROWED ONE IS SHOWN, and shown as borrowed. Leaving it out would
-        //make the list disagree with every other pane in the window.
-        if (open && !known.some(function (k) { return k.dir === open; })) {
-            known = known.concat([{ dir: open, added: null }]);
-        }
 
         return {
             open: !!open,
-            borrowed: !!open && open !== mine.dir,
             current: open ? { name: path.basename(open), dir: open } : null,
             where: open ? await state.here.where().catch(function () { return null; }) : null,
             known: known.map(function (k) {
@@ -320,22 +284,14 @@ async function plugin(imports, register) {
     //CLOSING IS NOT FORGETTING. It puts down the folder that is open and leaves
     //it on the list, because the ordinary reason to close one is to open another
     //and come back.
-    //CLOSING IS A DECISION, AND FOR A WHILE IT DID NOT STICK.
-    //
-    //`close()` wrote `dir: null`, and the very next `dir()` found nothing chosen
-    //and fell through to `borrowed()` — which asks the app being ported from
-    //what IT has open and adopts that. So closing a workspace put the window
-    //back to "serving …" within three seconds, on a folder nobody had chosen
-    //here, with every gated tab enabled again and `state.here` pointing at that
-    //folder's drawer. The one way to tell was the `borrowed` field, which
-    //nothing read.
-    //
-    //BORROWING IS FOR HAVING NEVER CHOSEN, not for having chosen to stop. So a
-    //deliberate close is recorded as one, and the borrow is skipped while it
-    //stands. Opening anything clears it, because opening is the other decision.
+    //IT ALSO USED TO RECORD THAT THE CLOSE WAS DELIBERATE, in a `closed` flag,
+    //because otherwise the next `dir()` found nothing chosen, borrowed the other
+    //app's folder, and put the window back to "serving …" within three seconds
+    //on a folder nobody here had picked. With no borrow to defend against, the
+    //flag guarded nothing and went with it: `dir: null` is now simply closed.
     function close() {
         var mine = shaped(kept.read({}));
-        kept.write({ dir: null, at: new Date().toISOString(), known: mine.known, closed: true });
+        kept.write({ dir: null, at: new Date().toISOString(), known: mine.known });
         was = null;
         at = 0;
         tell(null);
@@ -350,11 +306,9 @@ async function plugin(imports, register) {
         //FORGETTING THE ONE THAT IS OPEN CLOSES IT TOO, because a workspace that
         //is open and not on the list is a state with no way back to it.
         var stillOpen = mine.dir === want ? null : mine.dir;
-        //FORGETTING THE OPEN ONE CLOSES IT, and closing it is a decision — same
-        //as `close()`, or the borrow would put another folder in its place.
+        //FORGETTING THE OPEN ONE CLOSES IT.
         kept.write({
             dir: stillOpen, at: new Date().toISOString(),
-            closed: stillOpen ? mine.closed : true,
             known: left
         });
         if (!stillOpen) { was = null; at = 0; tell(null); }

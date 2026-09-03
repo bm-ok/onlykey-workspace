@@ -78,30 +78,10 @@ async function plugin(imports, register) {
     //is what makes it impossible for the port to damage the real sign-ins. It is
     //also indistinguishable, on screen, from having lost them.
     //
-    //SO IT IS ASKED RATHER THAN GUESSED. If the app being ported from holds
-    //some, the empty note says so; if it holds none, nothing is said and a fresh
-    //host reads as a fresh host.
-    //
-    //ONLY WHEN THIS LIST IS EMPTY, so it costs one relay on a screen that has
-    //nothing else to draw and nothing at all the moment there is a sign-in here.
-    //
-    //`elsewhere`, NOT `call`: `guests` IS this action, and `call` tries this
-    //table first — so it would call itself until the stack ends, looking from
-    //outside like the app simply hanging. The same trap ../../queue and
-    //../../carryover both name.
-    async function alsoElsewhere(role) {
-        if (!actions || !actions.elsewhere) return '';
-        var there = null;
-        try { there = await actions.elsewhere('guests', role ? { role: role } : {}); }
-        catch (e) { return ''; }
-
-        var held = ((there && there.guests) || []).length;
-        if (!held) return '';
-
-        return ' The app this is being ported from still holds ' + held + ' — they have not been lost, and '
-            + 'they are not read from here: this app keeps its own, so that porting it cannot damage a '
-            + 'credential a machine is using.';
-    }
+    //THE EMPTY NOTE USED TO ASK THE OTHER APP how many it was holding, and say
+    //so. That relay is gone with the rest of them, and the note is about this
+    //host alone — which is the honest thing for it to be about, since this host
+    //is the only one anything here can lend from.
 
     //---- putting one on a machine, and taking it back -----------------------
     //
@@ -183,7 +163,7 @@ async function plugin(imports, register) {
                     where: store.root(),
                     note: all.length
                         ? noteFor(role, all.length)
-                        : noteFor(role, 0) + (await alsoElsewhere(role))
+                        : noteFor(role, 0)
                 };
             }
         }));

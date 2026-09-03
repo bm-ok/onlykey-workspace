@@ -181,9 +181,6 @@ module.exports = function dispatching(deps) {
         runJudgement: function (entry, machine) { return onejudgement.run(entry, machine); },
         judging: { update: judge.update },
         refOf: judge.refOf,
-        //WHETHER THIS APP OWNS BOTH ENDS OF THE BOARD — see ./tick, which
-        //refuses to dispatch while it reads here and writes elsewhere.
-        ownsTheBoard: d.ownsTheBoard,
         //ANYTHING THAT ARRIVED FROM OUTSIDE. Not ported yet — see ./tick, which
         //takes it as an argument for exactly this reason.
         watch: d.watch
@@ -191,12 +188,7 @@ module.exports = function dispatching(deps) {
 
     var adopting = makeAdopting({
         call: call, say: say,
-        //THE SAME GUARD, AND IT MATTERS MORE HERE. Adoption's whole job is to
-        //WRITE — re-queueing what a restart stranded — so a split board makes it
-        //the one pass that does nothing but land on the wrong app.
-        workspaceOpen: async function () {
-            return (d.ownsTheBoard ? d.ownsTheBoard() : true) && await isOpen();
-        },
+        workspaceOpen: isOpen,
         machinesNow: machinesNow,
         tasksNow: tasksNow,
         judgementsNow: async function () { return judge.all() || []; },

@@ -219,44 +219,20 @@ test('with nothing said, a look starts beside the workspace that is open', async
 //---------------------------------------------------------------------------
 //CLOSING ONE MEANS IT IS CLOSED.
 //
-//`close()` wrote `dir: null` and the very next read fell through to the borrow
-//-- which asks the app this one is being ported from what IT has open and
-//adopts that. So closing a workspace put the window back to "serving ..."
-//within three seconds, on a folder nobody had chosen here, with every gated tab
-//enabled again and the per-workspace drawer pointing somewhere else.
+//IT DID NOT, AND THE REASON IS WORTH KEEPING. `close()` wrote `dir: null`, and
+//the very next read fell through to a borrow -- this app asking the dashboard
+//it was ported FROM what IT had open, and adopting that. So closing a workspace
+//put the window back to "serving ..." within three seconds, on a folder nobody
+//here had chosen, with every gated tab enabled again and the per-workspace
+//drawer pointing somewhere else.
+//
+//THE BORROW IS GONE with the relay, and with it the flag that defended against
+//this. What is left to hold is the plain thing: closed stays closed, and
+//remembering a folder is not opening one.
 
-function borrowing(where) {
-    //THE RELAY, ANSWERING. `status` is what ../workspace/server.js asks the
-    //other app for, and it answers the shape that app answers.
-    return { call: async (name) => (name === 'status' ? { workspace: { dir: where } } : {}) };
-}
-
-test('with nothing ever chosen here, the other app is borrowed from and said to be', async () => {
+test('closing one is a decision, and nothing quietly undoes it', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-'));
-    const theirs = path.join(home, 'theirs');
-    fs.mkdirSync(path.join(theirs, 'repo', '.git'), { recursive: true });
-
-    let state = null;
-    statePlugin({ dataDir: { at: (...p) => path.join(home, 'data', ...p) } }, async (_e, s) => { state = s.state; });
-    const table = {};
-    let workspace = null;
-    await workspacePlugin({
-        app: { host: { actions: { define(n, spec) { table[n] = spec; return () => {}; } } } },
-        okc: borrowing(theirs), state,
-        log: { on: () => ({ good() {}, info() {}, warn() {}, error() {} }) }
-    }, async (_e, s) => { workspace = s.workspace; });
-
-    const said = await table.workspaces.run({});
-    assert.equal(said.open, true);
-    assert.equal(said.borrowed, true, 'a folder nobody chose here read as one that was chosen');
-    assert.equal(await workspace.dir(), theirs);
-});
-
-test('closing one is a decision, and the borrow does not undo it', async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-ws-'));
-    const theirs = path.join(home, 'theirs');
     const ours = path.join(home, 'ours');
-    fs.mkdirSync(path.join(theirs, 'repo', '.git'), { recursive: true });
     fs.mkdirSync(path.join(ours, 'repo', '.git'), { recursive: true });
 
     let state = null;
@@ -265,7 +241,7 @@ test('closing one is a decision, and the borrow does not undo it', async () => {
     let workspace = null;
     await workspacePlugin({
         app: { host: { actions: { define(n, spec) { table[n] = spec; return () => {}; } } } },
-        okc: borrowing(theirs), state,
+        state,
         log: { on: () => ({ good() {}, info() {}, warn() {}, error() {} }) }
     }, async (_e, s) => { workspace = s.workspace; });
 
@@ -273,16 +249,15 @@ test('closing one is a decision, and the borrow does not undo it', async () => {
     assert.equal(await workspace.dir(), ours);
 
     const shut = await table.workspaceClose.run({});
-    assert.equal(shut.open, false,
-        'closing a workspace handed back the folder the other app has open');
-    assert.equal(shut.borrowed, false);
+    assert.equal(shut.open, false, 'closing a workspace left one open');
     await assert.rejects(() => workspace.dir(), /no workspace is open/);
 
-    //AND REMEMBERING A FOLDER DOES NOT QUIETLY RE-OPEN THE BORROW, which is what
-    //happened when `add` wrote the document without carrying the flag.
+    //AND REMEMBERING A FOLDER IS NOT OPENING ONE, which is a different act and
+    //was the one that used to restart the borrow by writing the document
+    //without carrying the flag.
     await table.workspaceAdd.run({ dir: ours });
     assert.equal((await table.workspaces.run({})).open, false,
-        'remembering a folder started the borrow again');
+        'remembering a folder opened it');
 
     //OPENING ONE IS THE OTHER DECISION, and it clears it.
     await table.workspaceUse.run({ dir: ours });

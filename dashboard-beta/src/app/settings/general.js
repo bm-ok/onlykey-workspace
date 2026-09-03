@@ -208,9 +208,9 @@ module.exports = function general(theme, okc, shell) {
         //
         //./server.js OWNS BOTH NOW: the request IS a setting, kept in the same
         //document, so two reads would be two answers to one question with a
-        //five-second window in which they disagree. Worse, the one that would be
-        //wrong is `status` — it is still relayed, so it reports the OTHER app's
-        //settings file, which this app can neither read nor write.
+        //five-second window in which they disagree. Worse, the one that would
+        //have been wrong is `status`, which was answered by another app then and
+        //reported a settings file this one could neither read nor write.
 
         var [dlgOpen, setDlgOpen] = useState(false);
         var [said, setSaid] = useState(null);

@@ -39,15 +39,14 @@ way over and what was deliberately left pointing at nothing.
 **The drills drive the app.** They require nothing but node — the harness hands
 them everything — and what they do is call this app's own actions: write a task
 and remove it again, take the worker credential off a machine and prove a
-signed-out machine is refused work, then put it back. Most of those actions are
-still relayed to the other app, so drills ported today would be drills about the
-relay rather than about anything here.
+signed-out machine is refused work, then put it back. Every one of those actions
+is answered here now — for a long time most were relayed to the app this one was
+ported from, which made a drill written then a drill about the relay.
 
-**The gate is split in two right now.** `../settings/server.js` has moved and
-`suiteRun` has not, so `settings` is answered here and the permission `suiteRun`
-actually consults is the other app's. `../ui/banners/testing.js` names which is
-which when they disagree; that whole block exists to be deleted the day
-`suiteRun` lands.
+**The gate is one thing again.** `settings` and `suiteRun` are both answered
+here, so the switch a drill reads and the switch a person presses are the same
+switch. They were split while `suiteRun` was still relayed, and
+`../ui/banners/testing.js` existed to name which was which when they disagreed.
 
 **`_fromTest` has no counterpart here.** Over there, three marks are refused when
 arming the drills: `_overTheWire`, `_driven` and `_fromTest`. Two of them are

@@ -396,10 +396,9 @@ async function plugin(imports, register) {
                 var carried = await read(branch);
 
                 //EVERY TASK THAT NAMED THIS BRANCH, AND WHAT EACH HANDED OVER.
-                //The Worker has not moved yet, so this asks by name and the relay
-                //finds it in the app being ported from. An empty list is the
-                //honest answer when it cannot be reached — nothing here claims a
-                //branch had no work done on it.
+                //ASKED BY NAME rather than through a service, and an empty list
+                //is the honest answer when it cannot be read — nothing here
+                //claims a branch had no work done on it.
                 var said = await relayed('tasks');
                 var onIt = (((said && said.tasks) || []).filter(function (t) { return t.branch === branch; }));
 

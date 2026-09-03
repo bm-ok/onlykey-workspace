@@ -64,23 +64,24 @@ after(() => {
 
 //THE REAL ../workspace, NOT A STAND-IN FOR IT. It is what turns a name into a
 //path, and the tests below about paths are testing exactly that — a fake would
-//be testing the fake. Only the relayed `status` is stood in for, because a
-//workspace on this machine is not something a test may depend on.
+//be testing the fake.
+//
+//THE FOLDER IS SEEDED AS A CHOSEN ONE, which is the only way to be open on one.
+//It used to arrive through `okc.call('status')` — the workspace plugin borrowed
+//whatever folder the app being ported from had open when nothing had been
+//chosen here. That borrow is gone with the relay, so the test does what a
+//person does: it puts the folder in the kept document.
 async function theGit() {
     let workspace = null;
     await wsPlugin({
         app: { host: {} },
-        okc: { call: async () => ({ workspace: { dir: work } }) },
-        //THE PLUGIN DECLARES `log`, so a stand-in has to supply one. It says out
-        //loud when it is borrowing a workspace from the other app rather than
-        //using one chosen here, and a check that builds it by hand is exactly
-        //the caller that would otherwise crash on the line that says so.
+        //THE PLUGIN DECLARES `log`, so a stand-in has to supply one.
         log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
         //KEPT IN MEMORY HERE. What these tests are about is paths and git, not
         //what survives a restart — core/state has its own test for that — and a
         //real one would leave documents in the app's data folder every run.
         state: {
-            app: { doc: () => { let held = null; return {
+            app: { doc: () => { let held = { dir: work, known: [] }; return {
                 read: (fallback) => (held === null ? fallback : held),
                 write: (v) => { held = v; return v; },
                 forget: () => { held = null; return true; }

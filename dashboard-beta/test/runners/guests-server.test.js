@@ -126,8 +126,10 @@ test('and NO action this plugin defines does, named or not', async () => {
     const { actions } = await aHost();
     await add(actions, 'a');
 
-    const all = (await actions.all()).actions || [];
-    const mine = all.filter(a => a.where === 'here').map(a => a.name);
+    //EVERY ROW IS THIS APP'S. It used to filter on `where === 'here'`, because
+    //`all()` also listed what the app being ported from answered. There is one
+    //table now, so the filter would only ever be a way to drop everything.
+    const mine = ((await actions.all()).actions || []).map(a => a.name);
 
     //INERTNESS. If the table came back empty this would pass having proved
     //nothing, which is the shape this whole test is about.
@@ -242,36 +244,18 @@ test('a host that has never held one answers, rather than failing', async () => 
 //— deliberately, and it is what makes the port unable to damage a credential a
 //machine is using. It is also indistinguishable on screen from having lost them.
 
-test('an empty list says when the app being ported from still holds some', async () => {
+//THE EMPTY NOTE USED TO ASK THE OTHER APP how many sign-ins IT was holding and
+//say so, because a store that had just moved reading as empty is
+//indistinguishable, on screen, from having lost them. Three tests covered that
+//relay and went with it; what is left is the note this host can answer alone.
+test('an empty list says so about this host, and asks nothing of anywhere else', async () => {
     const { actions } = await aHost();
-    actions.elsewhere = async () => ({ guests: [{ name: 'a' }, { name: 'b' }] });
 
     const said = await actions.call('guests', {});
 
-    assert.match(said.note, /still holds 2/);
-    assert.match(said.note, /they have not been lost/);
-    assert.match(said.note, /porting it cannot damage a credential a machine is using/);
-});
-
-test('and says nothing when there are none there either', async () => {
-    //A FRESH HOST READS AS A FRESH HOST.
-    const { actions } = await aHost();
-    actions.elsewhere = async () => ({ guests: [] });
-
-    const said = await actions.call('guests', {});
-    assert.equal(/still holds/.test(said.note), false, said.note);
     assert.match(said.note, /No worker sign-in yet/);
-});
-
-test('nor when there is nothing to ask, or asking fails', async () => {
-    const { actions } = await aHost();
-
-    //NO RELAY AT ALL — the ordinary case once the port is finished.
-    assert.equal(/still holds/.test((await actions.call('guests', {})).note), false);
-
-    actions.elsewhere = async () => { throw new Error('the pipe is gone'); };
-    const said = await actions.call('guests', {});
-    assert.match(said.note, /No worker sign-in yet/, 'a dead relay took the list with it');
+    assert.equal(/still holds/.test(said.note), false,
+        'the note still talks about sign-ins somewhere else');
 });
 
 test('and it is not asked at all once this host holds one', async () => {

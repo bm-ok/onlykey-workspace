@@ -46,12 +46,9 @@ var concluding = require('../queue/concluding');
 //composes and posts nothing), and the posting half is refused over the wire and
 //refused to a driven click. This app consuming `github` at all begins here.
 //
-//UNTIL THE REST MOVE THEY RELAY, which is the migration path this app is built on
-//— see ../../../CLAUDE.md. What is here shadows the relayed ones the moment it
-//is defined, and answers about THIS app's record, which starts empty.
-//
-//AND THE LIBRARY IS STILL RELAYED, which is why `judgementCreate` reads jobs,
-//prompts and contracts through `actions.call` rather than through a service. The
+//`judgementCreate` READS THE LIBRARY THROUGH `actions.call` rather than through
+//a service, which is left over from when jobs, prompts and contracts were
+//answered by the app this one was ported from. It costs nothing to keep: the
 //words are COPIED onto the judgement either way, so where they were read from
 //stops mattering the moment it is written.
 //---------------------------------------------------------------------------
@@ -113,11 +110,10 @@ async function plugin(imports, register) {
         counter: function () { return state.here.doc('judging-highest'); }
     }, log);
 
-    //WHAT HAS NOT MOVED HERE YET. `actions.call` tries this app's table first
-    //and the pipe to the app being ported from second, so the library — jobs,
-    //prompts, contracts — and the GitHub reads answer from over there until they
-    //move. A failure is null rather than a throw: every caller below treats "I
-    //could not find out" as its own answer, and ./gate.js refuses on it.
+    //ASKED BY NAME, WITH THE FAILURE SWALLOWED. A failure is null rather than a
+    //throw: every caller below treats "I could not find out" as its own answer,
+    //and ./gate.js refuses on it. The name is left over from when an unported
+    //name travelled to another app; what it does now is call and soften.
     async function relayed(name, args) {
         if (!actions) return null;
         try { return await actions.call(name, args || {}); }
@@ -344,8 +340,7 @@ async function plugin(imports, register) {
                         //EMPTY BECAUSE THE RECORD MOVED, said rather than left
                         //to read as loss. This board answers from THIS app,
                         //whose state is its own — see ../../../CLAUDE.md.
-                        : 'Nothing has been asked for here yet. This board reads this app’s own record, which '
-                            + 'starts empty and is separate from the dashboard being ported from.'
+                        : 'Nothing has been asked for here yet.'
                 };
             }
         }));

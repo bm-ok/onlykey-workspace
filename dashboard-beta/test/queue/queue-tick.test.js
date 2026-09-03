@@ -158,58 +158,19 @@ test('and the guard is released however the tick ends', async () => {
     assert.equal(out.dispatched.length, 1);
 });
 
-//---- and whether this app owns both ends of the board -----------------------
+//---- and a guard that unarmed itself, which is why it is not here ----------
 //
-//THE HAZARD: the queue defines `tasks` and, for a while, did not define
-//`taskUpdate` — so the tick READ this app's board and every write RELAYED to the
-//app being ported from, the one actually running work on real machines.
-//Adoption reads a stranded task here and re-queues it over there; a dispatch
-//marks `given` on a board it did not read it from.
+//THE HAZARD WAS REAL: the queue defined `tasks` and, for a while, did not define
+//`taskUpdate` -- so the tick READ this app's board and every write went down a
+//relay to the app being ported from, the one actually running work on real
+//machines. Adoption would read a stranded task here and re-queue it over there;
+//a dispatch would mark `given` on a board it did not read it from.
 //
-//IT IS ASKED EACH TICK rather than carried as a flag, so it clears itself the
-//day the action moves — which it now has. This is what keeps the guard honest if
-//anything ever moves back out.
-
-test('nothing is dispatched while it reads here and writes elsewhere', async () => {
-    const out = await tick({ ownsTheBoard: () => false }).once();
-
-    assert.equal(out.skipped, 'the board is read here and written elsewhere');
-    assert.deepEqual(claimed, [], 'it claimed a machine for work it could not record');
-    assert.deepEqual(ran, []);
-    assert.ok(said.some((m) => /nothing is dispatched from this host/.test(m)), said.join(' | '));
-    assert.ok(said.some((m) => /This clears itself when taskUpdate moves here/.test(m)));
-});
-
-test('and it says so once, not four times a minute', async () => {
-    const t = tick({ ownsTheBoard: () => false });
-    await t.once(); await t.once(); await t.once();
-
-    assert.equal(said.filter((m) => /nothing is dispatched from this host/.test(m)).length, 1);
-});
-
-test('and says it again if it becomes true a second time', async () => {
-    //A CONDITION THAT CLEARED AND CAME BACK is news, for the same reason the
-    //workspace one is.
-    let owns = false;
-    const t = tick({ ownsTheBoard: () => owns });
-
-    await t.once();
-    owns = true;
-    await t.once();
-    owns = false;
-    await t.once();
-
-    assert.equal(said.filter((m) => /nothing is dispatched from this host/.test(m)).length, 2);
-});
-
-test('the workspace is asked FIRST, because it is the ordinary reason', async () => {
-    //A HOST WITH NO WORKSPACE OPEN and a split board has two true answers, and
-    //only one of them is about anything somebody can do something about today.
-    open = false;
-    const out = await tick({ ownsTheBoard: () => false }).once();
-
-    assert.equal(out.skipped, 'no workspace');
-});
+//`ownsTheBoard` REFUSED TO DISPATCH AT ALL until both ends were the same app,
+//and it was asked each tick rather than carried as a flag so that it would clear
+//itself the day the action moved. It did, and then the relay went entirely --
+//there is nowhere else for a write to land now, and no way to ask. Three tests
+//covered it and went with it.
 
 //---- what the queue will and will not touch --------------------------------
 

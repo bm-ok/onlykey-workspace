@@ -29,12 +29,12 @@
 //folder. READING STAYS OPEN — `windowControls` lists what is there and presses
 //nothing, and a photograph and a list of buttons change nothing.
 //
-//THE SWITCH IS THE DASHBOARD'S, ON PURPOSE. This app has no settings of its
-//own; it relays to the running dashboard, and that is where testing mode is
-//turned on, where the banner saying so is shown, and where it is turned off
-//again when the workspace changes. A second switch for one property is the
-//second set of rules, and the second set is always the one that turns out to be
-//wrong.
+//ONE SWITCH, AND IT IS THIS APP'S. Testing mode is turned on at this window by
+//a person, for one named folder, and turned off again when the workspace
+//changes. It was the OTHER app's while this one had no settings of its own and
+//relayed for them — which was right at the time and for the same reason it is
+//one switch now: a second switch for one property is a second set of rules, and
+//the second set is always the one that turns out to be wrong.
 //---------------------------------------------------------------------------
 
 plugin.consumes = ['app', 'pages'];

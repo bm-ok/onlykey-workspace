@@ -225,18 +225,12 @@ module.exports = function workspace(theme, okc) {
                     where "In the way" used to be. What it was for is below, in
                     two panels that read the settings rather than a field.
 
-                    BORROWED WAS ON THE ANSWER ALL ALONG AND NOTHING READ IT.
-                    This app can end up serving the folder the app it was ported
-                    from has open, which looks exactly like having chosen one —
-                    and everything kept per workspace then depends on that other
-                    app still answering. */}
-                {state.borrowed ? (
-                    <Note kind="warn">
-                        This folder was not chosen here — it is the one the dashboard this app is being
-                        ported from has open, and everything kept per workspace depends on that app
-                        answering. Open it below to stand on its own.
-                    </Note>
-                ) : null}
+                    A WARNING STOOD HERE for a folder that was open without
+                    anybody here having chosen it — borrowed from the app this
+                    one was ported from, which meant everything kept per
+                    workspace depended on that app still answering. There is no
+                    way to be in that state now, so there is nothing to warn
+                    about. */}
 
                 <Cols>
                     <Col wide>

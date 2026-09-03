@@ -48,8 +48,7 @@ module.exports = {
                 //THE EMPTY BOARD SAYS WHY IT IS EMPTY. This app's tasks are its
                 //own, and "no task has been written" reads as data loss to
                 //anybody who has some in the dashboard being ported from.
-                return '  no task has been written here yet — this board reads this app’s own tasks,\n'
-                    + '  which start empty and are separate from the dashboard being ported from';
+                return '  no task has been written here yet';
             }
 
             var out = [];

@@ -221,7 +221,7 @@ module.exports = function kit(theme) {
                             <Row>
                                 <Swatch token="running" is="something is happening now" />
                                 <Swatch token="human" is="a person&apos;s press" />
-                                <Swatch token="relayed" is="attached to the old app" />
+                                <Swatch token="waiting" is="the person has something to do" />
                             </Row>
                             <Note>
                                 The same purple, under three names on purpose &mdash; so that changing
@@ -236,7 +236,7 @@ module.exports = function kit(theme) {
                                 <Dot tone="ok" title="working normally" />
                                 <Dot tone="warn" title="worth reading, and not wrong" />
                                 <Dot tone="fail" title="this window cannot reach its own server" />
-                                <Dot tone="relayed" title="attached to the dashboard being ported from" />
+                                <Dot tone="waiting" title="something is waiting on you" />
                             </Row>
                             <Note>
                                 Three sizes of news and no words. It is the smallest thing here that
@@ -277,12 +277,19 @@ module.exports = function kit(theme) {
                                 one that means something is wrong here.
                             </Note>
                             <Note>
-                                Purple there is the odd one: it is on while this app is still attached
-                                to the dashboard being ported from, and that app is the one thing
-                                nothing in this repository may write to. So it is not a status &mdash;
-                                nothing is wrong, and MORE works in this state than in the green one.
-                                It is the same warning a purple button carries, said about the whole
-                                screen at once. It goes away for good when that stops being true.
+                                Purple there means something is waiting on you, and says how many.
+                                Nothing is wrong and nothing is stuck &mdash; it is work only a person
+                                can do. It is lit by the Inbox tab&apos;s own count, so the corner and
+                                the tab cannot disagree.
+                            </Note>
+                            <Note>
+                                <strong>It is the one place purple is a status</strong>, and the rule
+                                above says purple never is. On a control it still is not: there it
+                                marks a press a model may not make. The two are one sentence from two
+                                sides &mdash; on a control, <em>this is the person&apos;s</em>; in the
+                                corner, <em>the person has something waiting</em> &mdash; and neither
+                                answers <em>how is it doing</em>, which is what every other colour
+                                here is for.
                             </Note>
                         </Shelf>
                         <Shelf title="Badges" about="a state, in one word">

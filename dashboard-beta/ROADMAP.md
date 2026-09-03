@@ -16,9 +16,26 @@ off only when something ran, not when the code looks right.
 
 ## Where it stands
 
+**The relay is cut.** There is no pipe to `dashboard/` any more: one action
+table, and a name it does not have is refused rather than passed on.
+
     258 actions in dashboard/
-    217 defined here (189 of theirs, plus 28 this app added)
-     69 not defined here BY NAME
+    285 defined here (192 of theirs, plus 93 this app added)
+     66 not defined here BY NAME -- and now simply absent
+
+Of the 66, about 36 are renames or merges that are here under another name (the
+table under 1). **The other thirty have no counterpart at all**, and the largest
+group by far is machine introspection and shell: `vmShell`, `vmScript`,
+`vmScripts`, `vmSerial`, `vmLogs`, `vmDescribe`, `vmAddress`, `vmNetwork`,
+`vmBridges`, `vmEditor`, `vmAuthorizeKey`, `vmRotateToken`, `vmSetupAgain` --
+plus `guestBackup`/`guestRestore`, `prComment`/`prFetch`/`pulls`,
+`taskLogs`/`taskSendBack`, and a few already dead by decision (`todoRemove`,
+replaced by the supervisor's memory).
+
+**That is the intended state, not a regression.** A capability that lived only
+in the app nothing here may write to was never a capability this app had; the
+open pipe just made the gap invisible. Anything on that list that turns out to
+be wanted gets built here.
 
 **Ask the app, not the source.** `tools/ported.js` reads the running app's own
 action table, which knows what is registered however it was registered. Reading
@@ -274,14 +291,13 @@ Repos → **Send work here**, pointing `local-repo-a` at
 `bm-sandbox-b/local-repo-a`. That alone should take *the order* off unrunnable
 and let everything under it run for the first time.
 
-### 2d. Relayed actions log nowhere we can see
+### 2d. ~~Relayed actions log nowhere we can see~~ — GONE WITH THE RELAY
 
-A relayed action does its logging in `dashboard/`, so every line it would have
-written is missing from Live — the log viewer both a person and a model watch a
-run through. A quiet Live is not a quiet app.
+A relayed action did its logging in `dashboard/`, so every line it would have
+written was missing from Live — the log viewer both a person and a model watch a
+run through, where a quiet Live is not a quiet app.
 
-With 2a struck out this is smaller than it looked, and it is still true of the
-69: whatever is left over there logs over there.
+Nothing is relayed now, so everything that runs logs here.
 
 ---
 
@@ -346,7 +362,8 @@ missing file.
   clean; it does not set it up on the branch or open it in VS Code or a terminal.
 * **`Watch it`** on the Supervisor tab. It follows a turn's transcript through an
   interactive shell; this app's Terminal is a console *reader* by design — a
-  file, not bytes both ways. Needs the shell relay before it can exist here.
+  file, not bytes both ways. Needs a shell of its own here — `vmShell` is one of
+  the thirty that did not come across.
 * **`issues` / `pulls`** as paged per-repository readers. `repoOverview` gives
   everything open as one row each, which is not the same question.
 
@@ -408,9 +425,10 @@ missing file.
 
 *(Add here. A line with a question mark is worth more than a blank.)*
 
-* Does anything still write to the old app's `%LOCALAPPDATA%\okc-dashboard`
-  state? Nothing should, and nothing is known to — but it has never been checked
-  from this side.
+* ~~Does anything still write to the old app's `%LOCALAPPDATA%\okc-dashboard`
+  state?~~ **Answered by cutting the relay.** There is no socket to that app any
+  more, so nothing here can reach it at all — the question can no longer be
+  asked, which is the strongest form of no.
 * need a dedicated plugin for "open in vscode",  when click it setup ssh key and launched vscode that connects to the vm directly.   this button should termperally exist on in runners->virtual machines->Actions area for selected vm, (old dashbaord had this button somewhere)
 * lightgraph ui plugin is not ported yet,  it was in old dashboard,  it was used to show the graph of the line,  and also to show the graph of the branch.  this plugin should be ported to new dashboard. use markdown and editor in ui plugin group as examples. 2 placed i remember (repositories0>graph) and (supervisor->graph)
 * issue with naming in plugins,,   we have session and sessions in the new dashbaord, 1 is for window/browser session, other is for claude session folder, need to fix this naming issue,  maybe rename claude session to claudeSession or something else.  this is a known issue, but not fixed yet.

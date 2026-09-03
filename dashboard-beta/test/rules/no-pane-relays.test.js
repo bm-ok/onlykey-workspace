@@ -8,20 +8,17 @@ const APP = path.join(__dirname, '..', '..', 'src', 'app');
 //---------------------------------------------------------------------------
 //A PANE MAY NOT ASK FOR AN ACTION THIS APP DOES NOT HAVE.
 //
-//`actions.call` tries this app's table first and the pipe to the app being
-//ported from second, and that fallback is the whole migration path: a moved
-//action takes over the moment it is defined, and everything not yet moved goes
-//on working. It is right, and it is why the port can be done a pane at a time.
+//IT USED TO BE A FLOOR AGAINST WORSE. `actions.call` tried this app's table
+//first and a pipe to the app being ported from second, and an action nobody had
+//ported did not fail — it TRAVELLED. A button wired to a name this app never
+//defined either said "Nothing here answers X" in red on a press that looked
+//ordinary, or it HAPPENED, over there, to the real machines and the real
+//credentials, under a dialog naming this app's.
 //
-//WHAT IT DOES NOT DO IS REFUSE. An action nobody has ported is not an error
-//here — it TRAVELS. So a button wired to a name this app never defined does one
-//of two things, and neither of them is nothing:
-//
-//  the other app is down    "Nothing here answers X", in red, on a press that
-//                           looked ordinary
-//  the other app is up      it happens. Over there. To the real machines, the
-//                           real credentials and the real conversation — under
-//                           a dialog naming this app's.
+//THAT PIPE IS GONE, so an undefined name is now simply refused. This rule stops
+//being a guard against silent travel and becomes the plainer thing it always
+//also was: every name a pane presses exists. Worth keeping for the reason
+//below, which never depended on the relay.
 //
 //THE SUPERVISOR'S CHAT PANE HAD FOUR OF THEM and every check available was
 //green. `chatClear` on a Clear button styled danger and gated behind a protect;
@@ -36,10 +33,10 @@ const APP = path.join(__dirname, '..', '..', 'src', 'app');
 //Every action name a window half asks for by literal — `okc.call('X')` or
 //`okc.use('X')` — is defined by some server half in this app.
 //
-//STATICALLY, AND ON PURPOSE. The running app cannot answer this: ask it for its
-//action list with the other app up and the relayed ones are all present, which
-//is exactly the state in which the mistake is invisible. The source is the only
-//place "this app defines it" and "something answers it" are different questions.
+//STATICALLY, AND ON PURPOSE. A pane is mounted only while it is showing, so
+//asking the running app proves nothing about the forty panes that are not on
+//screen — and a name is only wrong at the moment somebody presses it. The
+//source is where every call site can be looked at at once.
 //
 //A LITERAL, WHICH IS WHAT MAKES IT CHEAP AND WHAT LIMITS IT. A name assembled
 //from a variable is not seen. That is a fair trade — nearly every call site is a

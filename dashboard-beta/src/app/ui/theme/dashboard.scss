@@ -87,14 +87,16 @@
      ITS OWN NAME AND NOT `--human`, though the hex is the same, so that changing
      one of the three meanings cannot silently change the other two.
 
-     IT WAS CALLED `--guarded` AND THAT NAMED THE WRONG THING. There was a
-     Settings -> Guards pane once, and the name came from it rather than from
-     what the colour says. The pane is gone and this never was about guarding:
-     it is on while the relay to the old app is up. A name that says what a
-     thing is gets reached for correctly; a name that says what it was gets
+     IT HAS BEEN CALLED TWO WRONG THINGS ALREADY, which is why the name is
+     laboured. `--guarded` came from a Settings -> Guards pane that no longer
+     exists; `--relayed` came from the socket to the app this one was ported
+     from, and went out with it. Both named what the colour happened to be ON
+     rather than what it SAYS — and a name that says what a thing was gets
      reached for by meaning, which is how a dot marked `guarded` ended up on a
-     row about a machine somebody was sitting in. */
-  --relayed: #a371f7;
+     row about a machine somebody was sitting in.
+
+     `--waiting` IS WHAT IT SAYS: the person has something to do. */
+  --waiting: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -204,10 +206,15 @@ h2:first-child { margin-top: 0; }
  * everyday state, so it is already green — a dashboard that reads "not quite
  * right" for the entire remainder of a port is a dashboard nobody reads.
  *
- * `relayed` IS THE SCAFFOLDING STILL ATTACHED — see `--relayed` above. Not a
- * warning: everything works, and more of it works than in the green case. What
- * it says is that some of what you are looking at is coming from the old app,
- * which is worth knowing before believing it, and which has an end date.
+ * `waiting` IS SOMETHING FOR THE PERSON — see `--waiting` above. Not a warning:
+ * nothing is stuck and nothing is wrong. It says there is work only a person
+ * can do, which is the one thing a dot in the corner is any good for.
+ *
+ * IT IS THE ONE PLACE PURPLE IS A STATUS, and the rule above says purple never
+ * is. On a control it still is not: there it means a press a model may not
+ * make. The two are one sentence from two sides — on a control, THIS IS THE
+ * PERSON'S; in the corner, THE PERSON HAS SOMETHING WAITING — and neither is
+ * about how the app is doing, which is what every other colour here answers.
  *
  * `warn` IS FOR A ROW RATHER THAN THE CORNER. The three above are the three
  * things the CORNER can say; a dot in front of a list row is answering about
@@ -227,16 +234,17 @@ h2:first-child { margin-top: 0; }
   display: inline-block;
   vertical-align: middle;
 }
-/* THE TONE NAMES ARE CHECKED AGAINST THIS FILE, not invented. `relayed` here
- * started life as `notice`, which is the BANNER a few rules down — so the dot
+/* THE TONE NAMES ARE CHECKED AGAINST THIS FILE, not invented. This one started
+ * life as `notice`, which is the BANNER a few rules down — so the dot
  * quietly took `padding: 10px 16px`, `display: flex` and a gap, and drew as a
  * wide purple oval beside two round ones. It cost nothing but a look at it,
  * which is the point: CSS has no undefined-name error and no collision error
  * either, so a compound like `.dot .<tone>` is only ever as safe as the grep
- * that was done before naming the tone. `.ok`, `.fail` and `.guarded` exist
- * nowhere else in this file, and that was checked rather than assumed. */
+ * that was done before naming the tone. `.ok` and `.fail` exist nowhere else in
+ * this file, and `.waiting` appears only as `.msg.waiting` — a different
+ * compound, on a different first class. Checked rather than assumed, again. */
 .dot.ok { background: var(--ok); }
-.dot.relayed { background: var(--relayed); }
+.dot.waiting { background: var(--waiting); }
 .dot.warn { background: var(--warn); }
 .dot.fail { background: var(--fail); }
 

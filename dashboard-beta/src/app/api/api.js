@@ -62,15 +62,12 @@ module.exports = function api(theme, okc) {
                         <Act key={a.name} name={a.name}
                             about={<span>
                                 {a.about}
-                                {/* WHICH HALF ANSWERS IT, and during a port that
-                                    is the most interesting fact about an action.
-                                    The ones this app owns are unmarked, because
-                                    that is where they are all going; the mark is
-                                    on what has not moved yet, and it comes off
-                                    by itself on the day it does. */}
-                                {a.where && a.where != 'here'
-                                    ? <Badge kind="muted" title={'still answered by ' + a.where}>{a.where}</Badge>
-                                    : null}
+                                {/* A BADGE STOOD HERE saying which half answered
+                                    an action, which during the port was the most
+                                    interesting fact about one. It marked what had
+                                    not moved yet and came off by itself as things
+                                    did — and then every row was this app's, which
+                                    is the day it stopped being worth drawing. */}
                             </span>}
                             takes={(a.takes || []).join(', ')} />
                     );

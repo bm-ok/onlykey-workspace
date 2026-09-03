@@ -60,7 +60,6 @@ module.exports = function tick(deps) {
     //IT UNARMS ITSELF. The day `taskUpdate` is defined here this answers true
     //and nothing else has to change — which is the point of asking rather than
     //carrying a flag somebody has to remember to flip.
-    var ownsTheBoard = d.ownsTheBoard || function () { return true; };
     var splitSaid = false;
     var machinesNow = d.machinesNow;      //async () -> [vm]
     var tasksNow = d.tasksNow;            //async () -> [task]
@@ -131,21 +130,6 @@ module.exports = function tick(deps) {
             return { skipped: 'no workspace' };
         }
         idleSaid = false;
-
-        if (!ownsTheBoard()) {
-            //SAID ONCE, for the reason every other wait here is said once — this
-            //runs four times a minute and the condition lasts until somebody
-            //ports an action.
-            if (!splitSaid) {
-                splitSaid = true;
-                say('queue').warn('nothing is dispatched from this host: it reads its own task board and '
-                    + 'its writes still go to the app being ported from. Two boards, and every write would '
-                    + 'land on the one running the real machines. This clears itself when taskUpdate moves '
-                    + 'here.');
-            }
-            return { skipped: 'the board is read here and written elsewhere' };
-        }
-        splitSaid = false;
 
         running = true;
         try {

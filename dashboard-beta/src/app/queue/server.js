@@ -538,20 +538,6 @@ async function plugin(imports, register) {
         //remotes, which is not this plugin's subject.
         repoFor: repoFor,
 
-        //---- WHETHER THIS APP OWNS BOTH ENDS OF THE BOARD -----------------
-        //
-        //`tasks` IS DEFINED HERE AND `taskUpdate` IS NOT, so today this answers
-        //false and nothing is dispatched. Asked of the action table rather than
-        //carried as a flag: the day taskUpdate is defined here this becomes true
-        //on its own, and nobody has to remember to turn anything on.
-        //
-        //`has` IS THIS HALF'S OWN TABLE and answers synchronously — "is this
-        //action mine" is a real question and making it wait on a socket would be
-        //the wrong trade. Which is exactly the question being asked.
-        ownsTheBoard: function () {
-            return !!(actions && actions.has && actions.has('tasks') && actions.has('taskUpdate'));
-        },
-
         //AND A TASK BY ITS UID, for a machine dialling back in. By uid and
         //answered by uid: looking one up by NUMBER would follow a number
         //reissued after the task holding it was deleted.
@@ -588,17 +574,12 @@ async function plugin(imports, register) {
 
     //---- which machines are busy, and whose tick says so --------------------
     //
-    //WHAT THIS HOST IS RUNNING, from the record that outlives a save — empty
-    //until the tick lands here, which is why the other half is asked when it is.
+    //WHAT THIS HOST IS RUNNING, from the record that outlives a save.
     //
-    //ASKED OF THE OTHER HALF BY NAME, which needs `elsewhere` rather than
-    //`call`: `queueState` IS defined here, and `call` tries this table first, so
-    //it would call itself until the stack ends — looking from outside like the
-    //app simply hanging.
-    //
-    //THIS HOST'S FIRST, THE OTHER HALF'S ONLY WHILE THERE IS NOTHING OF ITS OWN.
-    //The day the tick lands here this fills and stops looking anywhere else,
-    //without a second edit, and without a moment where a machine is in both.
+    //IT USED TO ASK THE OTHER APP TOO, by `elsewhere` rather than `call`, since
+    //`queueState` is defined here and `call` tries this table first — so calling
+    //itself would have looked from outside like the app simply hanging. Both the
+    //relay and that trap are gone.
     //
     //ONE FUNCTION BECAUSE TWO ANSWERS TO "IS THAT MACHINE FREE" IS THE BUG. The
     //board shows a pool and the door below plans work into it; worked out twice,
@@ -613,15 +594,13 @@ async function plugin(imports, register) {
         //takes and releases many times while it holds a machine. Reading that
         //one here would have called a machine in flight only during the seconds
         //it happened to be mid-rollback.
-        var mine = busy.given.all();
-        if (mine.length) {
-            return mine.map(function (r) { return { machine: r.name, task: r.job }; });
-        }
-        var there = null;
-        if (actions && actions.elsewhere) {
-            try { there = await actions.elsewhere('queueState', {}); } catch (e) { there = null; }
-        }
-        return (there && there.inFlight) || [];
+        //THE OLD APP'S LEDGER USED TO BE READ HERE when this one's was empty,
+        //because for a while the runs were over there. It is not asked any more:
+        //this app's queue is the queue, and an empty ledger means nothing is in
+        //flight rather than "nothing here is in flight".
+        return busy.given.all().map(function (r) {
+            return { machine: r.name, task: r.job };
+        });
     }
 
     function busyAs(inFlight) {
@@ -1825,8 +1804,7 @@ async function plugin(imports, register) {
                     unreachable: unreachable.slice(),
                     note: unreachable.length
                         ? 'THIS BOARD IS INCOMPLETE — ' + unreachable.join(', ') + ' could not be read. What is shown '
-                            + 'is not "nothing is waiting", it is "this could not be seen". The app being ported from '
-                            + 'answers those and may not be running.'
+                            + 'is not "nothing is waiting", it is "this could not be seen".'
                         //---- AND OTHERWISE, WHETHER ANY OF IT IS GOING TO HAPPEN
                         //
                         //THIS SENTENCE WAS LEFT BEHIND BY THE THING IT DESCRIBED.

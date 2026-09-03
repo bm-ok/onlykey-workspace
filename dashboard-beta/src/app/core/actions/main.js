@@ -25,8 +25,6 @@ plugin.consumes = [];
 plugin.provides = ['actions'];
 async function plugin(imports, register) {
     var table = new Map();
-    var fallbacks = [];
-    var catalogues = [];
 
     var actions = {
         //`spec` is { about, takes, run } — the same shape the dashboard uses,
@@ -41,36 +39,6 @@ async function plugin(imports, register) {
                 //the old one's onDestroy runs in some orders, and a remover that
                 //did not check would delete the replacement.
                 if (table.get(name) === spec) table.delete(name);
-            };
-        },
-
-        //WHAT TO DO WITH A NAME NOBODY HERE OWNS YET. This app is a port in
-        //progress: most of what the window asks for still lives in the app it
-        //is being ported from, reached over its own socket. A fall-through is
-        //how both can be true at once — an action that has moved is answered
-        //here, and one that has not is passed on, with nothing above caring
-        //which. As actions arrive, the fall-through quietly stops being used.
-        fallback: function (fn) {
-            fallbacks.push(fn);
-            return function remove() {
-                fallbacks = fallbacks.filter(function (x) { return x !== fn; });
-            };
-        },
-
-        //AND WHAT EACH FALL-THROUGH COULD ANSWER, which `fallback` cannot say.
-        //A fallback is a function that answers a name; it has no way to
-        //enumerate what it would accept, so a list built from this table alone
-        //describes a tenth of what the app can actually do.
-        //
-        //That is not a cosmetic gap. The API pane leads with "every capability
-        //this server has, nothing can exist without appearing here" — a
-        //sentence which, listing ten of two hundred and sixty, is simply false,
-        //and false in the direction that makes somebody conclude a capability
-        //was lost in the port.
-        catalogue: function (fn) {
-            catalogues.push(fn);
-            return function remove() {
-                catalogues = catalogues.filter(function (x) { return x !== fn; });
             };
         },
 
@@ -102,129 +70,41 @@ async function plugin(imports, register) {
                 .sort(function (a, b) { return a.name.localeCompare(b.name); });
         },
 
-        //EVERYTHING THIS APP CAN DO, wherever it is answered.
+        //EVERYTHING THIS APP CAN DO.
         //
-        //`where` TRAVELS WITH EACH ROW, because during a port that is the most
-        //interesting fact about an action: 'here' is one this app owns, and
-        //anything else names the half still answering it. It is also how the
-        //list stops needing maintenance — the day an action moves in, its row
-        //changes side on its own.
+        //EVERY ROW USED TO CARRY `where`, because during the port that was
+        //the most interesting fact about an action: whether this app owned it
+        //or the old one was still answering it. There is one table now, so
+        //there is nowhere else a row could be from and nothing for the field
+        //to say. ../../api's badge for anything but 'here' goes with it.
         //
-        //A CATALOGUE THAT CANNOT BE READ IS NOT AN EMPTY ONE. If the pipe is
-        //down, its names are missing from this answer, and saying so is the
-        //difference between "the port has not got there yet" and "the thing it
-        //relays to is not running". The caller is told which.
+        //STILL ASYNC, because it is called as one from three places and a
+        //signature that changes with the internals is a signature that makes
+        //callers rewrite for nothing.
         all: async function () {
-            var mine = actions.list().map(function (a) {
-                return { name: a.name, about: a.about, takes: a.takes, where: 'here' };
-            });
-            var seen = new Set(mine.map(function (a) { return a.name; }));
-            var missing = [];
-
-            for (var i = 0; i < catalogues.length; i++) {
-                var got;
-                try { got = await catalogues[i](); }
-                catch (e) { missing.push(e.message); continue; }
-                if (!got || !got.list) continue;
-                got.list.forEach(function (a) {
-                    //THIS HALF WINS A NAME IT OWNS. An action that has moved in
-                    //is answered here, so listing the far one beside it would
-                    //show two rows for one capability and no way to tell which
-                    //one runs.
-                    if (seen.has(a.name)) return;
-                    seen.add(a.name);
-                    mine.push({
-                        name: a.name, about: a.about || null,
-                        takes: a.takes || [], where: got.where || 'elsewhere'
-                    });
-                });
-            }
-
-            mine.sort(function (a, b) { return a.name.localeCompare(b.name); });
-            return { actions: mine, missing: missing };
-        },
-
-        //THE SAME NAME, ASKED OF THE OTHER HALF ON PURPOSE.
-        //
-        //`call` tries this table first, which is what makes a moved action shadow
-        //the one it replaces and is the whole migration path. It also means an
-        //action that relays ITS OWN NAME calls itself: `queueState` here asking
-        //`call('queueState')` for the half it has not taken over yet recurses
-        //until the stack ends, and what it looks like from outside is the app
-        //hanging with no error at all.
-        //
-        //So this skips the table and goes straight to the pipe. It is for one
-        //situation and should stay rare: an action that has moved in, needs part
-        //of the answer the old half still owns, and cannot ask for it by any
-        //other name. Anything else should be reaching for a name it does NOT own,
-        //where `call` does the right thing on its own.
-        elsewhere: async function (name, args) {
-            for (var i = 0; i < fallbacks.length; i++) {
-                var answered = await fallbacks[i](name, args || {});
-                if (answered !== undefined) return answered;
-            }
-            throw new Error('Nothing beyond this app answers "' + name + '".');
+            return {
+                actions: actions.list().map(function (a) {
+                    return { name: a.name, about: a.about, takes: a.takes };
+                })
+            };
         },
 
         call: async function (name, args) {
             var spec = table.get(name);
             if (spec) return spec.run(args || {});
 
-            for (var i = 0; i < fallbacks.length; i++) {
-                var answered = await fallbacks[i](name, args || {});
-                //`undefined` means "not mine"; anything else is the answer. A
-                //fallback that owns the name and genuinely returns nothing says
-                //so with null.
-                if (answered !== undefined) return answered;
-            }
-
-            //NOTHING ANSWERED, AND THERE ARE TWO VERY DIFFERENT REASONS.
+            //ONE TABLE, ONE ANSWER, AND THAT SENTENCE IS TRUE AGAIN.
             //
-            //"No action called X" was said for both, and for most of this app's
-            //names it was the wrong one. Two hundred and fifty-eight actions
-            //exist; this half answers seventy-one. The rest are relayed — so
-            //with the other app stopped, seventeen panes reported a MISSING
-            //CAPABILITY about things that are merely somewhere else, and read
-            //exactly like a port that had lost them.
+            //There was a fall-through here to the app this one was ported
+            //from, and while it existed "No action called X" was the WRONG
+            //sentence for most of this app's names: they were not missing,
+            //they were merely somewhere else. So this threw a longer thing
+            //that had to go and ask the other half whether it was down.
             //
-            //A fallback that is down returns `undefined`, which is the same
-            //thing it returns for a name it does not own — deliberately, since
-            //it cannot know. But the CATALOGUE beside it can tell the two apart:
-            //it throws when the pipe is down, with a sentence about the pipe.
-            //Nothing was asking it.
-            throw await whyNot(name);
+            //Nothing is somewhere else now.
+            throw new Error('No action called "' + name + '"');
         }
     };
-
-    //WHY A NAME WENT UNANSWERED, worked out only once one has.
-    //
-    //ASKED AT THE MOMENT OF FAILURE rather than remembered, because a cache of
-    //"what the far end knows" would be a second opinion about somebody else's
-    //table, and it would be wrong in exactly the case that matters: just after
-    //an action moves. This runs on a path that has already failed, so one round
-    //trip to say something true is cheap.
-    async function whyNot(name) {
-        var down = [];
-
-        for (var i = 0; i < catalogues.length; i++) {
-            try { await catalogues[i](); }
-            catch (e) {
-                //THE FALL-THROUGH ITSELF SAYS WHY IT CANNOT ANSWER, in its own
-                //words, and its words are better than any this file could
-                //invent — it knows what it relays to and this does not.
-                down.push((e && e.message) ? e.message : String(e));
-            }
-        }
-
-        if (down.length) {
-            return new Error('Nothing here answers "' + name + '", and it may be one of the many '
-                + 'this app still relays: ' + down.join('; '));
-        }
-
-        //EVERY FALL-THROUGH ANSWERED AND NONE OF THEM HAD IT. Now the original
-        //sentence is the true one.
-        return new Error('No action called "' + name + '"');
-    }
 
     await register(null, { actions: actions });
 }

@@ -421,15 +421,16 @@ async function plugin(imports, register) {
         }
     }));
 
-    //THE DESTRUCTIVE ONE, AND IT IS HERE TO SHADOW THE RELAY.
+    //THE DESTRUCTIVE ONE, AND IT IS DEFINED HERE FOR A REASON WORTH KEEPING.
     //
-    //An action this app does not define is not refused. `actions.call` tries
-    //this table and then the pipe to the app being ported from — so while
-    //`chatClear` was missing here, every way of asking for it, the window's own
-    //Clear button included, emptied the REAL conversation over there: the one
-    //app nothing here may write to, and the only copy of what a person asked a
-    //supervisor for. Nothing said so, because a relay is what is SUPPOSED to
-    //happen to an action that has not been ported yet. Defining it is what makes
+    //There was once a pipe behind this table to the app this one was ported
+    //from, and an action this app did not define was not refused — it went down
+    //the pipe. So while `chatClear` was missing here, every way of asking for
+    //it, the window's own Clear button included, emptied the REAL conversation
+    //over there: the one app nothing here may write to, and the only copy of
+    //what a person asked a supervisor for. Nothing said so, because travelling
+    //was what was SUPPOSED to happen to an unported action. Defining it is what
+    //makes
     //asking for it land on this app's own record.
     //
     //AND WHAT IT LANDS ON IS A REFUSAL, from everywhere except a person at the
@@ -1489,10 +1490,11 @@ async function plugin(imports, register) {
     //machine is in a state to be given it.
     //
     //THIS WAS NOT DEFINED HERE AT ALL, and the pane's Start button called it
-    //anyway. An action this app does not have is relayed to the app being ported
-    //from, so the press either failed with "nothing here answers supervisorUp"
-    //(what happens with that app down) or — with it up — started ITS supervisor
-    //machine and handed it ITS credential, under a dialog naming this app's.
+    //anyway. While there was a pipe behind the action table, an undefined name
+    //travelled to the app this one was ported from — so the press either failed
+    //with "nothing here answers supervisorUp", or, with that app running,
+    //started ITS supervisor machine and handed it ITS credential, under a dialog
+    //naming this app's. An undefined name is refused now.
     undo.push(actions.define('supervisorUp', {
         about: 'Start the supervisor and sign it in, in one press',
         takes: ['name'],

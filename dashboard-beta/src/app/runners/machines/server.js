@@ -50,8 +50,7 @@ var policy = require('../../queue/policy');
 //
 //NOT THE ROLLBACK OR THE WAITING. `vmSnapshotRestore` carries a rule about what
 //a machine may push after its disk goes back, and `vmAwait` is four different
-//waits behind one name. Both are real pieces rather than wrappers, and both are
-//still relayed until they are written.
+//waits behind one name. Both are real pieces rather than wrappers.
 //
 //NOR MAKING OR DESTROYING ONE. `vmCreate`, `vmInstall` and `vmRemove` are
 //../../vms/provision's subject and are the largest thing left on this tab.
@@ -1052,12 +1051,22 @@ async function plugin(imports, register) {
                 //how it is read.
                 var back = /^(serial|console)[-.]?(previous|last|before)$/i.test(which);
 
-                //ANYTHING THIS APP DOES NOT OWN IS PASSED ON RATHER THAN
-                //REFUSED. VirtualBox's own VBox.log needs a reader that is not
-                //ported yet; `elsewhere` is how a half-moved action stays honest
-                //instead of this one pretending the question is invalid.
+                //WHAT THIS APP DOES NOT READ, IT SAYS IT DOES NOT READ.
+                //
+                //VirtualBox keeps its own VBox.log beside a machine's files and
+                //there is no reader for it here. This used to be passed to the
+                //app being ported from, which had one — so the question was
+                //answered by a program nothing in this repository may write to,
+                //and the gap was invisible for as long as that app was running.
+                //
+                //REFUSED BY NAME NOW, saying which logs exist and which does
+                //not. A missing reader that announces itself is one somebody can
+                //decide to build; one that quietly comes from somewhere else is
+                //a capability this app looks like it has and does not.
                 if (!back && !/^serial$|^console$/i.test(which)) {
-                    return await actions.elsewhere('vmLog', a);
+                    throw new Error('"' + which + '" is not a log this app reads. It keeps the serial '
+                        + 'console ("serial", and "serial-previous" for the boot before this one). '
+                        + 'The VBox.log that VirtualBox writes is not read here.');
                 }
 
                 ours.get(a.name);

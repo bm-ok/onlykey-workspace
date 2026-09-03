@@ -83,14 +83,14 @@ async function build() {
     let workspace = null;
     await wsPlugin({
         app: { host: {} },
-        okc: { call: async () => ({ workspace: { dir: work } }) },
-        //THE PLUGIN DECLARES `log`, so a stand-in has to supply one. It says out
-        //loud when it is borrowing a workspace from the other app rather than
-        //using one chosen here, and a check that builds it by hand is exactly
-        //the caller that would otherwise crash on the line that says so.
+        //THE PLUGIN DECLARES `log`, so a stand-in has to supply one.
         log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
+        //THE FOLDER IS SEEDED AS A CHOSEN ONE. It used to arrive by the
+        //workspace plugin borrowing whatever the app being ported from had
+        //open; that borrow went with the relay, so this puts it where a person
+        //choosing one would.
         state: {
-            app: { doc: () => { let held = null; return {
+            app: { doc: () => { let held = { dir: work, known: [] }; return {
                 read: (f) => (held === null ? f : held),
                 write: (v) => { held = v; return v; },
                 forget: () => { held = null; return true; }

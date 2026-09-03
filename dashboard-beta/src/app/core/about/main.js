@@ -35,11 +35,10 @@ async function plugin(imports, register) {
 
     undo.push(actions.define('actions', {
         about: 'Every action there is, and what each one takes',
-        //EVERYTHING, NOT JUST WHAT THIS HALF OWNS. While the port is under way
-        //most of what the app can do is still answered by the app it relays to,
-        //and an answer listing only this half's ten reads as "the other two
-        //hundred and fifty were lost" rather than "they have not moved yet".
-        //Each row says which side answers it.
+        //EVERY ACTION THERE IS, WHICH IS NOW THE SAME AS EVERY ACTION THIS APP
+        //OWNS. It listed a second app's as well while there was a pipe behind
+        //the table, and carried a `where` on each row to tell them apart; there
+        //is one table now and nothing for that field to say.
         takes: [],
         run: async function () { return actions.all(); }
     }));

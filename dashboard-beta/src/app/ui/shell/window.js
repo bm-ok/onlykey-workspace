@@ -24,47 +24,48 @@ var { useState, useEffect } = React;
 
 //---- WHAT THE DOT IN THE CORNER IS ABOUT -----------------------------------
 //
-//THERE ARE TWO WIRES AND IT USED TO REPORT ONE. `okc.connected` is the pipe to
-//the dashboard being ported FROM, which answers the actions this app has not
-//taken over yet; `okc.wire` is this app's own socket to its own server.
+//IT USED TO BE ABOUT THE PORT. Purple meant this app was still attached to the
+//dashboard it was ported FROM, which answered whatever had not moved across
+//yet; green meant it was answering everything by itself, which was what DONE
+//looked like. That relay is gone, and with it the only thing purple said.
 //
-//A BOOLEAN COULD NOT SAY THE THING WORTH SAYING. With the old app deliberately
-//stopped the dot went red while everything here was working perfectly, which is
-//the ordinary state of a port in progress and drew exactly as alarming as this
-//app being dead. Red that is correct most of the time is a dot nobody looks at,
-//and being looked at is the only thing a dot does.
+//IT NOW ANSWERS THE ONLY QUESTION A DOT IS ANY GOOD FOR: is there anything I
+//have to do. Being looked at is the whole job of a dot, and one that reports an
+//internal fact about the app gets looked at once.
 //
-//---- AND GREEN IS THIS APP ALONE, WHICH IS THE POINT ----------------------
-//
-//THE OBVIOUS ARRANGEMENT IS THE WRONG ONE. Green for "both wires up" reads as
-//"the most working it can be", and it is exactly backwards: being attached to
-//the old app is scaffolding. The FINISHED state of this project is this app
-//answering everything by itself, and that has to be the state that looks right,
-//or the dashboard tells you it is doing badly on the day it finally does well.
-//
-//  green   working normally — this app, on its own. What done looks like
-//  purple  still attached to the dashboard being ported from. Everything
-//          works, and MORE of it works than in the green case — but some of
-//          what is on screen is coming from the old app. Not a fault, and not
-//          a status either: purple is this theme's hazard mark, and while it
-//          is on, anything you reach for here may be reaching into the one app
-//          nothing in this repository is allowed to touch. It goes away for
-//          good when that stops being true
+//  green   working, and nothing is waiting on you
+//  purple  something is waiting on you, and how many
 //  red     this window cannot reach its own server. The only one of the three
 //          that means something is wrong HERE
 //
-//So the dot stops being about how much is connected and starts being about how
-//much of this is finished, which is the question anybody looking at it during a
-//port is actually asking.
+//RED STILL WINS, for the reason it always did: with this wire down we cannot
+//know what is waiting either, and "we do not know" has to read as the loudest
+//of the three rather than the quietest.
 //
-//It used to say "connected" / "not connected" and never name what to, which was
-//fine while there was only one thing it could mean.
-var DOT_ALONE = 'working normally — this app is answering everything itself. Nothing here '
-    + 'depends on the dashboard being ported from any more';
+//---- AND PURPLE ON A DOT IS NOT PURPLE ON A BUTTON -------------------------
+//
+//THE THEME SAYS PURPLE IS NEVER A STATUS — see ../theme/dashboard.scss — and
+//on a control that stays exactly true. A purple button is a press a model may
+//not make, and the colour is only legible there because it is spent on nothing
+//else. In the corner it IS a status, which is the one place that rule bends.
+//
+//THEY ARE ONE SENTENCE FROM TWO SIDES, which is what lets a single colour
+//carry both. On a control purple means THIS IS THE PERSON'S. In the corner it
+//means THE PERSON HAS SOMETHING WAITING. Both say the person is the one who
+//acts — neither is about how the app is doing, which is what every other
+//colour in this theme answers. A colour that sometimes meant "look at this"
+//and sometimes "how is it going" would be read as neither, and that is the
+//line this stays on the right side of.
+//
+//DRIVEN OFF THE INBOX'S OWN COUNT — the number the shell is already handed for
+//the tab badge, by ../../inbox on the one poller it already runs. So the dot
+//and the Inbox tab cannot disagree, and nothing new is fetched to light it.
+var DOT_QUIET = 'working normally, and nothing is waiting on you';
 
-var DOT_BOTH = 'still attached to the dashboard being ported from. Everything works, and the '
-    + 'actions this app has not taken over yet are being answered by it — so some of what is on '
-    + 'screen is coming from the old app rather than this one';
+function dotWaiting(n) {
+    return n + ' thing(s) waiting on you — see the Inbox tab. Nothing is stuck: this is '
+        + 'work only a person can do';
+}
 
 var DOT_DEAD = 'this window cannot reach its own server. Nothing on screen is being kept up to '
     + 'date — it is the last thing that arrived, however old that is';
@@ -308,11 +309,16 @@ async function plugin(imports, register) {
         //fix one screen away from here.
         var [said, setSaid] = useState(null);
 
-        var [up, setUp] = useState(okc.connected);
         var [wire, setWire] = useState(okc.wire);
         var [, bumpBadge] = useState(0);
 
-        useEffect(function () { return okc.onUp(setUp); }, []);
+        //WHAT THE DOT IS LIT BY, and it is the Inbox tab's own badge rather than
+        //a second question asked of the same action. ../../inbox pushes that
+        //number here on the poller it already runs; reading it back means the
+        //corner and the tab cannot say different things, which is the failure
+        //this app cares about more than either being briefly stale.
+        var waiting = Number(badges['Inbox']) || 0;
+
         useEffect(function () { return okc.onWire(setWire); }, []);
 
         here.at = function () { return { tab: on, pane: pane }; };
@@ -465,13 +471,14 @@ async function plugin(imports, register) {
         return (<>
             <Topbar
                 brand="Dashboard"
-                // THIS APP FIRST, because it is the only one of the three that
-                // means the screen is lying. With this wire down we cannot know
-                // anything about the other app either, so there is nothing to
-                // say about it and no state where both are reported at once.
+                // THE WIRE FIRST, because it is the only one of the three that
+                // means the screen is lying. With it down we cannot know what is
+                // waiting either, so there is no state where both are reported.
                 dot={!wire
                     ? { tone: 'fail', title: DOT_DEAD }
-                    : (up ? { tone: 'relayed', title: DOT_BOTH } : { tone: 'ok', title: DOT_ALONE })}
+                    : (waiting > 0
+                        ? { tone: 'waiting', title: dotWaiting(waiting) }
+                        : { tone: 'ok', title: DOT_QUIET })}
                 tabs={tabs.filter(inRow).map(function (t) {
                     return { name: t.name, badge: badges[t.name], stopped: stopped[t.name] };
                 })}

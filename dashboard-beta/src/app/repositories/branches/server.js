@@ -518,9 +518,9 @@ async function plugin(imports, register) {
                     //first — would have been a free identifier: valid syntax, a
                     //clean build, and a ReferenceError the first time a drill
                     //asked. Fifth one this sitting.
-                    note: 'Two things the app being ported from answers are not here: "reclaimable", whether this '
-                        + 'host can get its own checkout out of a branch, and "defaultHeads", where each default '
-                        + 'branch actually is. Nothing here means either yet, so neither is guessed at.'
+                    note: 'Two things are not answered here: "reclaimable", whether this host can get its own '
+                        + 'checkout out of a branch, and "defaultHeads", where each default branch actually is. '
+                        + 'Nothing here works either out yet, so neither is guessed at.'
                 };
             }
         }));

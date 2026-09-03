@@ -291,9 +291,9 @@ module.exports = function terminal(theme, okc, shell) {
 
                     {/* A SPINNER THAT NEVER STOPS IS WORSE THAN AN ERROR.
                         Keyed on `!q.state` alone, a call that FAILED looked
-                        exactly like one still on its way: `vmList` is relayed,
-                        so with the other app stopped this pane sat on a skeleton
-                        for ever and `npm run walk` could only report it as
+                        exactly like one still on its way — `vmList` was answered
+                        elsewhere then, so with that app stopped this pane sat on
+                        a skeleton for ever and `npm run walk` could only report it as
                         "still arriving" — the one pane in forty-eight it could
                         say nothing about at all.
                         `okc.use` hands back the error beside the answer; this

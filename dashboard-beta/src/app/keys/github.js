@@ -176,20 +176,13 @@ module.exports = function github(theme, okc) {
                     ) : (
                         <div>
                             <Empty>no GitHub token, so nothing here can push a branch onward or open a pull request</Empty>
-                            {/* EMPTY WOULD READ AS BROKEN, so it says which of
-                                the two it is. This app keeps its credentials in
-                                its OWN directory — that is the whole reason
-                                nothing here can damage the one the dashboard is
-                                using — and until this action was ported, this
-                                pane was showing the dashboard's answer down a
-                                relay. It stopped, and the pane went blank, and
-                                a blank pane looks exactly like a fault. */}
+                            {/* EMPTY WOULD READ AS BROKEN, so it says what to
+                                do about it rather than only that there is
+                                nothing. A blank pane looks exactly like a
+                                fault. */}
                             <Note kind="warn">
-                                This app holds its own credentials, separately from the dashboard it is
-                                being ported from — so its token is not visible here and cannot be
-                                changed from here. That is deliberate: nothing in this app can damage the
-                                credential the other one is working with. Add a token to use this app for
-                                real; both will then hold one, and they are different tokens.
+                                Add a token to use this app for real. It is kept sealed in this app&apos;s
+                                own data folder, and nothing shows it again once it is held.
                             </Note>
                         </div>
                     )}

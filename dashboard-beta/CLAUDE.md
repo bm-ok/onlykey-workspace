@@ -291,13 +291,22 @@ now the log. `core/log/server.js` is that hand-over, and it answers with a log
 that drops every line when there is no main behind it, because the test suite
 builds server halves against a bare host and every ported module logs.
 
-**Moving an action shadows the relayed one, and that is the migration path.**
-`actions.call` tries this app's table first and the pipe to `dashboard/` second,
-so a moved action takes over the moment it is defined and everything not yet
-moved keeps working. It also means the pane starts reading THIS app's answer —
-state lives in `%LOCALAPPDATA%\dashboard-beta`, not the dashboard's, so a moved
-subsystem starts empty. That is deliberate: nothing here can corrupt the real
-machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
+**There is one action table, and nothing behind it.** `actions.call` answers
+from this app or refuses. For most of the port it fell through to a pipe to
+`dashboard/`, so a moved action shadowed the relayed one and everything not yet
+moved kept working — that pipe is gone, along with `actions.elsewhere`, the
+`where` field on the action list, and the purple dot that reported it.
+
+**What that means for anything still missing:** it is missing, visibly, rather
+than answered by the app nothing here may write to. Roughly thirty of the old
+app's names have no counterpart here — most of them machine introspection and
+shell, `vmShell` and `vmSerial` and the rest. Build them here if they are
+wanted; do not reach for the old app.
+
+State lives in `%LOCALAPPDATA%\dashboard-beta`, not the dashboard's, so a
+subsystem that moved starts empty. That is deliberate: nothing here can corrupt
+the real machines, tasks or sign-ins. Say so in the pane if empty would read as
+broken.
 
 ## Rules the code is built to
 
@@ -309,17 +318,21 @@ machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
 * **Purple is a hazard mark: this is the person's, and a model may not use it.**
   It has to scream the moment anything reaches for what it is on. A purple button
   is a press the command line is refused; a purple field outline is a value that
-  is neither read nor written from outside; the purple dot in the corner says
-  this app is still attached to `dashboard/`, so part of what is on screen is
-  coming from the one app nothing here may write to. The colour is only honest
-  because of the refusal, and it is only legible while it is spent on nothing
-  else — every other colour in the theme answers *how is it doing*, and purple
-  answers *is this mine*. **The test for a new purple thing is never "is this
+  is neither read nor written from outside. **The dot in the corner is the one
+  exception and the only place purple is a status**: it means the person has
+  something waiting, lit by the Inbox count. That is the same sentence from the
+  other side — on a control purple says *this is the person's*, in the corner it
+  says *the person has something to do* — and neither answers *how is it going*.
+  (It used to mean this app was still attached to `dashboard/`; that relay is
+  gone.) The colour is only honest because of the refusal, and it is only
+  legible while it is spent on nothing else — every other colour in the theme
+  answers *how is it doing*, and purple answers *is this mine*. **The test for a new purple thing is never "is this
   important"** — everything on a dashboard is important to somebody. It is
   whether reaching for it is out of bounds. **There is no complete list any
   more.** `Settings → Kit` had a Guarded shelf that claimed to be one; the shelf
-  is gone and the purple exhibits live on Buttons. About nineteen controls are
-  purple across ten panes, and nothing enumerates them — so adding one no longer
+  is gone and the purple exhibits live on Buttons. Counted today it is thirteen
+  — twelve buttons and the GitHub token field — across eight files, and nothing
+  enumerates them — so adding one no longer
   makes a sentence somewhere false, which means nothing will catch a careless
   one for you.
 * **Grep the stylesheet before inventing a class name**, including a class

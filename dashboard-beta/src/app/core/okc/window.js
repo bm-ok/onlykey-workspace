@@ -16,29 +16,17 @@ plugin.consumes = ['io'];
 plugin.provides = ['okc'];
 async function plugin(imports, register) {
     var io = imports.io;
-    var up = false;
-    var listeners = [];
 
-    //---- TWO WIRES, AND THEY WERE ONE ANSWER --------------------------------
+    //---- THE WIRE, WHICH IS WHETHER THIS PAGE CAN REACH ITS OWN SERVER ------
     //
-    //`up` IS THE OTHER APP. ./server.js holds a local socket to the dashboard
-    //being ported FROM, and `okc:up` reports that socket — it arrives here over
-    //THIS app's socket.io, which is a different wire entirely.
-    //
-    //`wire` IS THIS ONE: whether the page can reach its own server at all.
-    //
-    //THEY WERE REPORTED AS ONE BOOLEAN and the dot in the corner had two states
-    //for three facts, so the ordinary state of a port in progress — this app
-    //perfectly healthy, the old one deliberately stopped — drew the same red as
-    //this app being dead. Red that is correct most of the time is a dot nobody
-    //looks at, which is the whole value of having one.
+    //THERE WERE TWO OF THESE. Alongside it, `up` reported a second socket — the
+    //one ./server.js held to the dashboard this app was ported FROM — and the
+    //two were reported as one boolean, so the dot in the corner had two states
+    //for three facts. The ordinary state of a port in progress, this app healthy
+    //and the old one deliberately stopped, drew the same red as this app being
+    //dead. Both the second socket and that confusion are gone.
     var wire = !!(io && io.connected);
     var wireListeners = [];
-
-    function announce(v) {
-        up = !!v;
-        listeners.forEach(function (fn) { fn(up); });
-    }
 
     function announceWire(v) {
         if (wire === !!v) return;
@@ -46,31 +34,13 @@ async function plugin(imports, register) {
         wireListeners.forEach(function (fn) { fn(wire); });
     }
 
-    io.on('okc:up', announce);
-
-    //ASKED ONCE, BECAUSE THE ANNOUNCEMENT MAY ALREADY HAVE HAPPENED. The server
-    //emits on connection; this plugin attaches its listener when the graph
-    //reaches it, which is afterwards. Waiting to be told left the dot red over
-    //a panel that was plainly working.
-    io.emit('okc:up?', {}, announce);
-
-    //AND THE WIRE ITSELF, because `okc:up` can only ever arrive from a server
-    //that is still there. Driving the dot from that message alone means the one
-    //event it cannot report is the one that matters: when the socket drops,
-    //nothing is emitted, `up` stays true, and the dot stays green over a page
-    //that can no longer ask anything.
-    //
-    //THIS HAS ALREADY COST AN HOUR. The window sat there fully painted, dot
-    //green, while every call from outside answered "no page is connected" — and
-    //because the panes here fetch once rather than poll, nothing on the screen
-    //went stale to give it away. A green dot has to mean the wire is open, or it
-    //is worse than no dot at all.
-    //
-    //AND `announce(false)` HERE IS NOT A GUESS — it is the honest answer. With
-    //this wire down nothing can tell us about the other one, and "we do not
-    //know" has to read as "no" for anything a person might act on.
-    io.on('disconnect', function () { announceWire(false); announce(false); });
-    io.on('connect', function () { announceWire(true); io.emit('okc:up?', {}, announce); });
+    //THE WIRE ITSELF, AND IT HAS ALREADY COST AN HOUR. The window sat there
+    //fully painted, dot green, while every call from outside answered "no page
+    //is connected" — and because the panes here fetch once rather than poll,
+    //nothing on the screen went stale to give it away. A green dot has to mean
+    //the wire is open, or it is worse than no dot at all.
+    io.on('disconnect', function () { announceWire(false); });
+    io.on('connect', function () { announceWire(true); });
 
     //---- WHETHER THIS WINDOW IS BEING DRIVEN FROM OUTSIDE -----------------
     //
@@ -141,19 +111,10 @@ async function plugin(imports, register) {
         //to say whether this window currently believes a person is at it.
         driving: function (on) { drivenFromTheWire = !!on; },
         get driven() { return drivenFromTheWire; },
-        get connected() { return up; },
-        //AND WHETHER THIS APP'S OWN WIRE IS OPEN, which is a different question
-        //and is the one that means something is wrong here rather than there.
+        //WHETHER THIS APP'S OWN WIRE IS OPEN, which is the question that means
+        //something is wrong HERE rather than anywhere else.
         get wire() { return wire; },
-        //WHETHER THE DASHBOARD IS THERE IS EVERY TAB'S BUSINESS, and it
-        //changes often — it is restarted whenever its own code is worked
-        //on. Subscribing beats each tab polling for it.
-        onUp: function (fn) {
-            listeners.push(fn);
-            fn(up);
-            return function () { listeners = listeners.filter(function (x) { return x != fn; }); };
-        },
-        //THE SAME SHAPE FOR THE SAME REASON, and called back straight away so a
+        //SUBSCRIBED RATHER THAN POLLED, and called back straight away so a
         //subscriber that mounts after the socket is already open is not left
         //holding the value this plugin was built with.
         onWire: function (fn) {

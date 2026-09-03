@@ -482,10 +482,10 @@ module.exports = function chat(theme, okc, markdown) {
                             before stops being drawn and stays exactly where it
                             is, and "Show all of it" in the note brings it back.
 
-                            THIS CALLED `chatClear`, WHICH IS NOT DEFINED HERE.
-                            An action this app does not have is not refused — it
-                            is relayed to the app being ported from, so the one
-                            thing that press could reach was the real
+                            THIS CALLED `chatClear` WHEN IT WAS NOT DEFINED HERE.
+                            An undefined name was not refused then — it travelled
+                            down a pipe to the app this one was ported from, so
+                            the one thing that press could reach was the real
                             conversation, in the one app nothing here may write
                             to. Neither the danger styling nor the confirm box
                             said anything about that, because both were about the
