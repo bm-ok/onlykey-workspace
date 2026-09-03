@@ -30,7 +30,6 @@ do none of it:
 |---|---|
 | Watching GitHub | off |
 | Supervisor may wake itself | off |
-| Queue starts by itself | off |
 | Whose word counts | nobody — nothing arriving from GitHub can be a request |
 | The tag | none set |
 | Sent without being read | nothing — every reply, close and review is drafted |
@@ -40,9 +39,9 @@ Also per folder: the repositories and everything learnt about them, tasks,
 judgements, lines, PR cuts, drafts and what was sent, the caches, **the
 machines**, **the whole library** — jobs, prompts, contracts and the
 provisioning scripts — and **everything the supervisor keeps**: its
-conversation, its todo list, its notebook and any skill it has proposed. A todo reading "#12 needs a
-judge" names a task that exists in one workspace and is somebody else's
-number in the next.
+conversation, its memory and any skill it has proposed. A memory reading
+"#12 needs a judge" names a task that exists in one workspace and is
+somebody else's number in the next.
 
 **Nothing is thrown away.** What is set for one folder stays with it —
 switch back and it is as you left it. The Workspace tab shows the live
@@ -50,8 +49,8 @@ answer for the folder open now, under *What this workspace is armed to do*.
 
 ## What stays with this computer
 
-The keys and sign-ins, the guards, the certificate authority and this app's
-own ssh key, and which workspace is open. Those are facts about this
+The keys and sign-ins, the certificate authority and this app's own ssh key,
+and which workspace is open. Those are facts about this
 installation rather than about the work, so they are there whichever folder
 is open.
 
@@ -63,8 +62,8 @@ laid out as files in the workspace **is** a bundle — which is what makes a
 second workspace something you can start from the first.
 
 The supervisor's own state was the same mistake found earlier: a second
-workspace opened with the first one's todo list waiting in it, and its
-conversation still on screen. The machine is one per host; what it was
+workspace opened with what the first one had written down waiting in it, and
+its conversation still on screen. The machine is one per host; what it was
 asked to do is about a folder.
 
 ### What that costs, said plainly
@@ -107,8 +106,8 @@ disk, the other puts a window in front of whoever is sitting there.
 1. Open it. Check **Repositories → Repos** lists what you expect.
 2. **Settings → Trust**: name whose word counts and choose the tag. Until
    both are set, nothing arriving from GitHub can be a request.
-3. **Settings → General**: turn on watching, and the queue, if this folder
-   should have them.
+3. **Settings → General**: turn on watching, if this folder should have it.
+   The queue needs nothing — it comes up running on every start.
 4. Look at **Workspace → What this workspace is armed to do** and check it
    says what you meant.
 

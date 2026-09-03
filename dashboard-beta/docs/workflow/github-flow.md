@@ -61,5 +61,5 @@ order, or with **Catch up everything**. The line the cut came from shows as
   first, the initiator at the bottom.
 - Repositories → Sync — what is behind after a merge, and the buttons.
 - Judge — every judgement and its report.
-- Supervisor → Chat — what it said after each waking; Todo — what it thinks
-  is on whose desk.
+- Supervisor → Chat — what it said after each waking; Memory — what it knows
+  and what it is waiting on, checked against the stores.
