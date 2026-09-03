@@ -25,7 +25,7 @@ sent by you. Three kinds: a **reply** on an issue or pull request, a
 
 ## Sending everything at once
 
-Repositories → Issues → **Send all N waiting** (purple) releases every
+Repositories → Issues → **Send all N waiting** releases every
 waiting draft through the same door as sending them one at a time: the
 thread must still have been addressed and tagged, a review pinned to a
 commit the author has pushed over is still refused, and one that refuses is
@@ -33,7 +33,7 @@ named while the rest go.
 
 ## Making it automatic
 
-Settings → Trust → **Speaking in your name**: three purple switches, one per
+Settings → Trust → **Speaking in your name**: three switches, one per
 kind — replies, closes, reviews — go out directly. With replies on, an
 `okc:` comment on a pull request gets its answer under the pull request
 with nobody pressing anything. The draft step stays for the kinds you leave

@@ -16,7 +16,8 @@ proposal until a person approves it.
 1. Open Supervisor → Skill. Pick the skill, then **Review**.
 2. Read the diff. The argument for the change is under it — that sentence
    is the half being approved.
-3. **Approve it** (purple) or **Turn it down** with a reason. The reason is
+3. **Approve it** or **Turn it down** with a reason. `skillApprove` is
+   refused to the command line and to a drill. The reason is
    said into the conversation; it is all the next proposal has to go on.
 
 Approved, the new text is served from the supervisor's next waking. The

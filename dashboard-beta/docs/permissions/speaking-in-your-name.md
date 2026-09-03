@@ -10,14 +10,15 @@ in front of it, and each draft step has a switch.
 `issueSay`, `issueClose`, `reviewDraft` / `judgementSay` write into the
 drafts drawer, keyed one per conversation (`owner/repo#N`). The inbox says
 what is waiting; Repositories → Issues and Judge → Judgement show it with
-its Send / Close / Post button — purple. `issueApprove` releases,
+its Send / Close / Post button. `issueApprove` releases,
 `issueDiscard` throws away; both are a person's. A review is pinned to the
 commit the judge read and refused at release if the author pushed since.
 
 ## Direct — auto respond
 
 Settings → Trust → *Speaking in your name — auto respond*:
-`githubReplyDirect`, `githubCloseDirect`, `githubReviewDirect`. Each purple.
+`githubReplyDirect`, `githubCloseDirect`, `githubReviewDirect`. Each is
+window-only — `settingSet` answers with a sentence instead.
 With one on, that kind goes out the moment it is written — the supervisor
 answering under a pull request by itself is the teammate feel; the draft
 stays for the kinds left off. The three are separate because their blast

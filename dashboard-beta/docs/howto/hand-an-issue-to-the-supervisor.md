@@ -22,7 +22,7 @@ pull request that came of it — wakes it again. That is how you answer it.
 
 Repositories → Issues → pick the issue → **Hand it to the supervisor**. The
 whole conversation goes into the chat and the supervisor is woken. It is a
-purple press: the command line and a machine cannot do it, because a
+person's press: the command line and a machine cannot do it, because a
 supervisor that hands itself work is deciding what it works on.
 
 ## What you should see

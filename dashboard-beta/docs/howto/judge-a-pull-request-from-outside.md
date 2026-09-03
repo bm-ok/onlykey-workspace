@@ -9,7 +9,7 @@ commit it is on.
 1. **Repositories → Pull requests** (or Overview) lists what arrived, who
    wrote it and their association to the repository. `prJudging` is the
    same list.
-2. Pick it → **Allow judging**. The allowance names the commit; if the
+2. Pick it → **Allow it to be judged**. The allowance names the commit; if the
    author pushes again it lapses and has to be given again. It is a purple
    press: reading a stranger's change is a decision.
 3. Queue a judgement of it: Judge → new judgement, kind *pull request*,

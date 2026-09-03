@@ -34,8 +34,9 @@ branch cut for the issue.
 - **Write a task from it** — opens Add task with the issue quoted as the
   brief and carried as a fact, so the branch and the pull request know it.
 - **Read it on GitHub** — in your browser.
-- **Hand it to the supervisor** (purple) — the conversation into the chat,
-  and a wake.
+- **Hand it to the supervisor** — the conversation into the chat, and a
+  wake. Refused to anything but a press: it starts a machine turn, and a
+  supervisor handing itself work is deciding what it works on.
 - On a draft: **Send it** / **Close it** / **Post the review**, and **Throw
   it away**.
 

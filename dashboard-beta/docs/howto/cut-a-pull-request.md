@@ -32,8 +32,8 @@ touches, tracked here as one landing. It needs a **line** to cut from and a
 - A later task on the same branch, judged and accepted, is pushed onto the
   open pull request by the host (`prCutRefresh`). Cutting the same pair
   again does the same and opens nothing.
-- **Merging is yours**: on GitHub, or **Land it** here (`prCutLand`), which
-  is a purple press.
+- **Merging is yours**: on GitHub, or here with **Merge it** — **Merge all of
+  them** when the cut opened more than one (`prCutLand`), a purple press.
 - `Closes` closes the issue only when the merge is into the issue's own
   repository's default branch. Across repositories it links; close the
   issue with the drafted `issueClose`.
