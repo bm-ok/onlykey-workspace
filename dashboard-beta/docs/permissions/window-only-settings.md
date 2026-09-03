@@ -7,6 +7,7 @@ answer with a sentence instead, and the sentence is the reason.
 | setting | what it does | why it is the window's |
 |---|---|---|
 | `testsEnabled` / `testsFor` | the drills, on for one folder; off, the Test tab is gone and every action in it refuses | they write a task and take a credential off a machine — a decision about somebody's repository, not a flag |
+| `testsAsked` | a raised hand: the drills asking to be turned on, with a reason (written by `testsAsk`, answered in the window) | forging one puts a question in front of a person that nobody actually asked |
 | `testsSandbox` | GitHub owners the drills may run against; with names on it every remote and its chain must belong to one | a drill against a real project's fork is a stranger typing into it |
 | `githubTrusted` | who may ask this app for something through GitHub | naming a person is naming a person |
 | `githubMarker` | the word that makes a comment a request | blank turns tagging off |
