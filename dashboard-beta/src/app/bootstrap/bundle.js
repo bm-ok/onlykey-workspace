@@ -73,6 +73,11 @@ var CARRIES = {
 var FOLDER = { contract: 'contracts', prompt: 'prompts', job: 'jobs' };
 var SUFFIX = { contract: '.md', prompt: '.md', job: '.js' };
 
+//THE WORKSPACE'S OWN NOTES, AT THE ROOT AND UNDER THE NAME THEY HAVE THERE. A
+//bundle folder is a `.okc` folder, so this is `workspace_claude.md` in both —
+//see ../workstrap/doc.js, which owns the name.
+var WORKSTRAP = require('../workstrap/doc').NAME;
+
 
 //A FILE NAME, AND NEVER A CALLER'S STRING USED RAW. An id comes from a library
 //entry, and an id read back out of a manifest comes from a folder somebody may
@@ -97,7 +102,8 @@ function only(entry, fields) {
 //    sets      { contract: [...], prompt: [...], job: [...] } of full entries
 //    bodyOf    (kind, entry) => the text or the code
 //    scripts   [{ name, text }] — a workspace's provision folder, skills and all
-function write(at, sets, bodyOf, scripts) {
+//    notes     the workspace's own CLAUDE.md, or null
+function write(at, sets, bodyOf, scripts, notes) {
     var manifest = { made: 'okc', kinds: {}, provision: [] };
 
     fs.mkdirSync(at, { recursive: true });
@@ -137,6 +143,24 @@ function write(at, sets, bodyOf, scripts) {
         //somebody dropped in is not part of the set.
         manifest.provision.push({ name: s.name });
     });
+
+    //---- AND THE WORKSPACE'S OWN NOTES ------------------------------------
+    //
+    //AT THE ROOT, NOT IN provision/, because that is where it lives in a
+    //workspace — `.okc/workspace_claude.md` — and a bundle folder IS a `.okc`
+    //folder. Nothing is mapped on the way in or out anywhere else here, and
+    //this should not be the exception.
+    //
+    //A FRESH WORKSPACE GETS THE STARTER AS A REAL FILE, which is the point of
+    //shipping it at all. ../workstrap falls back to the starter when a
+    //workspace has no notes, so the bundle is not what makes a machine's
+    //CLAUDE.md work — it is what makes the file VISIBLE and editable on day
+    //one, instead of a document somebody has to know exists before they can
+    //start it.
+    if (notes && String(notes).trim()) {
+        fs.writeFileSync(path.join(at, WORKSTRAP), String(notes));
+        manifest.workstrap = WORKSTRAP;
+    }
 
     fs.writeFileSync(path.join(at, 'library.json'), JSON.stringify(manifest, null, 2) + '\n');
     return manifest;
@@ -193,6 +217,26 @@ function read(at, readFile, exists) {
         }
         out.provision.push({ name: s.name, text: readIt(file) });
     });
+
+    //---- AND THE WORKSPACE'S NOTES, IF THE BUNDLE CARRIES ANY -------------
+    //
+    //OPTIONAL, UNLIKE EVERYTHING ABOVE, AND NOT THE SAME KIND OF THING. A
+    //missing contract is a broken bundle because a contract is a rule something
+    //will be run under; notes are a document, and a bundle made before they
+    //existed is not broken for lacking them.
+    //
+    //STILL REFUSED IF THE MANIFEST CLAIMS ONE AND THERE IS NO FILE. That is not
+    //an old bundle, it is a damaged one, and importing an empty CLAUDE.md would
+    //tell every machine that this project has nothing worth saying about it.
+    if (manifest.workstrap) {
+        var notesAt = path.join(at, safe(manifest.workstrap));
+        if (!isThere(notesAt)) {
+            throw new Error('The manifest lists workspace notes and there is no file for them at '
+                + notesAt + '. An import that quietly left them out would write an empty CLAUDE.md, '
+                + 'which every machine opening this workspace would then be given.');
+        }
+        out.workstrap = readIt(notesAt);
+    }
 
     return out;
 }

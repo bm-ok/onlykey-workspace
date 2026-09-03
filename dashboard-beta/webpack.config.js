@@ -131,6 +131,13 @@ module.exports = (env, argv = {}) => {
         { from: path.join(__dirname, 'src', 'app', 'keys', 'credential-helper.js'), to: 'credential-helper.js' },
         { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' },
 
+        //THE STARTER CLAUDE.md a workspace with no notes of its own is given.
+        //Read by src/app/workstrap off `__dirname` exactly as the provisioning
+        //scripts above are, and copied for exactly the same reason: without this
+        //line the fallback throws ENOENT, and it would do so at the moment a
+        //machine asked what this workspace is.
+        { from: path.join(__dirname, 'src', 'app', 'workstrap', 'starter'), to: 'starter' },
+
         //THE SEED SET: the skills, jobs, prompts and contracts a fresh install
         //can be brought back up from. Shipped rather than generated, because the
         //moment it is needed is the moment there is nothing here to generate it

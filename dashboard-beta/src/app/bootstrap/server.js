@@ -37,7 +37,12 @@ var bundle = require('./bundle');
 //rewriting a skill is refused there, so it would be done here instead.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'library', 'provision', 'archive', 'state'];
+//`workstrap` FOR THE WORKSPACE'S OWN NOTES. A bundle is what a fresh workspace
+//starts from, and a workspace with no CLAUDE.md is one where every machine works
+//out how to build and test the project again from the source. Asked of that
+//plugin rather than read off disk here: whose copy answers — the workspace's own
+//or the shipped starter — is its rule, not this one's.
+plugin.consumes = ['app', 'log', 'library', 'provision', 'archive', 'state', 'workstrap'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -119,7 +124,23 @@ async function plugin(imports, register) {
             if (text) scripts.push({ name: name, text: text });
         });
 
-        return { sets: sets, code: code, scripts: scripts };
+        //---- AND THE WORKSPACE'S NOTES ------------------------------------
+        //
+        //WHATEVER A MACHINE WOULD BE GIVEN: the workspace's own copy when it has
+        //one, the starter when it has not. Both are worth carrying and for
+        //different reasons — the first takes what somebody learned about this
+        //project into a workspace made from it, and the second makes the file
+        //exist and be editable on day one rather than being a document nobody
+        //knows to start.
+        //
+        //NOT FATAL. A bundle without notes is a bundle; ../workstrap falls back
+        //to the starter on the other side anyway, so failing an export over this
+        //would be refusing to ship the contracts because a README was missing.
+        var notes = null;
+        try { notes = (await imports.workstrap.read()).text; }
+        catch (e) { notes = null; }
+
+        return { sets: sets, code: code, scripts: scripts, notes: notes };
     }
 
     //---- WHERE THE ONE THAT SHIPPED WITH THIS APP IS -----------------------
@@ -211,6 +232,38 @@ async function plugin(imports, register) {
             wrote.provision++;
         }
 
+        //---- AND THE WORKSPACE'S NOTES ------------------------------------
+        //
+        //ONE LEVEL UP FROM THE PROVISION FOLDER, at the root of the drawer,
+        //because that is where ../workstrap keeps them and a bundle folder is a
+        //`.okc` folder.
+        //
+        //LEFT ALONE IF THERE IS ALREADY ONE, like every other file here. Notes
+        //are the single most workspace-specific thing in a bundle — they are
+        //about THIS project — so importing a set on top of a workspace that has
+        //written its own must not replace them silently. `over` is somebody
+        //saying they meant it.
+        if (had.workstrap && String(had.workstrap).trim()) {
+            //ASKED OF ../core/state RATHER THAN DERIVED FROM `into`. The drawer
+            //is one `path.dirname` up from the provision folder and that is
+            //exactly the kind of true-today relationship that stops being true
+            //quietly — and `into` is null when a bundle carries no provisioning
+            //files at all, which has nothing to do with whether a workspace is
+            //open.
+            var drawer = await imports.state.here.where();
+            if (!drawer) {
+                skipped.push('the workspace notes, because no workspace is open');
+            } else {
+                var notesAt = path.join(drawer, imports.workstrap.NAME);
+                if (fs.existsSync(notesAt) && !over) {
+                    skipped.push('the workspace notes, which this workspace already has');
+                } else {
+                    fs.writeFileSync(notesAt, String(had.workstrap));
+                    wrote.workstrap = 1;
+                }
+            }
+        }
+
         log.good('put a set back — ' + JSON.stringify(wrote)
             + (skipped.length ? ', ' + skipped.length + ' left alone' : ''));
 
@@ -272,6 +325,25 @@ async function plugin(imports, register) {
             }
             had.provision.push({ name: f.name, text: imports.archive.text(found) });
         });
+
+        //---- AND THE WORKSPACE'S NOTES, IF IT CARRIES ANY -------------------
+        //
+        //OPTIONAL, WHICH NOTHING ELSE HERE IS. A bundle written before notes
+        //existed is not a broken bundle, so their absence is silence rather than
+        //a refusal — but a manifest that CLAIMS them with no file behind it is
+        //damaged, and importing that as an empty CLAUDE.md would tell every
+        //machine opening the workspace that this project has nothing worth
+        //saying about it.
+        if (manifest.workstrap) {
+            var wantNotes = safe(manifest.workstrap);
+            var foundNotes = imports.archive.find(seen.entries, wantNotes);
+            if (!foundNotes) {
+                throw new Error('The manifest lists workspace notes and there is no ' + wantNotes
+                    + ' in the file. Importing it would write an empty CLAUDE.md, which is what every '
+                    + 'machine opening this workspace would then be given.');
+            }
+            had.workstrap = imports.archive.text(foundNotes);
+        }
 
         return had;
     }
@@ -412,7 +484,7 @@ async function plugin(imports, register) {
                 //the expensive way.
                 var manifest = bundle.write(at, here.sets, function (kind, e) {
                     return kind === 'job' ? here.code[e.id] : e.text;
-                }, here.scripts);
+                }, here.scripts, here.notes);
 
                 var counted = Object.keys(manifest.kinds).map(function (k) {
                     return manifest.kinds[k].length + ' ' + k + '(s)';
@@ -469,6 +541,15 @@ async function plugin(imports, register) {
                 files.push({ name: 'provision/' + safe(f.name), data: f.text });
                 manifest.provision.push({ name: f.name });
             });
+
+            //THE WORKSPACE'S NOTES, AT THE ROOT — see ../workstrap. The same
+            //place and the same name a workspace keeps them under, because a
+            //bundle folder IS a `.okc` folder and nothing else here is mapped on
+            //the way in or out either.
+            if (here.notes && String(here.notes).trim()) {
+                files.push({ name: imports.workstrap.NAME, data: String(here.notes) });
+                manifest.workstrap = imports.workstrap.NAME;
+            }
 
             files.push({ name: 'library.json', data: JSON.stringify(manifest, null, 2) + '\n' });
 
