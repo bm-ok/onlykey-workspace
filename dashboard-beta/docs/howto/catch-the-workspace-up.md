@@ -16,7 +16,7 @@ three are shown and put right.
    its parent is synced on GitHub first, then every default branch here is
    fetched and fast-forwarded, then GitHub is asked again so the badges are
    read rather than assumed.
-3. Or one row at a time: **Sync fork**, then **Pull *default* here**. A
+3. Or one row at a time: **Sync fork**, then **Pull *&lt;branch&gt;* here**. A
    button is off with its reason when there is nothing for it to do.
 4. **Both presses open a dry run first.** It asks GitHub how far each fork
    is behind its parent and shows you, before anything moves: which

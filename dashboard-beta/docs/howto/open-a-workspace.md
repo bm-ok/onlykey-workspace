@@ -51,7 +51,7 @@ tab, every task and every machine's clone is about the one that is open.
   appdata. What that costs is written down in `core/state/main.js` — the
   machines and the artifacts go with the folder too.
   What stays with **this computer** is the host's own: sign-ins, the
-  certificate authority, its ssh key, guards, and which workspace is open.
+  certificate authority, its ssh key, and which workspace is open.
 - **A folder that has never been a workspace is set up as one.** With no
   `.okc` in it, it is given the set this app shipped with — the jobs,
   prompts, contracts and provisioning scripts from `okc-bootstrap.tar` —
