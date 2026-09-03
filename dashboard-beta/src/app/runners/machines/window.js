@@ -1,4 +1,3 @@
-var makeMeter = require('./meter');
 var React = require('react');
 var makeMachines = require('./machines');
 var { useState } = React;
@@ -37,19 +36,20 @@ async function plugin(imports, register) {
 
     //---- where this lives, and it is not a choice -------------------------
     //
-    //THE TAB NAMES ARE THE STRUCTURE. This port had been inventing its own —
-    //top-level tabs for Machines, Sessions, Sign-ins and Graph, none of which
-    //exist in the app being ported from, and renamed panes elsewhere. An
-    //information architecture that drifts is one that has to be re-learned by
-    //anybody who knows the old window, which is everybody who would use this.
+    //THE TAB NAMES ARE THE STRUCTURE, and this port spent a while inventing its
+    //own — top-level tabs for Machines, Sessions, Sign-ins and Graph, and
+    //renamed panes elsewhere. An information architecture that drifts is one
+    //that has to be re-learned, and a name is cheap to get right once and
+    //expensive to move afterwards.
     //
-    //The real map is in ui/index.html over there: twelve panes under
-    //Repositories, six under Runners, and the tab names as written.
+    //IT USED TO BE CHECKED AGAINST THE APP THIS WAS PORTED FROM. That app is
+    //gone from this repository, so the names are ours now: change one on
+    //purpose, not by accident, and change it everywhere in the same commit.
     shell.tab({ name: 'Runners', order: 60 });
     shell.pane({ tab: 'Runners', name: 'Virtual machines', order: 10, Component: makeMachines(theme, okc, remember) });
-    //LAST UNDER Runners, because it is about what they have COST rather than
-    //what any of them is doing. Nothing on it can be acted on.
-    shell.pane({ tab: 'Runners', name: 'Meter', order: 60, Component: makeMeter(theme, okc) });
+    //METER IS NOT HERE ANY MORE. It is Settings -> Meter, in ../../meter, the
+    //plugin that owns the ledger it draws — this tab is what the machines are
+    //DOING, and spend is what they have cost.
 
     await register(null, {});
 }
