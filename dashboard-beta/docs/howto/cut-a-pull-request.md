@@ -7,7 +7,7 @@ touches, tracked here as one landing. It needs a **line** to cut from and a
 ## Steps
 
 1. **Make the branch a line.** Repositories → Branches Cut → the branch →
-   **As a line** (`branchAsLine --branch fix/x --name fix/x --why ...`). A
+   **Make it a line** (`branchAsLine --branch fix/x --name fix/x --why ...`). A
    line is a named point: one branch per repository.
 2. **Have it judged.** A cut of unjudged code is refused: *Nothing has
    judged "fix/x"*. Queue → judgement on the branch, or wait for the one the

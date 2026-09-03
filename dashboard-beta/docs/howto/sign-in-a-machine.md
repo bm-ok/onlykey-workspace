@@ -6,12 +6,12 @@ after. Nothing on a machine keeps it.
 
 ## Get a credential
 
-1. **Keys → Claude Worker → Sign in** — or Claude Judge, Claude DIY, Claude
-   supervisor. The pane *is* the role, so there is nothing to pick: name the
-   sign-in and it takes the role of the pane it was made on. They are
-   different sign-ins on purpose, so what each spends is metered apart — and
-   a person's afternoon on a DIY machine is not billed to the pool the queue
-   draws from.
+1. **Keys → Claude Worker → +** (*Get a sign-in link from the desk*) — or
+   Claude Judge, Claude DIY, Claude supervisor. The pane *is* the role, so
+   there is nothing to pick: name the sign-in and it takes the role of the
+   pane it was made on. They are different sign-ins on purpose, so what each
+   spends is metered apart — and a person's afternoon on a DIY machine is not
+   billed to the pool the queue draws from.
 2. The sign-in desk on a machine opens a login URL; visit it, sign in, and
    paste the code back. The credential is kept under the name; the desk is
    left empty.
@@ -49,7 +49,7 @@ credential for as long as the snapshot exists. Take it back first.
 
 ## The supervisor's
 
-**Supervisor → Chat → Start** brings the supervisor up and signs it in as
+**Supervisor → Chat → Start it** brings the supervisor up and signs it in as
 one act (`supervisorUp`). `supervisorKey` says which sign-in it uses;
 `supervisorDown` takes the credential back and stops the machine, in that
 order.

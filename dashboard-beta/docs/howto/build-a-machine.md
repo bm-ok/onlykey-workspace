@@ -12,7 +12,7 @@ clean base. Workers, judges and the supervisor all run on machines like it.
 
 ## Steps
 
-1. **Runners → Virtual machines → New machine.** Name it, pick the ISO,
+1. **Runners → Virtual machines → +.** Name it, pick the ISO,
    memory and disk, and its **tags**: `worker`, `judge`, or both; tick
    *supervisor* for a supervisor. Tags are what the queue picks a machine
    by.
