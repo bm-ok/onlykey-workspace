@@ -65,11 +65,12 @@ async function plugin(imports, register) {
     //so what it is allowed to create is a list rather than whatever the archive
     //happens to hold.
     //
-    //`skills` IS ON IT because a bundle written before today has one — see
-    //./bundle.js's OLD_SKILLS. It is unpacked so nothing is lost, and the app
-    //reads the provision folder, so an old tar seeds a workspace whose skills
-    //are the shipped ones until it is imported properly.
-    var KEEP = { contracts: true, prompts: true, jobs: true, provision: true, skills: true };
+    //`skills` IS NOT ON IT. A bundle written before the skills moved carried one,
+    //and the reader that understood that shape is gone — so unpacking the folder
+    //would leave a workspace holding three documents nothing serves from, which
+    //is worse than not carrying them: the pane says a skill is missing while a
+    //copy of it sits in the drawer under a name nobody looks for.
+    var KEEP = { contracts: true, prompts: true, jobs: true, provision: true };
 
     function skillText(stage) {
         try { return fs.readFileSync(imports.provision.fileFor(null, stage), 'utf8'); }
@@ -272,18 +273,6 @@ async function plugin(imports, register) {
             had.provision.push({ name: f.name, text: imports.archive.text(found) });
         });
 
-        //AND A FILE WRITTEN BEFORE THE SKILLS MOVED, read under the name this
-        //app serves. See ./bundle.js: nothing writes `skills/` any more, but the
-        //tar this repo shipped until today is in that shape and importing one
-        //must not quietly drop its three documents.
-        (manifest.skills || []).forEach(function (sk) {
-            var found = imports.archive.find(seen.entries, 'skills/' + safe(sk.which) + '.md');
-            if (!found) throw new Error('The manifest lists the skill "' + sk.which + '" and it is not in the file.');
-
-            var as = bundle.OLD_SKILLS[sk.which];
-            if (!as) return;
-            had.provision.push({ name: as, text: imports.archive.text(found) });
-        });
         return had;
     }
 

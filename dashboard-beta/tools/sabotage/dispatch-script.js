@@ -151,7 +151,7 @@ module.exports = {
         //leaves the curl line — and the url in it — sitting there for a test to
         //find, which is how this break SURVIVED the first sweep of this file.
         ['the skill is never fetched, so a worker runs to whatever it was built with',
-            '        lines.push(\'  "\' + base + \'/provision/runner-skill.md?vm=${OKC_VM}" 2>/dev/null || true\');',
+            '        lines.push(\'  "\' + base + \'/provision/worker-skill.md?vm=${OKC_VM}" 2>/dev/null || true\');',
             '']
     ]
 };

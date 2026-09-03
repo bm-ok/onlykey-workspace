@@ -291,7 +291,7 @@ test('the skill is fetched at dispatch rather than baked in when the machine was
     //A MACHINE BUILT LAST MONTH would otherwise be working to last month's
     //rules, and the failure is a worker doing something this host stopped
     //wanting weeks ago.
-    assert.match(of({}), /runner-skill\.md\?vm=\$\{OKC_VM\}/);
+    assert.match(of({}), /worker-skill.md\?vm=\$\{OKC_VM\}/);
     assert.match(of({}), /\|\| true/);
 });
 
@@ -360,14 +360,14 @@ test('a folder with a space in it survives, which is the bug that started all th
 
 test('a worker is given the worker skill', () => {
     const s = of({});
-    assert.match(s, /provision\/runner-skill\.md/);
+    assert.match(s, /provision\/worker-skill.md/);
     assert.doesNotMatch(s, /judge-skill\.md/);
 });
 
 test('a judgement is given the judge skill, and not the worker one', () => {
     const s = of({ judging: true });
     assert.match(s, /provision\/judge-skill\.md/);
-    assert.doesNotMatch(s, /runner-skill\.md/,
+    assert.doesNotMatch(s, /worker-skill.md/,
         'a judge was handed the document that tells it to push the branch it is judging');
 });
 
@@ -384,5 +384,5 @@ test('no way back means no skill either, rather than a fetch that cannot work', 
     //address cannot be worked out, and says the run still runs.
     const s = of({ base: null, judging: true });
     assert.doesNotMatch(s, /judge-skill\.md/);
-    assert.doesNotMatch(s, /runner-skill\.md/);
+    assert.doesNotMatch(s, /worker-skill.md/);
 });

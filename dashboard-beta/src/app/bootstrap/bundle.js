@@ -73,22 +73,6 @@ var CARRIES = {
 var FOLDER = { contract: 'contracts', prompt: 'prompts', job: 'jobs' };
 var SUFFIX = { contract: '.md', prompt: '.md', job: '.js' };
 
-//---- WHAT A SKILL WAS CALLED IN A BUNDLE WRITTEN BEFORE TODAY --------------
-//
-//`skills/supervisor.md` was the old spelling; the file this app actually serves
-//is `provision/supervisor-skill.md`. Nothing writes the old shape any more —
-//this is only how one is READ, so a tar made last week still imports its three
-//documents rather than dropping them.
-//
-//`worker` IS `runner-skill.md` AND NOT `worker-skill.md`, which is the pair
-//most likely to be got wrong by whoever touches this next. The same mapping
-//exists in ../vms/provision/scripts.js's STAGES, which is where the names are
-//decided; this is the reverse of it and is deliberately small.
-var OLD_SKILLS = {
-    supervisor: 'supervisor-skill.md',
-    worker: 'runner-skill.md',
-    judge: 'judge-skill.md'
-};
 
 //A FILE NAME, AND NEVER A CALLER'S STRING USED RAW. An id comes from a library
 //entry, and an id read back out of a manifest comes from a folder somebody may
@@ -210,27 +194,6 @@ function read(at, readFile, exists) {
         out.provision.push({ name: s.name, text: readIt(file) });
     });
 
-    //---- AND A BUNDLE WRITTEN BEFORE THE SKILLS MOVED ---------------------
-    //
-    //`skills/<which>.md` was the old shape, and tars in that shape exist — the
-    //one the repo shipped until today among them. Read as provisioning files
-    //under the names this app actually serves, so an old bundle imports into the
-    //same place a new one does.
-    //
-    //NOT A SECOND WAY TO CARRY A SKILL, a way to READ one that was carried
-    //before. Nothing writes this folder any more.
-    (manifest.skills || []).forEach(function (s) {
-        var file = path.join(at, 'skills', safe(s.which) + '.md');
-        if (!isThere(file)) {
-            throw new Error('The manifest lists the skill "' + s.which + '" and there is no file for it at '
-                + file + '.');
-        }
-
-        var as = OLD_SKILLS[s.which];
-        if (!as) return;   //a skill this app has no stage for; nothing to serve it as
-        out.provision.push({ name: as, text: readIt(file) });
-    });
-
     return out;
 }
 
@@ -270,7 +233,7 @@ function changes(was, now) {
 
 module.exports = {
     write: write, read: read, changes: changes,
-    CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX, OLD_SKILLS: OLD_SKILLS,
+    CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX,
     safe: safe,
     carried: function (kind, entry) { return only(entry, CARRIES[kind]); }
 };

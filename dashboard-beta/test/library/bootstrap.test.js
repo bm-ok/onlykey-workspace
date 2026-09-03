@@ -42,7 +42,7 @@ function call(name, args) {
 
 const SKILLS = {
     skill: 'supervisor-skill.md',
-    workerSkill: 'runner-skill.md',
+    workerSkill: 'worker-skill.md',
     judgeSkill: 'judge-skill.md'
 };
 
@@ -155,7 +155,7 @@ test('a bundle is one readable file per document, and a manifest of the links', 
     assert.equal(manifest.kinds.prompt[0].contractId, 'rules');
     assert.equal(manifest.kinds.job[0].promptId, 'brief');
     assert.deepEqual(manifest.provision.map((f) => f.name).sort(),
-        ['judge-skill.md', 'runner-skill.md', 'supervisor-skill.md']);
+        ['judge-skill.md', 'supervisor-skill.md', 'worker-skill.md']);
 });
 
 //THE FOLDER A BUNDLE CARRIES IS THE FOLDER A WORKSPACE KEEPS. Not a translation
@@ -262,38 +262,6 @@ test('a skill is imported into the workspace drawer, where a rebuild cannot reac
     //edit at the window vanish before this.
     assert.match(fs.readFileSync(path.join(mineDir, SKILLS.judgeSkill), 'utf8'), /Rewritten/);
     assert.match(fs.readFileSync(path.join(appDir, SKILLS.judgeSkill), 'utf8'), /may not push/);
-});
-
-//---- a bundle written before the skills moved ------------------------------
-//
-//`skills/<which>.md` was the shape until today, and the tar this repo shipped is
-//in it. Importing one has to land the three documents where this app serves them
-//from — otherwise the upgrade quietly drops the one thing a bundle exists to
-//carry, and the pane goes on reporting the app's shipped copy, which is exactly
-//what it says when no bundle was imported at all.
-test('a bundle in the old shape still imports its skills', async () => {
-    fs.mkdirSync(path.join(bundleAt, 'skills'), { recursive: true });
-    fs.writeFileSync(path.join(bundleAt, 'skills', 'judge.md'), '# A judge\n\nFrom an old bundle.\n');
-    fs.writeFileSync(path.join(bundleAt, 'library.json'), JSON.stringify({
-        made: 'okc', kinds: {}, skills: [{ which: 'judge', title: 'judge' }]
-    }, null, 2));
-
-    const said = await call('bootstrapImport', { from: bundleAt, over: true });
-
-    //UNDER THE NAME THIS APP SERVES, not the one the bundle used.
-    assert.match(fs.readFileSync(path.join(mineDir, SKILLS.judgeSkill), 'utf8'), /From an old bundle/);
-    assert.equal(said.wrote.provision, 1);
-});
-
-test('and the same bundle as a single file', async () => {
-    const files = [
-        { name: 'skills/worker.md', data: '# A worker\n\nFrom an old tar.\n' },
-        { name: 'library.json', data: JSON.stringify({ made: 'okc', kinds: {}, skills: [{ which: 'worker' }] }) }
-    ];
-
-    await call('bootstrapFromFile', { bytes: archiveOf().make(files).toString('base64'), over: true });
-
-    assert.match(fs.readFileSync(path.join(mineDir, SKILLS.workerSkill), 'utf8'), /From an old tar/);
 });
 
 //---- a folder that has never been a workspace ------------------------------

@@ -57,6 +57,6 @@ while the other is not.
 
 ## Skill
 
-`runner-skill.md` — read with `skills --which worker`. It says what the
+`worker-skill.md` — read with `skills --which worker`. It says what the
 machine is, where the work is, how to hand things back, and that the
 person's rules come first.

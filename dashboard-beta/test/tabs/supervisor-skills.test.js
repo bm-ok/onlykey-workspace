@@ -36,7 +36,7 @@ function aHostWith(files) {
 
     const STAGES = {
         skill: 'supervisor-skill.md',
-        workerSkill: 'runner-skill.md',
+        workerSkill: 'worker-skill.md',
         judgeSkill: 'judge-skill.md'
     };
 
@@ -160,7 +160,7 @@ async function loaded(files) {
 //go to judges as well, which is what made two look like the whole set.
 const ALL = {
     'supervisor-skill.md': '---\nname: supervising\n---\n\n# Supervising\n\nYou decide what work there is.\n',
-    'runner-skill.md': '# A worker\n\nThe machine you are on is rolled back underneath you.\n',
+    'worker-skill.md': '# A worker\n\nThe machine you are on is rolled back underneath you.\n',
     'judge-skill.md': '# A judge\n\nYou are not here to do the work. You may not push.\n'
 };
 

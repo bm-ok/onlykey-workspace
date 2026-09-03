@@ -72,7 +72,7 @@ var STAGES = {
     //And the one a WORKER gets. Different audience entirely: the supervisor's is
     //about deciding what work there is, this one is about doing a piece of it on
     //a machine that will be rolled back underneath you.
-    workerSkill: 'runner-skill.md',
+    workerSkill: 'worker-skill.md',
     //AND A JUDGE'S, WHICH IS NOT THE WORKER'S WITH A NOTE ON IT. The two
     //deliverables are exactly inverted: a worker's is the branch and an artifact
     //is the footnote; a judge's IS the artifact, and the branch is somebody
@@ -108,7 +108,7 @@ var SERVABLE = /\.(sh|py|js|md)$/;
 //and is what a fresh workspace is built from — one copy, and the one that is
 //true. See ../../bootstrap/bundle.js, which makes the same argument about the
 //library.
-var SKILL_FILES = { 'supervisor-skill.md': true, 'runner-skill.md': true, 'judge-skill.md': true };
+var SKILL_FILES = { 'supervisor-skill.md': true, 'worker-skill.md': true, 'judge-skill.md': true };
 
 //---- A SKILL HAS ONE NAME AGAIN, AND BRIEFLY HAD THREE --------------------
 //

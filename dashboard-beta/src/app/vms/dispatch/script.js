@@ -278,7 +278,7 @@ module.exports = function script(deps) {
         //
         //THE MACHINE IS THE SAME MACHINE. This is about the WORK, not about the
         //tags it carries — `beta-worker1` is tagged both, and does both.
-        var skill = judging ? 'judge-skill.md' : 'runner-skill.md';
+        var skill = judging ? 'judge-skill.md' : 'worker-skill.md';
 
         lines.push('mkdir -p "$HOME/.claude/skills/working-here"');
         lines.push('curl -fsS --cacert "${OKC_CA:-/etc/okc/ca.pem}" -u "${OKC_VM}:${OKC_TOKEN}" \\');

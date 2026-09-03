@@ -30,8 +30,8 @@ a bundle. That is why the skills live in there rather than in a `skills/` folder
 of their own: carried under a second name, they were put somewhere nothing
 looked and were never read.
 
-One name is worth knowing before you go looking: the worker's skill is
-**`runner-skill.md`**, not `worker-skill.md`.
+The three are named after the roles: `supervisor-skill.md`, `worker-skill.md`,
+`judge-skill.md`.
 
 ## Changing one
 
