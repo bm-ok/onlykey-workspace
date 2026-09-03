@@ -24,8 +24,10 @@ concluded "reject"`. The reason is what it reads first.
 1. `whatsNew --since <bookmark>` — what was said to it, what landed, what
    is waiting, and `arrived`: what turned up on GitHub since it last looked.
    The event trail comes only with `events: true`.
-2. `triage` — what it is in the middle of, and which of those things
-   finished while it was away.
+2. `memory` — what it knows, and which of the things it was waiting on
+   finished while it was away. Each entry is looked up against the real
+   stores, so a note saying "waiting on J7" beside a J7 that has finished is
+   caught rather than believed.
 3. Then the specifics: `issueRead`, `judgementFindings`, `branchBoard`,
    `prCuts`, `jobs`.
 
@@ -36,9 +38,9 @@ It cannot see files, run commands, or reach anything but the actions on
 
 - **Chat** — one message, signed with its machine, saying what it did and
   what it needs from you.
-- **Triage** — what it is carrying and in what state (*waiting on a judge*,
-  *needs a person*).
-- **Todos** — `T` refs, for things it saw and did not act on.
+- **Memory** — what it knows: what it is waiting on, in what state (*waiting on
+  a judge*, *needs a person*), and what it has worked out about this project
+  that would otherwise be re-derived every waking.
 - Drafts in the inbox, tasks on the queue, judgements on the board.
 
 ## When it cannot be woken

@@ -38,9 +38,10 @@ during an install, and not during a drill being measured.
 ## Stopping
 
 `queueStop --why` stops giving out new work; a run in flight finishes.
-`queueStart` resumes. `queueAutoStart` in settings says whether it starts
-with the app. `taskUnqueue` / `judgementUnqueue` take one thing back out
-without stopping the rest.
+`queueStart` resumes. **It comes up running on every start** — there is no
+setting for that any more, and a stopped queue was stopped by somebody. Stopping
+survives a save; only starting the app brings it back. `taskUnqueue` and
+`judgementUnqueue` take one thing back out without stopping the rest.
 
 ## What can go quiet
 

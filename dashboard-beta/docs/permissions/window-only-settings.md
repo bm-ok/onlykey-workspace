@@ -18,10 +18,23 @@ answer with a sentence instead, and the sentence is the reason.
 
 | setting | what it does |
 |---|---|
-| `supervisorWakes` | whether saying something, a landing or a verdict wakes the supervisor (*Answers by itself*) |
+| `supervisorWakes` | whether a landing or a verdict wakes the supervisor — the queue waking it for reasons **nobody asked for** (*Answers by itself*) |
 | `watchGitHub` | whether the host sweeps GitHub every five minutes and wakes for a tag |
-| `queueAutoStart` | whether the queue starts with the app |
 | `supervisorKey` | which sign-in the supervisor uses |
+
+**Saying something to it is not on that switch.** `chatSay` wakes it whatever
+`supervisorWakes` says, because somebody typing a sentence and pressing send has
+already asked. The gate was there once and it was the wrong gate: a message sat
+unread beside a machine that was up, signed in and idle, and the advice was to go
+and press *Wake it* — which spends the same turn, one step later, after showing
+somebody a message that looked ignored.
+
+`queueAutoStart` **is gone.** The queue now comes up running on every start, like
+every other timer this app has. It was a setting, off by default, and that was
+the quiet version of an older fault: a host whose whole job is handing work to
+machines came up not doing it, and nothing on the page said so — work simply sat
+still, which looks exactly like no machine being free. Stopping the queue still
+survives a save; only starting the app brings it back.
 
 ## Every one of these is set for one folder
 
@@ -39,7 +52,7 @@ rather than applying it to whichever is opened next.
 `supervisorKey` — which sign-in on this computer the supervisor uses — is
 the one that does not follow, because it is a fact about the keyring.
 
-Settings → General for the drills and the queue; Settings → Trust for
+Settings → General for the drills; Settings → Trust for
 everything about GitHub and speaking in your name; Workspace → *What this
 workspace is armed to do* for all of it at once. The file is
 `state/settings.json` in the app's data folder, under `forFolder`, and

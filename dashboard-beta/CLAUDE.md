@@ -263,10 +263,19 @@ about subject:
   Live pane asks for, so they are `live/server.js`. Same shape as `show` living
   in `ui/shell/server.js`.
 * **How an answer prints goes with the plugin too**, in `cli.js` — the fourth
-  half. `okc.js todos` printing a wall of braces is a JSON dump with a prompt in
-  front of it, and whoever knows how a todo should read wrote the todo pane.
+  half. `okc.js memory` printing a wall of braces is a JSON dump with a prompt in
+  front of it, and whoever knows how a memory should read wrote the memory pane.
   It exports `{ print: { <action>: said => string } }`, nothing more; an action
   with no printer still prints as JSON, and `--json` always does.
+
+  **It is the half nothing tested, and it rotted first.** `judgementFindings`
+  stopped answering with `reads` and `state`; its printer went on reading them
+  and printed `J4 undefined undefined` for a commit. Nothing failed — reading a
+  missing field off an object is `undefined`, and `'  ' + undefined` is a
+  perfectly good string, so `npm run check` and the whole suite stayed green.
+  `test/judge/judgement-printing.test.js` is the shape of the fix: the answer's
+  shape copied from the action, asserting no printer emits `undefined` or
+  `[object Object]`.
 * A plugin with none of them has no server half. Most do not.
 
 `cli.js` is a plain module, not a rectify plugin: the command line is a separate
@@ -307,9 +316,12 @@ machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
   else — every other colour in the theme answers *how is it doing*, and purple
   answers *is this mine*. **The test for a new purple thing is never "is this
   important"** — everything on a dashboard is important to somebody. It is
-  whether reaching for it is out of bounds. `Settings → Kit`'s Guarded shelf is
-  the complete list and says so about itself; a purple thing that is not on it
-  makes that sentence false without making anything fail.
+  whether reaching for it is out of bounds. **There is no complete list any
+  more.** `Settings → Kit` had a Guarded shelf that claimed to be one; the shelf
+  is gone and the purple exhibits live on Buttons. About nineteen controls are
+  purple across ten panes, and nothing enumerates them — so adding one no longer
+  makes a sentence somewhere false, which means nothing will catch a careless
+  one for you.
 * **Grep the stylesheet before inventing a class name**, including a class
   assembled from a variable. `class="dot notice"` drew a wide purple oval because
   `.notice` is the banner — padding, flex, a gap — and every check was green.

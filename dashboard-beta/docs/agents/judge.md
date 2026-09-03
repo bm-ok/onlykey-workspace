@@ -34,10 +34,26 @@ such. Approve, merge, or decide what happens next: it recommends.
 
 ## Reading it
 
-Judge → Judgement lists every judgement with its state and verdict; the
-picked one shows the report and, for a pull request, the review draft with
-**Post the review**. `judgementFindings`, `judgementLog` and
-`judgementsFor` are the same from the command line.
+Judge → Judgement lists every judgement; the picked one shows three things in
+the right-hand column, in this order:
+
+- **Verdict** — `it concluded` and `verdict` on two rows with two labels, and
+  they are not the same claim. `concluded` is what the JUDGE recommends, parsed
+  from the line its prompt asked it to end on; `verdict` is whether the change
+  is fit to go out, which only a person writes. They were merged once: a
+  check-a-claim confirmed a reviewer's request — `CLAIM: true`, meaning *yes,
+  worth doing* — and it was filed as `rejected`, which then read to the cut gate
+  as a failed review of the branch. A check-a-claim writes no verdict at all, so
+  *none recorded* there is ordinary rather than missing.
+- **Handed back** — the files, one card each with its own **Read it**. Drawn by
+  `artifact`, and the Worker board draws the identical component for a task's.
+- **It ended on …** — the last line, lifted out of a file that may be thousands
+  of bytes long, which is how it used to get missed.
+
+For a pull request the review draft is there too, with **Post the review**.
+`judgementFindings`, `judgementLog` and `judgementsFor` are the same from the
+command line — and `judgementFindings` takes the name the list shows you
+(`CLAIM.md`), not the `<run>--<name>` it is stored under.
 
 ## The runner
 

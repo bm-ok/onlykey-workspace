@@ -11,7 +11,7 @@ retried with different words.
 **Reading** — nearly everything: `repositories`, `branchBoard`, `lines`,
 `tasks`, `judging`, `judgementFindings`, `judgementLog`, `prCuts`,
 `prCutState`, `issues`, `issueRead`, `issueDrafts`, `pools`, `jobs`,
-`prompts`, `contracts`, `skillReading`, `whatsNew`, `triage`, `todos`.
+`prompts`, `contracts`, `skillReading`, `whatsNew`, `memory`.
 
 **Writing its own work** — `taskCreate`, `taskQueue`, `taskUnqueue`,
 `branchCreate`, `branchAsLine`, `judgementCreate`, `judgementQueue`,
@@ -24,7 +24,10 @@ retried with different words.
 **Proposing** — `jobSave`, `promptSave`, `contractSave`, `skillPropose`,
 `skillAsked`, `skillHistory`.
 
-**Its own notes** — `triageSet`, `triageForget`, `todoAdd`, `todoSet`.
+**Its own memory** — `memorySet`, `memoryForget`. It may change and forget
+anything in it: a memory it could not correct would be a worse one. What is left
+of the auditing the old todo list gave you is the record — every write and every
+forget is an event under the `memory` tag.
 
 ## Withheld, and why
 

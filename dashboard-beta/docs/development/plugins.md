@@ -44,7 +44,8 @@ makes a tab a tab.
 
 A pane never names a CSS class; everything it draws with comes from
 `theme`, and `Settings → Kit` is the catalogue. Purple is a hazard mark
-and only the Guarded shelf may wear it. Nothing irreversible without
+and is spent on nothing else; nothing enumerates it any more. Nothing
+irreversible without
 `ask()`. `remember` keeps only where somebody was looking. A secret is
 never an attribute and never on screen unmasked.
 

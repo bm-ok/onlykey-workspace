@@ -8,9 +8,44 @@ call is a list with a reason on every line (`supervisorMay`).
 
 ## A turn
 
-Woken, it reads `whatsNew` since its bookmark and `triage`, decides, acts,
+Woken, it reads `whatsNew` since its bookmark and `memory`, decides, acts,
 says one thing to you with `supervisorSays`, and stops. Between turns it
 does nothing. See [Waking the supervisor](../workflow/waking-the-supervisor.md).
+
+## Its memory
+
+Between wakings it keeps **one number** — the bookmark — and whatever it wrote
+down. Everything else about a turn is gone when the turn ends.
+
+So it has a memory: `memory`, `memorySet`, `memoryForget`, keyed by a name it
+looks things up by. Writing the same name again changes that entry rather than
+adding a second, so it cannot fill with three versions of one fact and nothing
+saying which is current. Two kinds of thing go in it, and both belong:
+
+- **what it is owed** — a judgement it queued, a task it queued, a proposal
+  waiting on you. Where the name is a task or a judgement, `memory` looks up
+  what has actually happened to it, so "still running" and "the answer is
+  sitting there" stop looking the same from its own notes.
+- **what is simply true** — how you like your commits, which repository not to
+  touch without asking, a hazard worth knowing before commissioning work.
+
+**It may forget.** A memory it could not correct would be a worse one. What is
+left of the auditing the old todo list gave you is the record: every write and
+every forget is an event under the `memory` tag.
+
+## Teaching it what a project is
+
+A supervisor **cannot read code** — that is the design, not a gap, so everything
+it believes about a codebase a judge told it. On a project nobody has
+bootstrapped it has been told nothing, and manages the work anyway.
+
+**Settings → Bootstrap → Teach it about this project** is one press. It asks for
+a single `investigate-the-codebase` judgement — that prompt surveys every
+repository in the workspace, a paragraph each — reads what comes back, and writes
+what it learned into its memory. Several wakings, one judge run.
+
+It switches self-waking on if it is off, and says so: without that, nothing wakes
+it when the survey lands, so it would commission one and never read the answer.
 
 ## What it may do
 
@@ -22,7 +57,8 @@ does nothing. See [Waking the supervisor](../workflow/waking-the-supervisor.md).
 - draft replies, closes and reviews for a person to release
 - propose jobs, prompts, contracts and changes to its own skill — all of
   which wait for a person
-- keep its own triage and todo list
+- keep its own memory: what it knows about this project, and what it is
+  waiting on
 
 ## What it may not do
 
@@ -36,7 +72,8 @@ told in its skill that the plan is wrong.
 
 - **Supervisor → Chat** — the conversation, its messages signed with its
   machine name, yellow lines for each waking.
-- **Supervisor → Todo** — `T` refs: things it saw and did not act on.
+- **Supervisor → Memory** — what it knows, and what the stores say about each
+  of those things. Where the two differ, the store is right.
 - **Supervisor → Skill** — what it works to; proposals and history.
 - **Supervisor → What it may do** — the list, with reasons.
 - `events` — every action it asked for, one line each.

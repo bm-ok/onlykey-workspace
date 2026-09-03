@@ -38,8 +38,22 @@ them are scripts in the library a person approved.
 ## The Worker tab
 
 Worker → Jobs / Prompts / Contracts is the library filtered to task kind;
-**Claude Worker** under Keys is the worker sign-in. `sessions` and
-`sessionForget` are what it remembers.
+**Claude Worker** under Keys is the worker sign-in.
+
+**Worker → Claude Sessions** is what it remembers — `sessions` and
+`sessionForget` from the command line. It is on this tab because a session is
+the WORKER's, not the machine's: the machine is rolled back when the work ends
+and the memory outlives it, filed under the branch cut so a second task on one
+branch is the same conversation rather than a stranger. Only a worker keeps one;
+a judge that remembered the last four readings of a line would have an opinion
+before it looked.
+
+**Worker → Board** shows what a task delivered, in two cards that answer
+different questions. *What arrived* is the branch — press **Read it** for the
+repository, the commit count and the subject of the commit on top. *Handed back*
+is the files, which a run gives over by calling `okc-artifact <file>`: a built
+binary, a screenshot, the thing that explains the diff. Either can be empty
+while the other is not.
 
 ## Skill
 
