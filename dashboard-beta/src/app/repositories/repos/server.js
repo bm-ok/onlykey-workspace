@@ -23,6 +23,13 @@ var arrivedIn = require('./arrived');
 //the way ../../github/trust.js is, so an issue's story and a cut's are one.
 var storyOf = require('../pr/story');
 
+//WHICH REQUEST A TAG IS, so an answer can go back the way it came and go back
+//exactly once. Pure, and kept in its own file so the rule can be tested without
+//posting to a repository — see ./asking.js for why it exists at all.
+var asking = require('./asking');
+var triggerOfComment = asking.triggerOfComment;
+var triggerOfIssue = asking.triggerOfIssue;
+
 //---------------------------------------------------------------------------
 //THE REPOSITORIES IN THIS WORKSPACE, AND WHAT GITHUB SAYS ABOUT THEM.
 //
@@ -860,6 +867,13 @@ async function plugin(imports, register) {
                 };
                 var reading = readingOf(asItself);
                 return {
+                    //GITHUB'S OWN ID FOR THIS COMMENT, and the only stable name
+                    //a request has. Everything else about a tagged comment can
+                    //repeat: the same person, the same marker, the same words,
+                    //and `created_at` is a second-resolution clock. The id is
+                    //what makes "this request" a thing that can be answered
+                    //exactly once — see `trigger` on `asked` below.
+                    id: c.id == null ? null : c.id,
                     at: c.created_at, by: asItself.by, url: c.html_url,
                     role: trust.roleOf(c.user, c.author_association),
                     reading: reading,
@@ -881,7 +895,8 @@ async function plugin(imports, register) {
         for (var ai = 0; ai < (issues || []).length; ai++) {
             var it = issues[ai];
             var asked = it.reading && it.reading.kind === 'request'
-                ? { where: 'the issue', by: it.reading.by, why: it.reading.why }
+                ? { where: 'the issue', by: it.reading.by, why: it.reading.why,
+                    trigger: triggerOfIssue(it.on, it.number) }
                 : null;
 
             //THE LAST ONE WINS, because a thread is read in order and the most
@@ -889,7 +904,8 @@ async function plugin(imports, register) {
             //"actually, no" has said the second thing.
             (it.said || []).forEach(function (c) {
                 if (c.reading && c.reading.kind === 'request') {
-                    asked = { where: 'a reply', by: c.reading.by, at: c.at, why: c.reading.why };
+                    asked = { where: 'a reply', by: c.reading.by, at: c.at, why: c.reading.why,
+                        trigger: triggerOfComment(it.on, it.number, c.id) };
                 }
             });
 
@@ -1548,7 +1564,7 @@ async function plugin(imports, register) {
                 labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
             };
             var asked = readingOf(asIssue).kind === 'request'
-                ? { where: 'the issue', by: asIssue.by }
+                ? { where: 'the issue', by: asIssue.by, trigger: triggerOfIssue(on, number) }
                 : null;
 
             var replies = await github.all('/repos/' + bits[0] + '/' + bits[1] + '/issues/' + number + '/comments',
@@ -1561,7 +1577,18 @@ async function plugin(imports, register) {
                 //THE LAST WORD WINS, the same rule the sweep uses -- which is
                 //what makes "actually, no" work: it is a later request or it is
                 //a later non-request, and either way it is the current one.
-                if (how.kind === 'request') asked = { where: 'a reply', by: c.user && c.user.login };
+                if (how.kind === 'request') {
+                    asked = {
+                        where: 'a reply', by: c.user && c.user.login,
+                        at: c.created_at || null,
+                        //READ FRESH, A MOMENT AGO. This is the trigger an answer
+                        //is recorded against, so it has to come from the same
+                        //read that decided somebody asked — not from the sweep's
+                        //copy, which may be minutes old and may not carry the
+                        //comment being answered at all.
+                        trigger: triggerOfComment(on, number, c.id)
+                    };
+                }
             });
 
             if (!asked) {
@@ -1613,6 +1640,36 @@ async function plugin(imports, register) {
             } catch (e) { /* the record is worth having and not worth failing a send over */ }
         }
 
+        //---- AND WHETHER A TAG HAS ALREADY BEEN ANSWERED THIS WAY -----------
+        //
+        //ANSWERS 'yes', 'no', OR 'cannot tell', AND THE THIRD IS NOT 'no'. This
+        //decides whether a message goes out with nobody between it and a public
+        //thread, so a check that could not be run has not been passed — the same
+        //rule the push door keeps, and for the same reason: `catch` returning the
+        //permissive answer is how a broken record looks exactly like a clean one.
+        //
+        //A DRAFT IS THE SAFE DIRECTION. Being unable to tell costs somebody a
+        //press; guessing wrong the other way puts a duplicate reply on a
+        //stranger's issue, under this host's token, where it cannot be unsaid.
+        //
+        //BOUNDED, AND THAT HAS A CONSEQUENCE WORTH KNOWING: `noteSpoken` keeps
+        //the last two hundred, so a trigger old enough to have fallen off the
+        //back reads as unanswered. Two hundred direct sends is far more than a
+        //thread lives through, and the alternative is a file that grows for
+        //ever — but it is why this is the second line of defence and not the
+        //first. The first is that a tag is only acted on once, when it arrives.
+        async function spokenTo(trigger) {
+            if (!trigger) return 'no';
+            try {
+                var box = await spoken();
+                var all = box.read({ said: [] }) || { said: [] };
+                var hit = (all.said || []).filter(function (s) {
+                    return s && s.trigger === trigger;
+                })[0];
+                return hit ? 'yes' : 'no';
+            } catch (e) { return 'cannot tell'; }
+        }
+
         undo.push(actions.define('issueSay', {
             about: 'Answer an issue somebody trusted has tagged — drafted for approval, or posted if the window has been set to allow it',
             takes: ['on', 'number', 'text'],
@@ -1626,7 +1683,47 @@ async function plugin(imports, register) {
                 var all = kept2.read({}) || {};
                 var key = args.on + '#' + Number(args.number);
 
-                var direct = !!(await imports.settings.read()).githubReplyDirect;
+                //---- WHETHER THIS GOES BACK THE WAY IT CAME -----------------
+                //
+                //A TAG FROM GITHUB IS ANSWERED ON GITHUB. Somebody who tagged an
+                //issue asked from the one place they will never see a draft —
+                //and this reply sat in the window for forty-one minutes marked
+                //"waiting to be sent" while the person who asked watched a
+                //thread that never answered. A draft step is for a message
+                //nobody asked for. This one was asked for, by somebody trusted,
+                //in the open, on the thread it answers.
+                //
+                //`mayAnswer` HAS ALREADY PROVED THAT, above and unconditionally.
+                //It re-read the thread from GitHub a moment ago and throws
+                //unless somebody trusted asked: trusted by id, carrying this
+                //host's marker, addressed to the account the token signs in as.
+                //So the trigger is not a hint about where the request came
+                //from — it IS the request, and there is no path to here without
+                //one.
+                //
+                //ONCE PER TRIGGER, WHICH IS THE WHOLE REASON THE ID IS KEPT.
+                //Everything else about two tags is equal: the same person, the
+                //same marker, often the same sentence. The second tag on
+                //`0c-coder-lib-agent#1` differed from the first only by
+                //twenty-two minutes on a second-resolution clock. An answer that
+                //nobody reads first must be answerable exactly once, and
+                //GitHub's comment id is the only name that makes that decidable.
+                //
+                //A SECOND ANSWER IS DRAFTED, NOT REFUSED. The supervisor may
+                //genuinely have more to say; what it may not do is say it
+                //unread. Falling back to a draft puts a person in the loop at
+                //precisely the point the rule stops being obvious.
+                var settingsNow = await imports.settings.read();
+                var trigger = (ok.asked && ok.asked.trigger) || null;
+                var answered = await spokenTo(trigger);
+
+                //THE SWITCH STILL MEANS WHAT IT MEANT. `githubReplyDirect` is a
+                //person saying "send everything unread" and it is untouched by
+                //this — it is an OR, not a replacement. What changed is that a
+                //host with the switch off no longer sits on an answer somebody
+                //asked for out loud.
+                var asked = !!trigger && answered === 'no';
+                var direct = !!settingsNow.githubReplyDirect || asked;
 
                 if (!direct) {
                     all[key] = {
@@ -1639,11 +1736,23 @@ async function plugin(imports, register) {
                     };
                     kept2.write(all);
                     log.on('github', args.on).info('a reply to #' + args.number + ' is waiting to be approved');
+
+                    //WHY IT WAITED, IN THE ANSWER. A caller that expected this to
+                    //go out is owed the reason it did not, and there are now
+                    //three — one of which is this app being unable to check
+                    //rather than anything the caller did.
                     return {
                         posted: false, waiting: true, on: args.on, number: Number(args.number),
-                        note: 'Written and waiting. Nothing has been sent: a person reads it in '
-                            + 'Repositories → Issues and approves it, the same as a job or a contract. '
-                            + 'Turning that step off is done in the window, in Settings → Trust.'
+                        note: 'Written and waiting. Nothing has been sent: '
+                            + (answered === 'yes'
+                                ? 'that tag has already been answered directly once, and a second answer '
+                                    + 'to one request is not sent unread. '
+                                : answered === 'cannot tell'
+                                    ? 'this host could not check whether that tag has already been answered, '
+                                        + 'and an unread reply is not sent on a check that did not run. '
+                                    : 'nothing on GitHub asked for this, so there is nowhere to answer back to. ')
+                            + 'A person reads it in Repositories → Issues and approves it, the same as a '
+                            + 'job or a contract.'
                     };
                 }
 
@@ -1661,15 +1770,29 @@ async function plugin(imports, register) {
                 if (all[key]) { delete all[key]; kept2.write(all); }
 
                 log.on('github', args.on).good('replied on #' + args.number
-                    + ' — sent directly, nobody read it first');
+                    + (asked && !settingsNow.githubReplyDirect
+                        ? ' — answering ' + ((ok.asked && ok.asked.by) || 'a tag') + '\'s tag, sent back the '
+                            + 'way it came'
+                        : ' — sent directly, nobody read it first'));
+
+                //THE TRIGGER GOES INTO THE RECORD, not just the fact of a send.
+                //Without it this list says a reply went out and cannot say what
+                //it answered, so the next tag on the same issue cannot be told
+                //apart from the one already dealt with — which is the whole
+                //mechanism, and it lives or dies on this line.
                 await noteSpoken({
                     kind: 'reply', on: args.on, number: Number(args.number), direct: true,
+                    trigger: trigger, answering: ok.asked || null,
                     by: actions.whoAsked(a), url: (sent.body && sent.body.html_url) || null
                 });
                 return {
                     posted: true, waiting: false, on: args.on, number: Number(args.number),
                     url: (sent.body && sent.body.html_url) || null,
-                    note: 'Posted. Settings → Trust has direct replies switched on, so nobody read it first.'
+                    note: asked && !settingsNow.githubReplyDirect
+                        ? 'Posted. ' + ((ok.asked && ok.asked.by) || 'Somebody trusted') + ' asked for this '
+                            + 'on GitHub, so it was answered there — that tag is now recorded as answered '
+                            + 'and a second reply to it would be drafted instead.'
+                        : 'Posted. Settings → Trust has direct replies switched on, so nobody read it first.'
                 };
             }
         }));
@@ -1785,7 +1908,22 @@ async function plugin(imports, register) {
                 if (!box) return { said: [], count: 0, days: days, note: 'No workspace is open.' };
                 var all = (box.read({ said: [] }) || {}).said || [];
                 var since = new Date(Date.now() - days * 86400000).toISOString();
-                var recent = all.filter(function (x) { return String(x.at || '') >= since; });
+
+                //UNREAD ONLY, AND THAT IS NOW A FILTER RATHER THAN THE WHOLE
+                //DRAWER. This list answers one question — what went out with
+                //nobody reading it — and the number is the honest half of the
+                //bargain the direct switches offer. Since an approved reply is
+                //also recorded here (it spends the tag it answers, so a second
+                //answer is not sent unread), counting every row would report
+                //messages a person read word by word as messages nobody read.
+                //
+                //`!== false` AND NOT `=== true`: rows written before this field
+                //existed were all direct sends, and re-reading history as
+                //"approved" would quietly shrink a count somebody may have
+                //acted on.
+                var recent = all.filter(function (x) {
+                    return String(x.at || '') >= since && x.direct !== false;
+                });
                 return {
                     said: recent.slice(-50).reverse(), count: recent.length, kept: all.length, days: days,
                     note: recent.length
@@ -1975,6 +2113,24 @@ async function plugin(imports, register) {
                             + ((sent.body && sent.body.message) || sent.status));
                     }
                     log.on('github', one.on).good('replied on #' + one.number + ', approved at the window');
+
+                    //AND THE TAG IT ANSWERS IS SPENT, THOUGH A PERSON READ THIS
+                    //ONE. Recorded for the same reason as a direct send: what
+                    //makes a second answer safe is knowing the first happened,
+                    //and that is true whoever pressed the button. Without this,
+                    //a reply approved here could be followed by an automatic
+                    //second answer to the very same tag — the duplicate arriving
+                    //precisely because a person was careful enough to read the
+                    //first one.
+                    //
+                    //`direct: false` KEEPS THE TWO APART. This list's older job
+                    //is counting what went out unread, and an approved message
+                    //is not that; the switch's own card reads that field.
+                    await noteSpoken({
+                        kind: 'reply', on: one.on, number: one.number, direct: false,
+                        trigger: (ok.asked && ok.asked.trigger) || null, answering: ok.asked || null,
+                        by: actions.whoAsked(a), url: (sent.body && sent.body.html_url) || null
+                    });
                     return {
                         posted: true, on: one.on, number: one.number,
                         url: (sent.body && sent.body.html_url) || null, note: 'Posted.'
@@ -2405,8 +2561,14 @@ async function plugin(imports, register) {
                         };
                         var how = readingOf(asItself);
                         return {
+                            //THE SAME ID THE THREAD READ ABOVE CARRIES. This is
+                            //a second reading of the same comments for a
+                            //different caller, and a field on one shape and not
+                            //the other is how two readings of one thing start
+                            //answering differently.
+                            id: c.id == null ? null : c.id,
                             at: c.created_at, by: asItself.by, url: c.html_url,
-                    role: trust.roleOf(c.user, c.author_association),
+                            role: trust.roleOf(c.user, c.author_association),
                             reading: how, body: asItself.body
                         };
                     });
@@ -2481,11 +2643,13 @@ async function plugin(imports, register) {
                 //read in order and somebody who asked and then said "actually,
                 //no" has said the second thing.
                 var asked = reading.kind === 'request'
-                    ? { where: 'the issue', by: reading.by, at: x.created_at, why: reading.why }
+                    ? { where: 'the issue', by: reading.by, at: x.created_at, why: reading.why,
+                        trigger: triggerOfIssue(on, number) }
                     : null;
                 said.forEach(function (c) {
                     if (c.reading && c.reading.kind === 'request') {
-                        asked = { where: 'a reply', by: c.reading.by, at: c.at, why: c.reading.why };
+                        asked = { where: 'a reply', by: c.reading.by, at: c.at, why: c.reading.why,
+                            trigger: triggerOfComment(on, number, c.id) };
                     }
                 });
                 if (asked && isPull) {

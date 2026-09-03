@@ -1391,18 +1391,91 @@ test('with replies direct, the reply goes out, says nobody read it, and is recor
     assert.deepEqual((await app.actions.call('issueDrafts', {})).drafts, []);
 });
 
-test('with replies drafted, nothing is posted and nothing is recorded as spoken', async () => {
+test('a tag from GitHub is answered on GitHub, with the direct switch off', async () => {
+    //THE RULE THIS REPLACED, AND WHY. With the switch off, EVERY answer was a
+    //draft — including the answer to somebody who had just asked from GitHub.
+    //They are, by definition, not at the window: a real reply sat there for
+    //forty-one minutes marked "waiting to be sent" while the person who asked
+    //watched a thread that never answered.
+    //
+    //`mayAnswer` HAS ALREADY DONE THE PROVING. It re-reads the thread and
+    //throws unless somebody trusted asked — trusted by id, carrying this host's
+    //marker, addressed to the account the token signs in as. So this is not a
+    //loosening of who may be answered; it is where the answer goes.
     const app = await withTag(false);
     const said = await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'reading it' });
-    assert.equal(said.posted, false);
-    assert.equal(said.waiting, true);
-    assert.deepEqual((await app.state.here.doc('github-spoken')).read({ said: [] }).said, []);
+
+    assert.equal(said.posted, true, said.note);
+    assert.equal(said.waiting, false);
+    assert.deepEqual((await app.actions.call('issueDrafts', {})).drafts, []);
+
+    //AND THE LOG SAYS WHICH KIND OF SEND IT WAS. "replied on #7" alone reads
+    //like an approved one, and these lines are where somebody looks afterwards.
+    assert.ok(app.said.some((l) => /replied on #7 — answering bmatusiak's tag, sent back the way it came/.test(l)),
+        app.said.join(' | '));
+
+    //RECORDED AGAINST THE TAG IT ANSWERS, which is the whole mechanism: without
+    //the trigger on the row, the next tag on this issue cannot be told apart
+    //from the one already dealt with.
+    const spoken = (await app.state.here.doc('github-spoken')).read({ said: [] });
+    assert.equal(spoken.said.length, 1);
+    assert.equal(spoken.said[0].direct, true);
+    assert.equal(spoken.said[0].trigger, 'anowner/arepo#7:issue');
+});
+
+test('and answered once — a second answer to one tag is drafted, not sent', async () => {
+    //THE TEETH. An answer that nobody reads first must be answerable exactly
+    //once, or a sweep that re-reads the same thread, or a supervisor woken
+    //twice, posts the same reply again on somebody else's issue.
+    //
+    //DRAFTED RATHER THAN REFUSED: the supervisor may genuinely have more to
+    //say. What it may not do is say it unread.
+    const app = await withTag(false);
+    await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the first' });
+
+    const again = await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'and again' });
+    assert.equal(again.posted, false, again.note);
+    assert.equal(again.waiting, true);
+    assert.match(again.note, /already been answered directly once/);
+
+    //ONE WENT OUT, ONE IS WAITING — and the drawer still counts exactly one as
+    //having gone unread.
     assert.equal((await app.actions.call('issueDrafts', {})).drafts.length, 1);
+    assert.equal((await app.actions.call('spokenFor', {})).count, 1);
+});
+
+test('an approved reply spends the tag too, so no automatic second answer follows it', async () => {
+    //THE DUPLICATE THAT WOULD ARRIVE BECAUSE SOMEBODY WAS CAREFUL. A reply
+    //released at the window answers its tag just as much as a direct one — and
+    //if that is not recorded, the next `issueSay` on the same tag sees an
+    //unanswered request and posts, unread, straight after the message a person
+    //had just read word by word.
+    const app = await withTag(false);
+    const draft = await app.state.here.doc('github-drafts');
+    const all = draft.read({});
+    all['anowner/arepo#7'] = { kind: 'reply', on: 'anowner/arepo', number: 7, text: 'read by a person', at: 'x', by: 'a test' };
+    draft.write(all);
+
+    await app.actions.call('issueApprove', { on: 'anowner/arepo', number: 7 });
+
+    //NOT COUNTED AS UNREAD, because a person read it. The Trust card's number
+    //is the honest half of the bargain the direct switches offer, and it would
+    //be a lie either way round.
+    assert.equal((await app.actions.call('spokenFor', {})).count, 0);
+
+    //BUT THE TAG IS SPENT.
+    const next = await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'and again' });
+    assert.equal(next.posted, false, next.note);
+    assert.match(next.note, /already been answered/);
 });
 
 test('everything waiting goes in one press, each through the same door, and one refusing does not stop the rest', async () => {
     const app = await withTag(false);
+    //ANSWERED ONCE, SO THE SECOND IS A DRAFT. A tag from GitHub is answered on
+    //GitHub the first time; it is the answer AFTER that which waits, and a
+    //waiting one is what this test is about.
     await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the first' });
+    await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the second' });
     //A SECOND DRAFT ON A THREAD NOBODY TAGGED: mayAnswer refuses it at release,
     //which is exactly the check that must not be skipped by sending in bulk.
     const box = await app.state.here.doc('github-drafts');
@@ -1421,7 +1494,10 @@ test('everything waiting goes in one press, each through the same door, and one 
 
 test('sending everything waiting is a press only a person makes', async () => {
     const app = await withTag(false);
+    //TWICE, FOR A WAITING ONE. The first answer to a tag goes back the way it
+    //came; the second is the one that waits.
     await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the first' });
+    await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the second' });
     for (const mark of ['_overTheWire', '_driven', '_fromTest']) {
         await assert.rejects(() => app.actions.call('issueApproveAll', { [mark]: true }), /by a person at the window/, mark);
     }
