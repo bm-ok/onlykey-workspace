@@ -791,6 +791,28 @@ async function plugin(imports, register) {
         });
     }
     if (io) {
+        //---- AND THE ORPHAN A FAILED LOAD LEAVES -------------------------
+        //
+        //THE `undo` BELOW IS NOT ENOUGH ON ITS OWN. It runs when this half is
+        //REPLACED and never when one FAILS TO LOAD — and `io` is made in
+        //../core/io/main.js and outlives every reload, so a half that threw on
+        //the way up has already hooked `connection` and will never unhook. The
+        //next good load then sits beside it, and both fire on every connection.
+        //
+        //WHICH MEANS ONE PRESS RUNS AN ACTION TWICE. See ../core/okc/server.js
+        //for the whole account: it was found as a rebuild refusing itself with
+        //"already being deleted", and as a GitHub comment posted four times.
+        //
+        //THE HANDLE LIVES ON `io` because that is the only thing here that
+        //survives a reload; the function is new every time, so a load cannot
+        //find its predecessor any other way.
+        var MINE = Symbol.for('okc.tests.onConnection');
+        if (io[MINE]) {
+            try { io.off('connection', io[MINE]); }
+            catch (e) { /* an orphan that will not come off must not stop the app */ }
+        }
+        io[MINE] = onConnection;
+
         io.on('connection', onConnection);
         //NAMED SO IT COMES OFF BY ITSELF. `io` is made in ../core/io/main.js and
         //outlives every reload, so `removeAllListeners` here would take every

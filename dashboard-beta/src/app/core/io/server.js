@@ -10,7 +10,25 @@ async function plugin(imports, register) {
 
     //KEPT, so onDestroy can take off THIS handler rather than every handler on
     //a socket server this half did not make. See the note in ./serve.js.
+    //---- THE SAME ORPHAN PROBLEM ../okc HAS, AND THE SAME ANSWER ----------
+    //
+    //`onDestroy` below takes this off, and a half that FAILS TO LOAD never gets
+    //there — while `host.io` outlives every reload. So the handler this load
+    //adds sits beside the one the failed load left, and both fire on every
+    //connection. ../okc/server.js has the long version of what that costs.
+    //
+    //LESS VISIBLE HERE and worth removing anyway: this half only emits the app
+    //package and answers a ping, so an orphan sends a page its app package
+    //twice rather than posting a comment twice. The bug is identical; only the
+    //blast radius differs, and that is not a reason to leave one of them.
+    var HANDLE = Symbol.for('okc.io.onConnection');
+    if (host.io[HANDLE]) {
+        try { host.io.off('connection', host.io[HANDLE]); }
+        catch (e) { /* an orphan that will not come off must not stop the app */ }
+    }
+
     var mine = serve(host.io, host.appPackage);
+    host.io[HANDLE] = mine;
 
     //=======================================================================
     //WHICH PAGE IS THE ONE SOMEBODY IS LOOKING AT.

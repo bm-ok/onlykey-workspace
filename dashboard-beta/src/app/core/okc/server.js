@@ -22,6 +22,15 @@ var scrub = require('./scrub').scrub;
 //service and this is the server graph, which is a different plugin list — the
 //two meet only through the host object build/main.js hands over. Consuming it
 //by name here would simply never resolve.
+//WHERE THIS HALF LEAVES ITS HANDLE ON THE SOCKET SERVER, so the next load can
+//find what the last one left even if the last one never got to clean up. See
+//the registration at the foot of this file for what goes wrong without it.
+//
+//A SYMBOL, NOT A STRING KEY: `io` is socket.io's own object, shared with
+//../io and with anything else holding it, and a plain property name is a
+//collision waiting for whoever picks the same word.
+var MINE = Symbol.for('okc.onConnection');
+
 plugin.consumes = ['app', 'log'];
 plugin.provides = [];
 async function plugin(imports, register) {
@@ -166,6 +175,31 @@ async function plugin(imports, register) {
         });
     }
 
+    //---- ONE HANDLER ON THE SOCKET SERVER, WHATEVER HAPPENED BEFORE --------
+    //
+    //`onDestroy` BELOW TAKES THIS OFF AGAIN, AND THAT IS NOT ENOUGH. `io` is
+    //made in ../io/main.js and outlives every reload; onDestroy runs when a
+    //half is REPLACED, and not when one FAILS TO LOAD. A half that threw on the
+    //way up has already run this line and will never run its destroy — so the
+    //next successful load adds a second handler beside the orphan, and a third,
+    //and a fourth. This log has 208 failed reloads on it.
+    //
+    //WHAT THAT DOES IS NOT SUBTLE, AND IT IS NOT A DOUBLE CLICK. Every
+    //`onConnection` attaches its own `okc:call` listener to the SAME socket, so
+    //one press in the window runs the action once per orphan. It was found as a
+    //machine rebuild refusing itself with "already being deleted" — the first
+    //copy taking the lock and the rest bouncing off it — and then, expensively,
+    //as the same GitHub comment posted four times.
+    //
+    //SO THE HANDLE IS KEPT ON `io` ITSELF, which is the only thing here that
+    //survives a reload, and the previous one is removed by identity before this
+    //one goes on. The function is new on every load, so a half cannot find its
+    //predecessor any other way.
+    if (io[MINE]) {
+        try { io.off('connection', io[MINE]); }
+        catch (e) { /* an orphan that cannot be removed must not stop the app */ }
+    }
+    io[MINE] = onConnection;
     io.on('connection', onConnection);
 
     //STARTED HERE AND STOPPED IN `onDestroy`. This half

@@ -347,6 +347,51 @@ test('every service member a plugin reaches for is one the service publishes', (
             + [...wrong].join('\n  '));
 });
 
+test('one connection handler per half, and each removes its own orphan first', () => {
+    //WHAT THIS CAUGHT. `io` is made once and outlives every reload, and both
+    //halves that hook `connection` unhook themselves in `onDestroy` — which
+    //runs when a half is REPLACED and never when one FAILS TO LOAD. A half that
+    //threw on the way up has already registered and will never clean up, so the
+    //next good load sits beside the orphan.
+    //
+    //Every `onConnection` attaches its own `okc:call` listener to the SAME
+    //socket, so one press in the window runs the action once per orphan. It
+    //showed up as a rebuild refusing itself with "already being deleted" — the
+    //first copy taking the busy lock and the rest bouncing off it — and then as
+    //the same GitHub comment posted four times, which is the version that
+    //cannot be taken back.
+    //
+    //THE COUNT IS PINNED because it is the cheap half of the check: three
+    //server halves hook `connection` — core/io, core/okc and tests — so there
+    //should be exactly three listeners after one clean load. Anything that adds
+    //a fourth has to come and change this line and say why.
+    //
+    //(A FOURTH EXISTS IN THE REAL APP and is deliberately not here:
+    //core/build/main.js hooks `connection` to tell a page the server half is
+    //down. It lives in main, which never reloads, and this harness supplies
+    //`io` directly rather than going through it — so its absence is the
+    //harness, not a missing guard.)
+    const io = loaded.app.services.io;
+    assert.equal(io.listenerCount('connection'), 3,
+        'expected one connection handler each from core/io, core/okc and tests, found '
+            + io.listenerCount('connection'));
+
+    //AND THE GUARD ITSELF, IN THE SOURCE. The behaviour it protects only
+    //appears on the SECOND load against one `io`, which this harness cannot
+    //stage without building and running the whole bundle twice — so what is
+    //asserted here is that no site has quietly gone back to hooking
+    //`connection` without first removing what a failed load may have left.
+    const root = path.join(__dirname, '..', '..');
+    for (const rel of ['src/app/core/okc/server.js', 'src/app/core/io/server.js',
+        'src/app/tests/server.js']) {
+        const src = fs.readFileSync(path.join(root, rel), 'utf8');
+        assert.match(src, /Symbol\.for\(/,
+            rel + ' no longer keeps a handle on io, so a failed reload will orphan its handler');
+        assert.match(src, /off\('connection'/,
+            rel + ' does not remove a previous connection handler before adding its own');
+    }
+});
+
 test('destroy() unhooks the server half so a reload cannot double register', async () => {
     await loaded.destroy();
 
