@@ -53,9 +53,14 @@ in the inbox:
 
 In that order: the fork first, then this host, or the host fast-forwards to
 a fork that is itself behind. **Repositories → Sync** is all of it in one
-place: every repository's two standings, the two buttons per row, and
-**Catch up everything** (`workspaceSync`), which does the forks first, then
-this host, then asks GitHub again.
+place — its own note says it: three gaps per repository, every card saying
+where it stands on all three, and every press that closes one. There is a
+third because your fork also drifts from the **project it was forked from**,
+which is what `repoForkSync` actually pulls up (GitHub's merge-upstream is
+always from the parent) and is a different repository from where work goes.
+**Catch up everything** (`workspaceSync`) does the forks first, then this
+host, then asks GitHub again. See [Catch the workspace up after a
+merge](catch-the-workspace-up.md).
 
 ## Command line
 

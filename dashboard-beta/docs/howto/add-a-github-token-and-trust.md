@@ -12,8 +12,10 @@ Everything below is the same either way.
 
 1. On GitHub, make a token with `repo` scope (classic) or the equivalent
    fine-grained permissions on the repositories you work in.
-2. **Keys → GitHub** → paste it → **Keep it**. The app checks it against
-   GitHub before keeping it and shows who it is and what it may do.
+2. **Keys → GitHub** → **Add a token** (**Replace it** when one is already
+   held) → paste it → **Check it and keep it**. It is checked against GitHub
+   before it is kept, so a token that does not work never replaces one that
+   does, and the card then shows who it is and what it may do.
 3. `node tools/okc.js githubHeld` says what is known about it — never the
    token itself. `githubCheck` asks GitHub again.
 
