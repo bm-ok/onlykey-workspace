@@ -78,7 +78,7 @@ not.
 ## Re-reading a verdict
 
 `judgementReconclude --ref J9` (or `--all`) reads a done judgement's
-handed-back report again and records the conclusion its last line says. It
+handed-back report again, through the same parser, and records what it says. It
 exists because for a while the queue read every drawer as empty and recorded
 nothing; the reports were there the whole time. A verdict a person recorded
 is not touched.

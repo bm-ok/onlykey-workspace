@@ -20,9 +20,11 @@ line has an opinion before it looks.
 ## What it hands back
 
 A report file, through the handback door (`POST /artifact`), kept under
-the judgement in the artifacts drawer. Its last line is the verdict —
+the judgement in the artifacts drawer. Its prompt asks it to end on one line —
 `RECOMMENDATION: accept|reject`, `RECOMMEND: YES|NO`, `CLAIM:
-true|false|unclear` — and the host parses only that. Its body is what a
+true|false|unclear` — and that line is what it **concluded**, not a verdict;
+see below. The host takes the first such whole line, in the first handed-back
+file that has one, and reads nothing else. Its body is what a
 stranger will read when it becomes a review, so the skill tells it to
 write for the person who opened the pull request, not for the parser.
 
@@ -58,6 +60,6 @@ command line — and `judgementFindings` takes the name the list shows you
 ## The runner
 
 `judge-a-change` is the job; it hands the brief to Claude on the machine,
-follows the run, and checks the report's last line. A judgement that
+follows the run, and looks for the line it was asked to end on. A judgement that
 "reached no conclusion" with a report in the drawer is a run that finished
 without the line, and `judgementLog` says how.

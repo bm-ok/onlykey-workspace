@@ -81,10 +81,10 @@ told in its skill that the plan is wrong.
 ## Its skill
 
 `skills --which supervisor` reads it. The shipped default is an entry inside
-`okc-bootstrap.tar` — `provision/supervisor-skill.md` — and the served copy is
-the approved one at `.okc/provision/supervisor-skill.md` in the open workspace.
-There is **no copy in `src/`**; this page said there was, naming a path that has
-never existed since the skills became bundle entries.
+`okc-bootstrap.tar` — `provision/supervisor-skill.md` — and what a machine is
+served is the approved copy at `.okc/provision/supervisor-skill.md` in the open
+workspace. **There is no copy under `src/`.** A skill is a bundle entry and a
+workspace file, never source, which is why changing one does not need a build.
 
 It proposes changes to itself and you approve them; `bootstrapShip` is what
 carries an approved one back into the tar, and the tar goes stale by hand. See

@@ -8,13 +8,30 @@ from this host's provisioning door.
 
 | copy | where | who writes it |
 |---|---|---|
-| shipped default | `src/app/vms/provision/scripts/*-skill.md` | the developer, in git |
-| the served copy | the workspace's `provision/` folder in the app's data | a person, by approving |
-| the seed | `okc-bootstrap.tar` in the repository | `bootstrapShip` |
+| what a person approved | the app's own drawer | `skillApprove`, `skillSave` |
+| the workspace's | `<workspace>/.okc/provision/*-skill.md` | unpacking a bundle |
+| the shipped seed | `provision/*-skill.md` inside `okc-bootstrap.tar` | `bootstrapShip` |
 
-The search path is the served copy first, then the workspace, then the
-app — so an approved copy shadows the shipped one, and a fresh workspace
-starts from the shipped one until something is approved.
+`provision/scripts.js` searches those in that order and the first hit wins, so
+an approved copy shadows the workspace's and the workspace's shadows nothing
+until a bundle is imported. **A skill is not source.** There is no `*-skill.md`
+under `src/` — that folder holds the shell scripts a machine is provisioned
+with, and a skill is a provisioning file that arrives in a bundle. Changing one
+needs no build.
+
+The approved copy is kept in the app's drawer rather than written back over
+whichever file it was read from, because in a checkout that file is under a
+build output: an edit made at the window was reverted by the next rebuild, with
+nothing said.
+
+A bundle's `provision/` **is** a workspace's `.okc/provision/`, name for name —
+so unpacking a bundle is setting a workspace up, and tarring a `.okc` is making
+a bundle. That is why the skills live in there rather than in a `skills/` folder
+of their own: carried under a second name, they were put somewhere nothing
+looked and were never read.
+
+One name is worth knowing before you go looking: the worker's skill is
+**`runner-skill.md`**, not `worker-skill.md`.
 
 ## Changing one
 

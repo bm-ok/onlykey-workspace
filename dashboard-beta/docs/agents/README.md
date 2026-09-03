@@ -7,7 +7,7 @@ The three machines that do the thinking, and what each may do:
   to GitHub. Woken by a person, a tag, a task landing or a judgement
   finishing.
 - [The judge](judge.md) — reads a change and hands back a report. Never
-  pushes to what it reads; its last line is the verdict the host parses.
+  pushes to what it reads; it hands back a report saying what it concluded.
 - [The worker](worker.md) — takes a task on a branch, does the work,
   commits and pushes to this host.
 - [Skills](skills.md) — the document each is handed that says what it is,
