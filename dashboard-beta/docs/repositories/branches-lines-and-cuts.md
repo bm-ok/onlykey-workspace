@@ -11,7 +11,7 @@ when it was cut for a GitHub issue, the issue as a fact (`issue: {on,
 number}`). Both are recorded in the cut note and travel to the pull request.
 
 A branch that exists **only on origin** — pushed from somewhere else, or
-from a machine — can be brought here from **Repos → Branches**: the row
+from a machine — can be brought here from **Repositories → Repos**: the branch row
 carries a `↓` rather than a disabled refresh, and `repoTakeBranch --repo X
 --branch Y` is the same act. It fetches and cuts the branch from origin's
 copy with `git branch`, so nothing you have open moves. Until it is here it
