@@ -12,7 +12,7 @@ with whether its branch has anything on it yet.
 | `branch` | where it delivers — cut first, or cut in the same act with `cutFrom` and `reason` |
 | `job`, `promptId`, `contractId` | the chain it runs under, copied at write time so editing the library later never rewrites a task that already went out |
 | `issue` | `{on, number}` when it came from a GitHub issue; the pull request says `Closes` from it |
-| `becauseOf` | the judgement it was raised because of; its report is put where the worker will find it |
+| `becauseOf` | the judgement it was raised because of; its report is put where the worker will find it. **Required when a MACHINE writes the task**, and it must name a finished one — a supervisor cannot see the code, so a task written on any other basis is work commissioned from a rumour. A person, at the window or the command line, has read the code or decided they did not need to, and is asked for nothing |
 | `tag` | which kind of machine may take it |
 | `hours` | how long a run may take before it is given up on |
 

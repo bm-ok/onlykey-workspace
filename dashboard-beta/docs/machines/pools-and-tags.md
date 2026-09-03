@@ -32,10 +32,24 @@ makes it a different kind is who is sitting in it. See
 
 ## Picking
 
-`pools` is the whole answer: per tag, which machines, how many free, how
-many busy, and how many are kept back (`vmForTasks --enabled false`). A
-task with no tag takes any free machine; a tagged one takes only its own
-kind and waits. A judgement takes a `judge`.
+`pools` answers for the machines the queue may reach: per tag, which machines,
+how many free, how many busy, and how many are kept back (`vmForTasks --enabled
+false`). A task with no tag takes any free machine; a tagged one takes only its
+own kind and waits. A judgement takes a `judge`.
+
+**`supervisor` and `diy` machines are not in it at all**, because the question it
+answers is *how many are free to take work* and neither ever does. They are still
+on Runners → Virtual machines and on the Queue tab, where each says why the queue
+leaves it alone.
+
+That was not always true, and the way it failed is worth keeping. A DIY machine
+appeared in `pools` as its own pool with nothing free in it and the reason *has
+not been told what it is for — tag it "worker" or "judge"*. Untrue, since it had
+been told; and dangerous, because following it hands a person's seat to the tick.
+A supervisor read exactly that and reported a third of this host's machines as
+idle by misconfiguration. The rule now lives in one place — `notForTheQueue` in
+`src/app/queue/policy.js` — and `pools` asks it rather than checking for
+`supervisor` on its own.
 
 **The queue's question is worker-or-judge.** A supervisor is out because it
 decides what work there is; a DIY machine is out because the whole point of

@@ -15,8 +15,10 @@ var { useState, useEffect } = React;
 //taste about forms.
 //
 //The supervisor is the other thing that writes tasks here, and it is held to
-//`taskCreate` over the wire — see ../vms/provision/scripts/supervisor-skill.md
-//and ./doors.js. So the person at the window is asked for exactly what a model
+//`taskCreate` from a machine — see the supervisor skill (a bundle entry,
+//`provision/supervisor-skill.md`, served out of the open workspace's
+//.okc/provision rather than from this tree) and ./doors.js.
+//So the person at the window is asked for exactly what a model
 //is asked for, and the two cannot drift: a field that appears here and not
 //there is a field the supervisor would be refused for omitting, and a field
 //there and not here is a rule a person can walk past.

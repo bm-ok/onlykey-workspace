@@ -80,7 +80,12 @@ told in its skill that the plan is wrong.
 
 ## Its skill
 
-`skills --which supervisor` reads it; the shipped default is
-`src/app/vms/provision/scripts/supervisor-skill.md`, and the served copy is
-the approved one in the workspace's provision folder. It proposes changes
-to itself; you approve them. See [Skills](skills.md).
+`skills --which supervisor` reads it. The shipped default is an entry inside
+`okc-bootstrap.tar` — `provision/supervisor-skill.md` — and the served copy is
+the approved one at `.okc/provision/supervisor-skill.md` in the open workspace.
+There is **no copy in `src/`**; this page said there was, naming a path that has
+never existed since the skills became bundle entries.
+
+It proposes changes to itself and you approve them; `bootstrapShip` is what
+carries an approved one back into the tar, and the tar goes stale by hand. See
+[Skills](skills.md).

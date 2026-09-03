@@ -16,15 +16,28 @@ under the brief. When the subject was cut for an issue, the whole issue
 conversation is put under the brief too, fenced, so the judge reads the
 change against the words of the people who asked.
 
-## The verdict
+## What it concluded, and the verdict — two fields
 
-The report ends with one line the host parses:
+The report ends with one line the host parses, and that line is **`concluded`**,
+not the verdict:
 
 | line | meaning |
 |---|---|
 | `RECOMMENDATION: accept` / `reject` | a change this host made, going out |
 | `RECOMMEND: YES` / `NO` | a pull request that arrived |
 | `CLAIM: true` / `false` / `unclear` | a claim check — is this real, already fixed, or undecidable |
+
+`concluded` is what the JUDGE recommends. **`verdict` is whether the change is
+fit to go out, and only a person writes it** — `judgementVerdict`, refused to a
+machine.
+
+**They were merged once and it was expensive.** A check-a-claim confirmed a
+reviewer's request — `CLAIM: true`, meaning *yes, that is worth doing* — and it
+was filed as `rejected`, which then read to the cut gate as a failed review of
+the branch: a confirmed, worth-doing improvement registering as a reason the
+change could not go out. So a check-a-claim writes **no verdict at all**, and
+Judge → Judgement shows the two on separate rows with separate labels. *None
+recorded* there is an ordinary state, not a missing one.
 
 `judging` shows every judgement and what was decided; `judgementFindings
 --ref J9 --file ...` reads a report whole; `judgementLog` is the run's
