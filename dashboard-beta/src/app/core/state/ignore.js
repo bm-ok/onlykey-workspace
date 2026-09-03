@@ -87,5 +87,10 @@ module.exports = [
     '# output in it. Chosen by a worker rather than by anybody here, up to 64 MB',
     '# a file. A folder, so worker/, judge/ and job/ are all covered.',
     'artifacts/',
+    '',
+    '# What each sign-in has spent on this project: runs, turns, tokens and',
+    '# cost. It is money, it is nobody but yours, and it grows a row every',
+    '# run, so it is churn in a diff as well.',
+    'meter.json',
     ''
 ].join('\n');

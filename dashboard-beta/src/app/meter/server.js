@@ -30,16 +30,33 @@ var makeLedger = require('./ledger');
 //reason for it not to be.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'dataDir', 'guests'];
+plugin.consumes = ['app', 'log', 'state', 'guests'];
 plugin.provides = ['meter'];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
 
-    //A THUNK, for the reason every other dataDir caller uses one: ../core/datadir
-    //refuses on a process with no main half behind it, and asking while the graph
-    //is being built turns that refusal into a startup failure.
-    var ledger = makeLedger({ file: function () { return imports.dataDir.at('meter.json'); } });
+    //---- THE WORKSPACE'S DRAWER, NOT THE HOST'S ---------------------------
+    //
+    //IT WAS `dataDir.at('meter.json')`, in the app's own folder, and that made
+    //spend a fact about this INSTALLATION. One ledger counted every workspace
+    //together: open a different folder and the same running total came with it.
+    //
+    //WHAT IS ACTUALLY BEING MEASURED IS A PROJECT. The runs are this workspace's
+    //tasks and judgements, on this workspace's machines, under jobs from this
+    //workspace's library — everything either side of the number is per folder,
+    //and the number was not. It also meant the pane could not answer the question
+    //anybody asks of it, which is what THIS project has cost.
+    //
+    //THE FILE IT HELD PROVED THE POINT: seventeen runs across two workspaces in
+    //one total, twelve of them on a machine that is not in this one's register.
+    //
+    //A THUNK, for the reason every other store here takes one: asking where to
+    //write while the graph is being built turns "no workspace yet" into a
+    //startup failure. `here.now` is the synchronous door -- ./ledger.js reads and
+    //writes with `fs` and cannot await -- and it refuses when nothing is open,
+    //which ./ledger.js already swallows on both sides.
+    var ledger = makeLedger({ file: function () { return imports.state.here.now('meter').path; } });
 
     var undo = [];
 
