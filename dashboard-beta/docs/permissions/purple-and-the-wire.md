@@ -30,24 +30,53 @@ action, and the button that would press it is purple.
 
 **There is no complete list any more, and there used to be.** Settings → Kit had
 a Guarded shelf that claimed to be one. The shelf is gone — the purple exhibits
-live on the Buttons shelf now — and with it went the claim. About nineteen
-controls are purple across ten panes; a purple thing that nobody has written
-down is no longer a sentence made false, because the sentence is not there.
+live on the Buttons shelf now — and with it went the claim. Counted today it is
+thirteen: twelve buttons and the one purple field, the GitHub token, across
+eight files. Do not treat that as a list. It is what a grep for `protect`
+answered on the day this was written, it has been higher, and a purple thing
+nobody has written down is no longer a sentence made false — because the
+sentence is not there.
 
-## What is purple
+## What is painted purple
 
-- **Presses that decide something about somebody's repository**: send a
-  reply, close an issue, post a review, land a cut, allow a stranger's pull
-  request to be judged, hand an issue to the supervisor, import a bundle,
-  delete a page.
-- **Approvals**: a job, a prompt, a contract, a skill.
-- **Settings that change what goes out in your name or what may run
-  here**: the drills, the trusted list, the marker, the three direct
-  switches.
-- **Keys**: keeping a GitHub token, forgetting a sign-in.
+What `protect` is actually on today, which is a different and smaller list
+than what is refused:
 
-Everything else is one surface: the window, the command line and the next
-person use the same actions with the same rules.
+- **Approvals** — *Approve it* and *Throw it away* on a job, prompt or
+  contract (Worker / Judge → Jobs, Prompts, Contracts).
+- **Sending a cut out** — *Send it*, *Merge*, *Close all* on
+  Repositories → PR cuts.
+- **Letting a stranger's pull request be read** — *Allow it to be judged*
+  and *Take the allowance back*, Repositories → Overview.
+- **Destroying a machine** — *Remove* and *Rebuild*, Runners → Virtual
+  machines — and **forgetting a sign-in**, Keys.
+- **A seat** — *Open it in VS Code* and taking one off the list, DIY.
+- **Unpacking a bundle over this workspace** — *Restore from it*,
+  Settings → Bootstrap.
+- **The GitHub token field**, Keys → GitHub: the one purple *field*, and it
+  means a value that is neither read nor written from outside.
+
+## Painted and refused are two lists, and the refusal is the real one
+
+They are easy to read as one thing and they are not. Thirty-one actions
+read a caller mark for themselves, and more do it through a shared helper —
+`releasing()` in `repositories/repos/server.js` is one, and it guards
+`issueApprove` and `issueDiscard` together.
+
+**So a press can be refused without being purple**, and several are. Releasing
+a drafted reply is the clearest: *Send it* on Repositories → Issues is not
+painted, and the action refuses `_overTheWire`, `_driven` and `_fromTest`
+alike. `releasing()` says why in as many words — `core/drive` refuses a
+protected button before it ever reaches the action, *"but this is the one that
+holds when the button is not painted, or when the call arrives some other
+way."*
+
+That is the right way round. Paint is a warning to a person reading the
+screen; the refusal is what stops anything. A page that treated the colour as
+the boundary would be describing the weaker half.
+
+Everything not refused is one surface: the window, the command line and the
+next person use the same actions with the same rules.
 
 ## What never crosses the wire
 
