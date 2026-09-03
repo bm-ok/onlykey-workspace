@@ -40,9 +40,13 @@ export DEBIAN_FRONTEND=noninteractive
 
 say 'installing a small desktop: Xorg, openbox and a display manager'
 apt-get -o DPkg::Lock::Timeout=600 update -y || true
+# `virtualbox-guest-x11` IS THE HALF THAT NEEDS A SCREEN: clipboard sharing,
+# resizing with the window, drag-and-drop. The rest of the additions are in
+# ./toolchain.sh, which runs on every machine whether it has a display or not.
 apt-get -o DPkg::Lock::Timeout=600 install -y \
   xorg openbox lightdm lightdm-gtk-greeter \
   x11-utils x11-xserver-utils xterm dconf-cli \
+  virtualbox-guest-x11 \
   || say 'some of the desktop packages did not install; carrying on'
 
 if ! command -v Xorg >/dev/null 2>&1; then

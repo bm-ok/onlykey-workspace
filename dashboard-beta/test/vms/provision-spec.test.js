@@ -116,23 +116,31 @@ test('and one that already has a token keeps it', () => {
     assert.equal(tokens, 0);
 });
 
-//---- the additions follow the desktop ---------------------------------------
+//---- the additions are not a spec field any more -----------------------------
+//
+//THERE WERE THREE TESTS HERE and they held down a real rule: additions default
+//on for a desktop, forced on by shared folders, and an explicit answer wins.
+//
+//WHAT THE FLAG DID was make VirtualBox add a `packages:` list to the autoinstall
+//so it could build the additions modules mid-install -- which a live-server
+//install cannot do, because its only package index is the CD's. It failed with
+//`E: Unable to locate package build-essential` and took the install with it, on
+//every machine built with a screen.
+//
+//BOTH THINGS IT WAS FOR NOW HAPPEN AFTER BOOT, where apt works:
+//virtualbox-guest-utils from toolchain.sh on every machine (the mount helper a
+//share needs, and the clock), virtualbox-guest-x11 from desktop.sh where there
+//is a screen. So the field has no job, and a spec field nothing reads is a
+//switch somebody can still turn.
 
-test('additions are installed for a machine somebody will sit in front of', () => {
-    assert.equal(spec.fill({ name: 'r1', desktop: true }).installAdditions, true);
-    assert.equal(spec.fill({ name: 'r1' }).installAdditions, false);
-});
+test('the additions are not asked for at install time', () => {
+    //A DESKTOP DOES NOT PUT ONE IN THE SPEC, and neither does a share.
+    assert.equal('installAdditions' in spec.fill({ name: 'r1', desktop: true }), false);
+    assert.equal('installAdditions' in spec.fill({ name: 'r1', shares: [{ name: 'src', path: '/x' }] }), false);
 
-test('and forced on by shared folders, whatever else was said', () => {
-    //A SHARE NEEDS THE MOUNT HELPER, and a machine that declared shares and
-    //cannot mount them is one whose whole reason for existing quietly did not
-    //happen.
-    assert.equal(spec.fill({ name: 'r1', shares: [{ name: 'src', path: '/x' }] }).installAdditions, true);
-});
-
-test('but an explicit answer wins over both', () => {
-    assert.equal(spec.fill({ name: 'r1', desktop: true, installAdditions: false }).installAdditions, false);
-    assert.equal(spec.fill({ name: 'r1', installAdditions: true }).installAdditions, true);
+    //AND ONE HANDED IN IS NOT CARRIED, which is what stops a stale spec from a
+    //machine built before this quietly turning it back on at the next rebuild.
+    assert.equal('installAdditions' in spec.fill({ name: 'r1', installAdditions: true }), false);
 });
 
 //---- declared, never assumed ------------------------------------------------

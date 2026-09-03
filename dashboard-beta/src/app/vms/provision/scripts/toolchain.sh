@@ -23,10 +23,21 @@ apt-get -o DPkg::Lock::Timeout=600 update -y || true
 # --- packages ----------------------------------------------------------------
 
 say 'installing build tools, curl and git'
+# `virtualbox-guest-utils` IS THE USER-SPACE HALF OF THE GUEST ADDITIONS, and it
+# is here rather than in the installer for the reason ../autoinstall-user-data
+# sets out: the installer has no package index, and this runs where apt works.
+#
+# NOT COMPILED. Ubuntu already ships the kernel half -- vboxguest and vboxsf --
+# so there is nothing to build and no need for dkms or linux-headers. What this
+# adds is the mount helper a shared folder needs and the time sync.
+#
+# ON EVERY MACHINE, not only ones with a screen: a share does not need a
+# desktop. The X-only parts are in ./desktop.sh.
 apt-get -o DPkg::Lock::Timeout=600 install -y \
   build-essential make tar git curl wget unzip pkg-config ca-certificates \
   python3-pip python3-venv \
   usbutils kmod \
+  virtualbox-guest-utils \
   x11-utils x11-xserver-utils dconf-cli \
   || say 'some packages did not install; carrying on'
 

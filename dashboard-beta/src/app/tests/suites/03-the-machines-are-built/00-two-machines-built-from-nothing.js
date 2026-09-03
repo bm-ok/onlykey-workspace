@@ -108,7 +108,6 @@ it('they are defined, with their consoles captured before anything boots', async
         cpus: 3,
         diskMB: 40960,
         vramMB: 16,
-        installAdditions: false,
         // The server image installs no desktop unless asked. Said rather than
         // left to the default, because it is the choice a person makes when they
         // make a real one.

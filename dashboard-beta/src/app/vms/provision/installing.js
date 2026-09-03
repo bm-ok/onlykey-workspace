@@ -160,7 +160,28 @@ module.exports = function installing(deps) {
             '--time-zone', spec.timeZone,
             '--post-install-command', 'bash -c "' + inner + '"'
         ]);
-        if (spec.installAdditions) args.push('--install-additions');
+        //---- NO `--install-additions`, AND THE ADDITIONS STILL ARRIVE --------
+        //
+        //THIS PASSED IT WHENEVER `spec.installAdditions` WAS SET, and that flag
+        //follows `desktop`. It is what made VirtualBox splice a `packages:` list
+        //into the autoinstall -- build-essential, linux-headers-generic, dkms --
+        //so it could BUILD the additions kernel modules mid-install.
+        //
+        //THAT KILLED THE INSTALL ON EVERY MACHINE WITH A SCREEN. A live-server
+        //install has no package index but the CD's, so the download resolved to
+        //`E: Unable to locate package build-essential` and exit 100. See the
+        //note in ./scripts/autoinstall-user-data for the whole trail.
+        //
+        //SO THE ADDITIONS ARE POST-BOOT NOW, like everything else this app puts
+        //on a machine: `virtualbox-guest-utils` in ./scripts/toolchain.sh for
+        //the mount helper and the clock, `virtualbox-guest-x11` in
+        //./scripts/desktop.sh for clipboard and resize. Ubuntu already ships the
+        //kernel half, so none of it is compiled and none of it needs a compiler
+        //at install time.
+        //
+        //`spec.installAdditions` IS GONE from ../provision/spec.js with this. A
+        //flag nothing reads is worse than no flag: it reads as a switch somebody
+        //can still turn.
         args.push('--start-vm', 'gui');
 
         to.info('installing ' + path.basename(iso) + ' on ' + name + '; it will fetch its setup from ' + url);

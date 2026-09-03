@@ -85,16 +85,36 @@ autoinstall:
 @@VBOX_COND_HAS_PROXY@@
   proxy: @@VBOX_INSERT_PROXY@@
 @@VBOX_COND_END@@
-@@VBOX_COND_IS_INSTALLING_ADDITIONS@@
-#todo packages stuff needs to be tested
-  # Stuff we need to build Guest Additions modules.
-  packages:
-    - build-essential
-    - linux-headers-generic
-    - perl
-    - make
-    - dkms
-@@VBOX_COND_END@@
+# NO `packages:` HERE, AND THAT IS THE POINT.
+#
+# There was one, wrapped in @@VBOX_COND_IS_INSTALLING_ADDITIONS@@ and carrying a
+# "#todo packages stuff needs to be tested" of its own: build-essential,
+# linux-headers-generic, perl, make, dkms -- what VirtualBox needs to BUILD the
+# Guest Additions kernel modules during the unattended install.
+#
+# IT KILLED THE INSTALL, deterministically, on any machine built with a screen.
+# A live-server install fetches everything from `file:/cdrom`; the http mirrors
+# are written into the target's sources.list.d and never `apt update`d while the
+# installer is running. So `curtin system-install --download-only build-essential`
+# had no index that contained it:
+#
+#     E: Unable to locate package build-essential
+#     ... returned non-zero exit status 100
+#
+# THE MACHINE HAD NETWORK THE WHOLE TIME -- a DHCP lease, a gateway, and 168
+# successful fetches, every one of them from the CD. Exit 100 there means NOT
+# FOUND, not "could not download", which is the reading that sends you looking at
+# the network for an hour.
+#
+# AND IT WAS ALREADY BEING DONE PROPERLY, TWENTY MINUTES LATER. ./toolchain.sh
+# installs `build-essential make` on every machine after boot, with apt working
+# and a mirror reachable. This was a duplicate of that, and the duplicate is the
+# half that runs at the one moment apt has no package list.
+#
+# The user-space half of the additions -- the part Ubuntu does not ship -- is
+# installed post-boot too: virtualbox-guest-utils in ./toolchain.sh, and the X
+# bits in ./desktop.sh. Nothing needs compiling, so nothing needs a compiler
+# here.
   identity:
     hostname: '@@VBOX_INSERT_HOSTNAME_WITHOUT_DOMAIN@@'
     username: '@@VBOX_INSERT_USER_LOGIN@@'

@@ -115,20 +115,30 @@ module.exports = function spec(deps) {
             locale: it.locale || 'en_US',
             timeZone: it.timeZone || 'UTC',
 
-            //THE GUEST ADDITIONS FOLLOW THE DESKTOP, because that is what they
-            //are for. The kernel half is already there — Ubuntu ships vboxguest
-            //and vboxsf, so a machine without additions still gets its display
-            //modes. What is missing is the USER-SPACE half: clipboard sharing,
-            //resizing with the window, drag-and-drop, time sync. Every one of
-            //those is about somebody sitting in front of the machine.
+            //---- NO `installAdditions`, AND NOTHING LOST WITH IT -----------
             //
-            //FORCED ON BY SHARED FOLDERS, whatever else was said: a share needs
-            //the mount helper, and a machine that declared shares and cannot
-            //mount them is a machine whose whole reason for existing quietly did
-            //not happen.
-            installAdditions: typeof it.installAdditions === 'boolean'
-                ? it.installAdditions
-                : (desktop || (Array.isArray(it.shares) && it.shares.length > 0)),
+            //IT SAID WHETHER TO INSTALL THE GUEST ADDITIONS DURING THE INSTALL,
+            //defaulting on for a desktop and forced on by shared folders. What
+            //it actually did was make VirtualBox splice a `packages:` list into
+            //the autoinstall so it could build the kernel modules mid-install --
+            //and a live-server install has no package index but the CD's, so
+            //that failed with `E: Unable to locate package build-essential` and
+            //took the whole install with it. See ./installing.js.
+            //
+            //BOTH REASONS IT EXISTED ARE MET ANOTHER WAY NOW, and better:
+            //
+            //  the mount helper   ./scripts/toolchain.sh installs
+            //  and the clock      virtualbox-guest-utils on EVERY machine, so a
+            //                     share does not need a desktop to be mountable
+            //
+            //  clipboard, resize  ./scripts/desktop.sh installs
+            //  drag-and-drop      virtualbox-guest-x11, where there is a screen
+            //
+            //Ubuntu already ships the kernel half -- vboxguest and vboxsf -- so
+            //none of it is compiled and none of it needs a compiler.
+            //
+            //A FLAG NOTHING READS IS WORSE THAN NO FLAG: it reads as a switch
+            //somebody can still turn.
 
             baseSnapshot: it.baseSnapshot || 'base',
             sshKey: it.sshKey || '',
