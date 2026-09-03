@@ -20,9 +20,13 @@ the plugin that knows what it means.
 
 ## Declaring what it needs
 
-    plugin.consumes = ['app', 'log', 'state'];
-    plugin.provides = ['docs'];
-    async function plugin(imports, register) { ...; await register(null, { docs: ... }); }
+    // src/app/artifact/server.js
+    plugin.consumes = ['app', 'log', 'git', 'workspace', 'lines', 'archive'];
+    plugin.provides = ['artifact'];
+    async function plugin(imports, register) { ...; await register(null, { artifact: ... }); }
+
+Most plugins provide nothing — `plugin.provides = []` — and exist to define
+actions and draw a pane. `src/app/docs/server.js` is one.
 
 Rectify resolves the order from `consumes` and `provides`. A plugin is
 handed exactly what it declared and nothing else — that boundary is what

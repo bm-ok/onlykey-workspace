@@ -7,7 +7,7 @@ Never conclude from reading the source. Run it, in this order.
     node tools/okc.js windowControls --json   is the app UP: failed null, broke null
     node tools/okc.js show --tab X --pane Y
     node tools/okc.js capture --name n --width 1400   the picture AND the markup
-    npm test                              the whole suite — the final gate, two minutes
+    npm test                              the whole suite — the final gate, under a minute
     npm run walk                          every tab and pane, against the running app
 
 ## Look at the picture

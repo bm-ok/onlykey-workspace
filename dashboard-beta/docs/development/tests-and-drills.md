@@ -4,8 +4,8 @@ Two halves, and they answer different questions.
 
 ## `npm test` — fast, against stand-ins
 
-`node --test` over `test/`, two and a half thousand of them in about two
-minutes. Each plugin's server half is built against a bare host with
+`node --test` over `test/`, 2847 of them across 181 files in about forty
+seconds. Each plugin's server half is built against a bare host with
 stand-ins for git, GitHub, machines and the other plugins, so a test can
 hand it any situation and read the answer without a workspace, a token or
 a machine.

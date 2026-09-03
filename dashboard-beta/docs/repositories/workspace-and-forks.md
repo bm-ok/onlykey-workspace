@@ -46,7 +46,7 @@ There are **three** gaps, and they are not the same question:
 |---|---|---|
 | fork behind **its parent** | `repoForkBehind`, asked at the press | *Sync fork* |
 | fork behind **where its work goes** | the sweep, as `behindTarget` | a pull request |
-| this host behind **your fork** | the sweep, as `inStep` | *Pull default here* |
+| this host behind **your fork** | the sweep, as `inStep` | *Pull &lt;branch&gt; here* |
 
 The sweep asks GitHub how far a fork's default is behind the repository its
 work **goes to** (one `compare` call, fingerprinted) and compares this
