@@ -4,7 +4,7 @@ var Drawers = require('./drawers');
 //`cached` — one mechanism, so nobody writes a seventh copy of it.
 //
 //WHY THIS IS A PLUGIN AND NOT A HELPER IN WHOEVER NEEDED IT FIRST. The app being
-//ported from had every git read in one file — ../../../../dashboard/repos/branches.js
+//ported from had every git read in one file
 //— with one chokepoint, one memo, and one `forgetRefs()`. That file WAS the
 //isolation, which is why its memo never needed exporting. This app split those
 //reads across four plugins in ../../repositories, and the shared layer is the

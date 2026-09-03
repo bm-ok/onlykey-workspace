@@ -18,7 +18,7 @@ var path = require('path');
 //got in hand.
 //
 //THE APP BEING PORTED FROM DID NOT HAVE THIS PROBLEM AND IT IS WORTH SAYING WHY.
-//../../../../dashboard/repos/branches.js held every git read in one file, with
+//THE APP THIS WAS PORTED FROM held every git read in one file, with
 //one memo over the three raw reads and one `forgetRefs()`. That file WAS the
 //isolation. This app split those reads across four plugins and the shared layer
 //is the half that did not come with them — so the board takes seven seconds and

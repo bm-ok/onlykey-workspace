@@ -27,20 +27,20 @@ var records = require('./records');
 //
 //./store.js — the register itself, and the list somebody looks at.
 //
-//---- and what is deliberately not registered yet --------------------------
+//---- and what is deliberately not registered here -------------------------
 //
-//NO `vmList`. Defining it here would shadow the one relayed to ../../../dashboard
-//— that is the migration path and it is the right one for a WRITE. It is the
-//wrong one for this read, because every action that PUTS a machine in a register
-//(vmCreate, vmInstall, vmRemove) is still over there. The pane would go from
-//showing real machines to showing an empty list that is technically correct, and
-//the machines would still be running.
+//NO ACTIONS AT ALL. This registers a SERVICE and nothing else: `vmList` is
+//../../runners/machines', beside the pane that asks for it, which is where an
+//action goes in this app. The register is the subject here; what a person or the
+//queue may ASK about it is a different question.
 //
-//A READ THAT RELAYS WHILE ITS WRITES DO NOT IS WORSE THAN EITHER END. So this
-//registers a SERVICE and no actions. ../channel is across, so `connected` is a
-//real answer now rather than a placeholder; ../provision and the create path are
-//what is left, and `vmList` lands with them, in one step, pointing at a register
-//that has something in it.
+//IT WAS ONCE A TIMING RULE AS WELL, and the reason is worth keeping. Defining
+//`vmList` here early would have shadowed one answered by the app this was ported
+//from while every action that PUTS a machine in a register — vmCreate, vmInstall,
+//vmRemove — was still over there: the pane would have gone from showing real
+//machines to showing an empty list that was technically correct, with the
+//machines still running. A read that stands alone while its writes do not is
+//worse than either end. They landed together instead.
 //---------------------------------------------------------------------------
 
 //CONSUMING ../vbox IS THE RIGHT DIRECTION AND NOT A CYCLE. The register asks the

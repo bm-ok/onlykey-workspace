@@ -354,7 +354,7 @@ async function plugin(imports, register) {
         //said to somebody who has just pressed a button called "Get the link",
         //on a machine this app owns, about a wait this app knows how to do. The
         //app being ported from starts it: see `supervisorMachine` in
-        //../../../../dashboard/actions/shared.js, which every sign-in goes
+        //the shared module in the app this was ported from, which every sign-in goes
         //through and which brings the machine up and waits four minutes for it.
         //
         //IT COSTS NOTHING TO HAVE RUNNING AND IT IS NOT A RUNNER. The desk is a

@@ -89,7 +89,7 @@ async function plugin(imports, register, config) {
     //its own photograph: this app serves its window over http, so the page is
     //REMOTE and nw injects nothing into it. The app being ported from builds a
     //`<input type=file nwdirectory>` in its own document, which works there
-    //because that page is loaded from the package — see dashboard/ui/nwjs.js.
+    //because that page is loaded from the package.
     //
     //SO THE DIALOG IS OPENED FROM HERE, in a page that does have nw: a hidden
     //`about:blank` window, exactly the one the keepalive above is. The input goes

@@ -235,26 +235,23 @@ workaround that works is how a defect gets promoted to documented behaviour.
 Still check `on` came back as what you asked for before photographing. A shot of
 the wrong pane looks exactly like a shot of the right one.
 
-## Porting a pane
+## Building a pane
 
-**Photograph the original first, and look at the picture.**
+**Photograph it and look at the picture, not only at the markup.** The JSON from
+an action gives the data; only the picture gives the shape — which column is
+narrow, what sits beside the heading, which sentence the pane leads with, what is
+a whole state rather than a disabled button.
 
-    cd ../dashboard && node tools/okc.js windowShot --view <view>/<pane>
-
-It writes a PNG *and* an HTML file, and is not gated by testing mode. The JSON
-from an action gives the data; only the picture gives the shape — which column
-is narrow, what sits beside the heading, which sentence the pane leads with,
-what is a whole state rather than a disabled button. Grep the markup for
-structure as well, never instead.
-
-The tab and pane names come from `../dashboard/ui/index.html` and are not up for
-invention.
+There was an app this one was ported from, and for a long time the instruction
+here was to photograph ITS version of a pane first and take the tab and pane
+names from its `index.html`. That app is gone — no relay, no source in this
+repository — so there is nothing to copy from and nothing to check a name
+against. What is here is what there is.
 
 ## Where server logic goes
 
-The dashboard's own node logic is being moved out of `../dashboard/` and into the
-plugin whose pane uses it. It goes in one of two places and the split is not
-about subject:
+Node logic goes in the plugin whose pane uses it. It goes in one of two places
+and the split is not about subject:
 
 * **A service goes where it is owned.** `log` is written by every action module
   there will ever be, so it is `core/log` beside `actions` and `io` — not in

@@ -163,7 +163,7 @@ async function plugin(imports, register) {
     //reason in one sentence worth keeping: "A cache that has to be invalidated
     //by hand is a cache that is stale exactly where somebody forgot, and the
     //forgetting happens in the change that adds the seventh writer, months
-    //later." Its own version of this line is at ../../../../dashboard/repos/branches.js.
+    //later." The app this was ported from carried its own version of that line.
     //
     //AND IT IS PHRASED THE SAFE WAY ROUND. `READS` is the explicit list, so a
     //write door added later announces itself with nobody remembering to make it
@@ -211,7 +211,7 @@ async function plugin(imports, register) {
     //ever, while every part of it reported working perfectly: the drawer filled,
     //the counters looked healthy, and the timing never moved.
     //
-    //THAT IS THE SAME FAILURE ../../../dashboard/repos/branches.js carries a scar
+    //THAT IS THE SAME FAILURE the app this was ported from carried a scar
     //for, arrived at from the opposite direction, and it is why an exception here
     //is written as an exception rather than by widening the list.
     function isRead(args) {

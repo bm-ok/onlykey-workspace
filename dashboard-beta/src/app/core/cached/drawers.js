@@ -4,7 +4,7 @@
 //THE RULE, AND IT IS THE WHOLE FILE: key on something that changes when the
 //answer changes. Never on a clock. The app being ported from arrived at this
 //three separate times, in three different subjects, and wrote it down each time
-//— ../../../../dashboard/actions/shared.js says it best: "there is no window
+//— the app this was ported from said it best: "there is no window
 //during which the file is new and the answer is old."
 //
 //SO THERE ARE THREE DOORS, NOT ONE, and which one a caller takes says what its
