@@ -1,4 +1,11 @@
 var React = require('react');
+//WHO THE QUEUE LEAVES ALONE, ASKED OF THE ONE PLACE THAT DECIDES.
+//
+//`policy` IS PURE -- lists in, lists out, no store and no host -- so requiring
+//the file is a lookup, the same way ../../runners/machines requires it. What
+//must not happen is a SECOND answer to "does the queue manage that machine",
+//which is exactly what the hand-rolled tag test below had become.
+var policy = require('../../queue/policy');
 
 //---------------------------------------------------------------------------
 //trouble: the shared list, and the only thing in the window that cannot be
@@ -290,8 +297,24 @@ module.exports = function trouble(theme, okc, shell) {
             //first machine it ever fired on was "a SUPERVISOR holding a
             //supervisor sign-in" — the fix went in there and not here, one
             //block up, where the same list is filtered a second time.
+            //
+            //---- AND THEN IT HAPPENED AGAIN, TO A DIY SEAT ------------------
+            //
+            //`ok-diy1` was opened, and this said "ok-diy1 is on and doing
+            //nothing. A runner rests off — THE QUEUE STARTS ONE WHEN THERE IS
+            //WORK. Shut it down." Every clause is about the queue, and the queue
+            //is the one thing that must never touch a DIY machine: the whole
+            //point of the tag is that nothing rolls it back and runs a task over
+            //the top of somebody's afternoon. It was scolding a person for
+            //sitting in their own seat, and pointing them at Runners to undo it.
+            //
+            //SO IT ASKS `policy.notForTheQueue` NOW rather than naming a tag.
+            //Written out by hand, this test was right about supervisors, wrong
+            //about DIY, and would have been wrong about the next role too. There
+            //is one place that knows which machines the queue leaves alone, and
+            //../../queue/policy.js is it.
             return v.running
-                && (v.tags || []).indexOf('supervisor') < 0
+                && !policy.notForTheQueue(v)  //not the queue's machine to talk about
                 && !busy[v.name]              //the queue is using it
                 && !aboutTo[v.name]           //the queue is one tick from using it
                 && !v.borrowed                //somebody took it, deliberately

@@ -226,3 +226,48 @@ test('the sentence describing the order is beside the rule that implements it', 
     assert.match(policy.ORDER, /Judgements first/);
     assert.match(policy.ORDER, /oldest first/);
 });
+
+//---------------------------------------------------------------------------
+//WHOSE MACHINE THE QUEUE DOES NOT TALK ABOUT.
+//
+//`notForTheQueue` IS THE ONE ANSWER, and it exists because the question kept
+//being answered again by hand, wrongly, in whatever file needed it.
+//
+//IT HAS BEEN GOT WRONG TWICE, THE SAME WAY BOTH TIMES: a filter written out as
+//`tags.indexOf('supervisor') < 0`, correct about supervisors and silent about
+//every other role. The first time, `pools` reported a DIY machine as its own
+//pool with nothing free in it and the reason "has not been told what it is for
+//— tag it worker or judge": untrue, since it had been told, and dangerous,
+//because following it hands a person's seat to the tick.
+//
+//THE SECOND TIME WAS THE TROUBLE BANNER. A DIY seat was opened and the window
+//said, in red, across the top: "ok-diy1 is on and doing nothing. A runner rests
+//off — THE QUEUE STARTS ONE WHEN THERE IS WORK. Shut it down." Every clause is
+//about the queue, on the one machine the queue must never touch — scolding
+//somebody for sitting in their own seat, with a link to Runners to undo it.
+//
+//SO IT IS TESTED HERE RATHER THAN WHERE IT IS READ. Both callers delegate;
+//holding the answer down once is what stops a third hand-rolled copy.
+test('the queue leaves a supervisor and a DIY seat alone, and nothing else', () => {
+    assert.equal(policy.notForTheQueue(vm('a', { tags: ['supervisor'] })), true);
+    assert.equal(policy.notForTheQueue(vm('b', { tags: ['diy'] })), true,
+        'a DIY seat read as the queue\'s to manage');
+
+    //BOTH AT ONCE, because a tag list is a list.
+    assert.equal(policy.notForTheQueue(vm('c', { tags: ['diy', 'worker'] })), true,
+        'a seat that also carries worker is still somebody\'s seat');
+
+    //AND THE ONES IT IS FOR.
+    assert.equal(policy.notForTheQueue(vm('d', { tags: ['worker'] })), false);
+    assert.equal(policy.notForTheQueue(vm('e', { tags: ['judge'] })), false);
+    assert.equal(policy.notForTheQueue(vm('f', { tags: ['worker', 'judge'] })), false);
+
+    //NO TAG IS NOT A KIND, and it is still the queue's to report on — it says
+    //"has not been told what it is for" rather than being dropped.
+    assert.equal(policy.notForTheQueue(vm('g', { tags: [] })), false);
+
+    //AND IT MUST NOT THROW ON A ROW THAT CARRIES NO TAGS FIELD, which is what a
+    //machine record looks like before anything has tagged it.
+    assert.doesNotThrow(() => policy.notForTheQueue({ name: 'h' }));
+    assert.equal(policy.notForTheQueue({ name: 'h' }), false);
+});
