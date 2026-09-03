@@ -87,7 +87,30 @@ autoinstall:
 @@VBOX_COND_END@@
 # NO `packages:` HERE, AND THAT IS THE POINT.
 #
-# There was one, wrapped in @@VBOX_COND_IS_INSTALLING_ADDITIONS@@ and carrying a
+# ---- AND THIS COMMENT MAY NOT NAME THE MARKER IT IS ABOUT ------------------
+#
+# VBoxManage SCANS THIS FILE AS TEXT AND HAS NEVER HEARD OF A `#`. Every
+# VBOX_COND marker counts, commented out or not, and they have to balance --
+# so the first version of this note said "wrapped in" and then spelt the
+# opening marker out in full, with the delimiters on it. That is one opener
+# with no end, and the install would not start at all:
+#
+#     VBoxManage.exe: error: Missing (COND_END)
+#     code E_FAIL (0x80004005), component UnattendedWrap
+#
+# THEN THE FIX DID IT AGAIN, one line further on: this note quoted that error
+# message verbatim, delimiters and all, which is an END with no opener. A file
+# whose own syntax cannot be quoted inside it, twice, in the comment explaining
+# that it cannot.
+#
+# So no marker below is written with its delimiters, and nothing added here may
+# be either. (The commented-out `groups:` block further down gets away with it
+# only by being a balanced pair.)
+#
+# ---- what was here ---------------------------------------------------------
+#
+# There was a `packages:` list, wrapped in the IS_INSTALLING_ADDITIONS
+# conditional and carrying a
 # "#todo packages stuff needs to be tested" of its own: build-essential,
 # linux-headers-generic, perl, make, dkms -- what VirtualBox needs to BUILD the
 # Guest Additions kernel modules during the unattended install.
