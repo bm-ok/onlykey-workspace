@@ -14,15 +14,18 @@
 //
 //---- WHO MAY READ IT ------------------------------------------------------
 //
-//EVERY MACHINE, including a supervisor. Unlike a handback or a session, this
-//carries nothing belonging to one piece of work and nothing belonging to one
-//machine — it is what this workspace is, and a supervisor asked to reason about
-//the work has as much use for it as the worker doing it.
+//A WORKER, A JUDGE, OR A DIY SEAT — the three that open the code. Not a
+//supervisor: it cannot see the code, which is the design rather than an
+//oversight, so a document about finalising, building and testing the project is
+//the one thing it has no use for and should not be reasoning from. See `may`
+//below.
 //
 //IT MUST NEVER CARRY A SECRET, which is a rule about what people and machines
 //WRITE into it rather than one this door can enforce. Said in the starter, said
 //in ./server.js, and said again here because this is where it would leave.
 //---------------------------------------------------------------------------
+
+var roles = require('../vms/ours/roles');
 
 module.exports = function guestapi(deps) {
     var d = deps || {};
@@ -62,21 +65,36 @@ module.exports = function guestapi(deps) {
         name: 'workstrap',
         about: "The workspace's own notes — what every machine is given as CLAUDE.md",
 
-        //---- WHO MAY ASK ------------------------------------------------
+        //---- WHO MAY ASK: WHATEVER OPENS THE CODE, AND NOTHING ELSE ------
         //
-        //EVERY MACHINE THIS HOST KNOWS, AND NOTHING ELSE. Unlike a handback or
-        //a session, this carries nothing belonging to one piece of work and
-        //nothing belonging to one machine — it is what the workspace IS, and a
-        //supervisor reasoning about the work has as much use for it as the
-        //worker doing it. So the rule is only that the caller be a machine at
-        //all, which ../vms/https has already proved by the time this is asked.
+        //A WORKER, A JUDGE, OR A PERSON IN A DIY SEAT. Those are the three that
+        //check the repositories out and have to get them running, and this
+        //document exists for exactly that moment.
         //
-        //STATED RATHER THAN OMITTED, and it has to be: the register refuses a
-        //door that does not say, on the grounds that a plugin which stays quiet
-        //is one opening its verbs to every machine on the host without anybody
-        //deciding that. This plugin was written with the sentence above in a
-        //comment and no function under it, and the app would not start.
-        may: function (vm) { return !!(vm && vm.name); },
+        //NOT A SUPERVISOR, AND THAT IS THE SAME FENCE ../runners/handback
+        //KEEPS. A supervisor cannot see the code — it is the design, and its own
+        //skill leads with it — so it has no workspace to finalise, no tests to
+        //run and nothing to build. Handing it the build and test instructions
+        //would be handing the one role kept away from the code a document that
+        //is entirely about the code, and it would start reasoning from it.
+        //
+        //ASKED THROUGH ../vms/ours/roles RATHER THAN BY READING TAGS. `canBe`
+        //is where "what is this machine for" is answered for the queue, the
+        //panes and the drills, and a fourth reader inventing its own tag check
+        //is how the four begin to disagree. It also settles a machine tagged
+        //both worker and judge, and an untagged one — which gets no credential
+        //either, for the same reason: an unlabelled box is not a role.
+        //
+        //STATED RATHER THAN OMITTED, AND IT HAS TO BE. The register refuses a
+        //door that does not say, on the grounds that a plugin staying quiet is
+        //one opening its verbs to every machine without anybody deciding that.
+        //This was first written with a sentence in a comment and no function
+        //under it, and the app would not start — which is the guard working.
+        may: function (vm) {
+            return roles.canBe(vm, 'worker')
+                || roles.canBe(vm, 'judge')
+                || roles.canBe(vm, 'diy');
+        },
 
         routes: [
             { method: 'GET', path: '/workstrap', about: "the workspace's notes", run: notes }

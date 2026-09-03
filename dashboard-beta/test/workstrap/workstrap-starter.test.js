@@ -69,6 +69,35 @@ test('every machine is given it at boot, and a failed fetch never stops the boot
         'a failed fetch does not say it is carrying on, so it probably is not');
 });
 
+test('a supervisor may not read it, and the three that open the code may', () => {
+    //THE SUPERVISOR CANNOT SEE THE CODE. That is the design and its own skill
+    //leads with it — so it has no workspace to finalise, no tests to run and
+    //nothing to build, and this document is about nothing else. Handing it over
+    //would give the one role deliberately kept away from the code a file
+    //entirely about the code, which it would then reason from.
+    //
+    //THE SAME FENCE ../runners/handback KEEPS, and worth a test for the same
+    //reason: widening it is one word, and nothing else here would notice.
+    const guestapi = require('../../src/app/workstrap/guestapi');
+    const door = guestapi({ read: async () => ({ text: '', mine: false }), say: () => ({ warn() {} }) });
+
+    const asked = (tags) => door.may({ name: 'a-machine', tags: tags });
+
+    assert.equal(asked(['supervisor']), false, 'a supervisor was given the workspace notes');
+    assert.equal(asked(['worker']), true);
+    assert.equal(asked(['judge']), true);
+    assert.equal(asked(['diy']), true);
+
+    //A MACHINE THAT IS BOTH does both, one at a time — ../vms/ours/roles
+    //answers membership rather than equality, which is why this is asked
+    //through it rather than by reading the tag list here.
+    assert.equal(asked(['worker', 'judge']), true);
+
+    //AND AN UNLABELLED BOX IS NOT A ROLE. It gets no credential either, for the
+    //same reason: silence is not an answer.
+    assert.equal(asked([]), false);
+});
+
 test('the guest door offers one document and no way to name another', () => {
     //THE REASON THIS PLUGIN HAS A ROUTE OF ITS OWN. `/provision/*` resolves
     //whatever name it is given against a search path, which is right for a
