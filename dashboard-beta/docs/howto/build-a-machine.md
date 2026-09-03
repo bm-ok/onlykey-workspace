@@ -30,7 +30,7 @@ clean base. Workers, judges and the supervisor all run on machines like it.
 
     node tools/okc.js vmCreate --vm '{"name":"w2","iso":"C:/.../ubuntu-24.04-live-server-amd64.iso","tags":["worker"],"memoryMB":4096,"diskMB":30720}'
     node tools/okc.js vmInstall --name w2
-    node tools/okc.js vmAwait --name w2 --for dialled
+    node tools/okc.js vmAwait --name w2 --for connected
     node tools/okc.js vmList
 
 ## Afterwards

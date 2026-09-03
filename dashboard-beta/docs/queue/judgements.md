@@ -1,7 +1,7 @@
 # Judgements
 
 A judgement is a reading of code by a machine that may not change it. It
-hands back a report; the last line of the report is its verdict.
+hands back a report, and one line of that report says what it concluded.
 
 ## What is judged
 
@@ -18,7 +18,7 @@ change against the words of the people who asked.
 
 ## What it concluded, and the verdict — two fields
 
-The report ends with one line the host parses, and that line is **`concluded`**,
+The host reads one line out of the report, and what it reads is **`concluded`**,
 not the verdict:
 
 | line | meaning |
@@ -30,6 +30,20 @@ not the verdict:
 `concluded` is what the JUDGE recommends. **`verdict` is whether the change is
 fit to go out, and only a person writes it** — `judgementVerdict`, refused to a
 machine.
+
+### How that line is found
+
+It is not "the last line". `queue/concluding.js` takes the **first** whole line
+that is exactly one of those words, in the **first** handed-back file that
+concludes anything — anchored to the line and to the exact words, so a paragraph
+discussing whether to recommend acceptance concludes nothing. A file it cannot
+read is skipped rather than fatal.
+
+**A second reader scans the other way, on purpose.** The Handed back card lifts
+the **last** verdict-shaped line of the file you are looking at, loosely, to show
+above the report. The two answer different questions — *what did it say* versus
+*what does this app now do* — and `queue/concluding.js` says in as many words
+that the day they are merged, one of them starts lying.
 
 **They were merged once and it was expensive.** A check-a-claim confirmed a
 reviewer's request — `CLAIM: true`, meaning *yes, that is worth doing* — and it

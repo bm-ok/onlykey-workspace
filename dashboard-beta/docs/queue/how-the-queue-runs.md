@@ -12,10 +12,16 @@ is doing; `crons` lists the timers it runs beside.
    takes any free machine; a tagged one (`worker`, `judge`, `test`) takes
    only its own kind and waits. `pools` is the answer to "is anything
    free".
-3. Bring the machine up on its base snapshot, set up its workspace (every
-   repository, on the branch, pointed back at this host's git server),
-   lend it the right credential, put the judge's report on it if the task
-   was raised because of one, and run the job.
+3. Bring the machine up on its base snapshot, **lend it the credential for
+   the role the run is** (`vmCredentialsPut --role worker|judge`), set up its
+   workspace (every repository, on the branch, pointed back at this host's git
+   server), put the judge's report on it if the task was raised because of one,
+   and run the job.
+
+   Those are timed separately and named on the attempt — `bringUp`, `credential`,
+   `workspace`, `work` — which is where "bringing a machine up costs about thirty seconds
+   before any work starts" comes from. The credential goes on **before** the
+   workspace, and the timings are kept per attempt.
 4. Wait for the run: follow its output, keep the log on this host, meter
    what the sign-in spent.
 5. Take the credential back, keep what the worker refreshed, roll the

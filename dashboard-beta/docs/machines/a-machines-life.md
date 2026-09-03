@@ -47,7 +47,7 @@ certificate authority), 7385 (the channel). *Connected* means the agent
 is on the channel; *running, not dialled in* for more than a few minutes
 means look at the host first — `nothing is listening for machines` in the
 events is the host holding its own ports, and a restart of the app fixes
-it. `vmAwait --name X --for dialled` waits.
+it. `vmAwait --name X --for connected` waits.
 
 ## Remove
 

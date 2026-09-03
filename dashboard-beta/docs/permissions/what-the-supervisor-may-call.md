@@ -8,10 +8,11 @@ retried with different words.
 
 ## The shape of the list
 
-**Reading** — nearly everything: `repositories`, `branchBoard`, `lines`,
-`tasks`, `judging`, `judgementFindings`, `judgementLog`, `prCuts`,
-`prCutState`, `issues`, `issueRead`, `issueDrafts`, `pools`, `jobs`,
-`prompts`, `contracts`, `skillReading`, `whatsNew`, `memory`.
+**Reading** — nearly everything: `repositories`, `repoBranches`, `branchBoard`,
+`lines`, `tasks`, `taskProgress`, `taskLog`, `judging`, `judgementFindings`,
+`judgementLog`, `judgementsFor`, `prCuts`, `prCutState`, `prDraft`, `prDrafts`,
+`prTemplatePreview`, `issues`, `issueRead`, `issueDrafts`, `pools`, `jobs`,
+`job`, `prompts`, `contracts`, `contract`, `skillReading`, `whatsNew`, `memory`.
 
 **Writing its own work** — `taskCreate`, `taskQueue`, `taskUnqueue`,
 `branchCreate`, `branchAsLine`, `judgementCreate`, `judgementQueue`,
@@ -19,7 +20,14 @@ retried with different words.
 `repoSync`, `repoSyncBranch`, `repoForkSync`.
 
 **Speaking, drafted** — `issueSay`, `issueClose`, `judgementSay`,
-`supervisorSays`, `chatSay`.
+`supervisorSays`.
+
+`chatSay` is **not** on the list and is not the supervisor's. The Chat tab has
+two ends and neither gets to say which it is: `chatSay` is what the window calls
+when a person types, and `supervisorSays` is the machine's half, which records
+the machine that asked rather than anything the message claims. Leaving
+`chatSay` off the allowlist is what stops a supervisor writing a line that reads
+as though a person wrote it.
 
 **Proposing** — `jobSave`, `promptSave`, `contractSave`, `skillPropose`,
 `skillAsked`, `skillHistory`.
