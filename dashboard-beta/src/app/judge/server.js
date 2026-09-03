@@ -796,10 +796,12 @@ async function plugin(imports, register) {
         //DRAFTED, NOT POSTED. A review goes on somebody else's pull request under
         //this host's token, so it reads as the person who owns the token having
         //said it. It waits in `github-drafts` beside the issue replies, keyed
-        //the same way (a pull request IS an issue on GitHub), and the same
-        //protected press in the window releases it -- `issueApprove`, which
-        //re-reads the pull request first and refuses if the head has moved. The
-        //only way past the person is `githubReviewDirect`, set at the window.
+        //the same way (a pull request IS an issue on GitHub), and the same press
+        //in the window releases it -- `issueApprove`, which re-reads the pull
+        //request first and refuses if the head has moved. What keeps it a
+        //person's is `releasing()` in ../repositories/repos/server.js, which
+        //turns away the pipe, a drill and a driven press; the only way past the
+        //person is `githubReviewDirect`, set at the window.
         //
         //CALLED BY THE QUEUE when a judgement finishes, by `judgementSay` when a
         //person or the supervisor asks, and by nothing else. Drafting is not

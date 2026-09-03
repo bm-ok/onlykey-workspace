@@ -441,9 +441,16 @@ module.exports = function issues(theme, okc, remember, shell) {
                     <Button onClick={function () { openOut(i.url); }}>Read it on GitHub</Button>
                     {/* THE OTHER WAY TO FLAG IT. A tag on GitHub is a public
                         reply on somebody else's repository; this hands the whole
-                        conversation to the supervisor from here, quietly. Purple:
-                        it starts a machine turn, and a supervisor handing itself
-                        work is deciding what it works on. */}
+                        conversation to the supervisor from here, quietly.
+
+                        NOT PAINTED, AND GUARDED ANYWAY. `issueHand` refuses
+                        `_overTheWire` and `_driven` itself, so the pipe and a
+                        driven window are both out — it starts a machine turn,
+                        and a supervisor handing itself work is deciding what it
+                        works on. This comment used to say "Purple", from when a
+                        refusal was painted on a button; the paint went and the
+                        rule lives in the action, which is the half that holds
+                        for the command line as well as for this press. */}
                     <Button onClick={function () { hand(); }} title="Puts the whole conversation into the chat and wakes the supervisor">
                         Hand it to the supervisor
                     </Button>
@@ -488,10 +495,17 @@ module.exports = function issues(theme, okc, remember, shell) {
                             ? <Quoted>{mine.text}</Quoted>
                             : <Empty>Closing it with nothing said.</Empty>}
                         <div className="row" style={{ marginTop: '6px' }}>
-                            {/* PURPLE. This is the press that puts words on
-                                somebody else's repository in your name — the
-                                exact act the draft exists to keep a person in
-                                front of. */}
+                            {/* THE PRESS THE DRAFT EXISTS TO KEEP A PERSON IN
+                                FRONT OF: it puts words on somebody else's
+                                repository in your name.
+
+                                THE REFUSAL IS IN `releasing()`, not on this
+                                button. It turns away `_overTheWire`, `_driven`
+                                and `_fromTest` alike, so the command line, a
+                                drill and a driven window all get the same
+                                answer. This said "PURPLE" while a refusal was
+                                something painted on a control; that is not
+                                where it lives now. */}
                             <Button kind="ok" onClick={function () { release('issueApprove'); }}>
                                 {mine.kind === 'close' ? 'Close it' : mine.kind === 'review' ? 'Post the review' : 'Send it'}
                             </Button>

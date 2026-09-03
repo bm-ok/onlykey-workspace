@@ -239,10 +239,12 @@ module.exports = function judgements(theme, okc, remember, whatItHandedBack) {
         //---- WAITING TO GO OUT ----------------------------------------------
         //
         //THE ONE FOR THE PICKED JUDGEMENT, read and released on this pane
-        //beside the judgement it came from. `issueApprove` is the same
-        //protected press the Issues pane uses; the door refuses the pipe, a
-        //drill and a driven press. (`drafts` itself is polled above, with the
-        //other hooks.)
+        //beside the judgement it came from. `issueApprove` is the same press the
+        //Issues pane uses and carries the same refusal, which is in the ACTION
+        //rather than on either button: `releasing()` turns away the pipe, a
+        //drill and a driven press. Neither control is painted, and that is not
+        //a gap — one rule, one place, answering the command line and the window
+        //the same way. (`drafts` itself is polled above, with the other hooks.)
         function waitingFor(j) {
             var ref = j && (j.ref || ('J' + j.number));
             return ((drafts.state && drafts.state.drafts) || []).filter(function (d) {
@@ -281,7 +283,7 @@ module.exports = function judgements(theme, okc, remember, whatItHandedBack) {
                     //could not check" — the one that makes the rest honest.
                     reads: one.body,
                     readsAre: 'What will be posted',
-                    cost: 'Nothing yet. The draft waits on this pane; posting it is a second, protected press.',
+                    cost: 'Nothing yet. The draft waits on this pane; posting it is a second press, and one a person makes.',
                     confirm: 'Write the draft',
                     onYes: function () {
                         return okc.call('judgementSay', { ref: id }).then(
@@ -492,8 +494,9 @@ module.exports = function judgements(theme, okc, remember, whatItHandedBack) {
 
                                 <div className="row" style={{ marginTop: '10px' }}>
                                     {/* SAYING IT PUBLISHES TO SOMEBODY ELSE'S
-                                        REPOSITORY, which is why it is purple AND
-                                        why it is only here for a pull request.
+                                        REPOSITORY, which is why the act is
+                                        guarded at its action AND why it is only
+                                        here for a pull request.
                                         There is nowhere to say a judgement of a
                                         branch cut this host made - the original
                                         offers the button on an arrived pull
@@ -519,10 +522,11 @@ module.exports = function judgements(theme, okc, remember, whatItHandedBack) {
                                 </div>
 
                                 {/* THE REVIEW THIS JUDGEMENT WROTE, WAITING. Read
-                                    here in full and released with the same
-                                    protected press the Issues pane uses. Outside
-                                    the button row: a flex child does not shrink
-                                    below its content, and a review is long. */}
+                                    here in full and released by the same press
+                                    the Issues pane uses, under the same refusal
+                                    in `releasing()`. Outside the button row: a
+                                    flex child does not shrink below its content,
+                                    and a review is long. */}
                                 {waitingFor(on).map(function (d) {
                                     return (
                                         <Card key={d.on + '#' + d.number}>
