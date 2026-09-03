@@ -1,5 +1,6 @@
 var React = require('react');
 var { useState, useRef, useEffect } = React;
+var forkSyncFrom = require('./fork-sync').forkSyncFrom;
 
 //---------------------------------------------------------------------------
 //Repos: what this workspace is made of, and whether the far end of each one can
@@ -710,6 +711,23 @@ module.exports = function repos(theme, okc) {
             );
         }
 
+        //---- AND WHETHER THAT PRESS CAN CLOSE THIS GAP AT ALL ----------------
+        //
+        //ASKED OF ./fork-sync.js RATHER THAN WORKED OUT HERE, because this pane
+        //cannot be pressed from a test: `windowClick` is refused while the
+        //drills are off. The reasoning and what it cost are written down there.
+        //
+        //THE SHORT OF IT: this card measures the fork against WHERE ITS WORK
+        //GOES, and GitHub's merge-upstream only syncs from the IMMEDIATE PARENT.
+        //Gating and labelling off `bt.on` offered an act GitHub cannot do, from
+        //a repository it cannot do it from.
+        //
+        //THE SIBLING BUG, WHICH IS THIS ONE INVERTED: ./sync.js enabled its Sync
+        //fork off the same wrong measure and was DISABLED for ever, because
+        //`behindTarget` is not computed when work goes to the fork itself. One
+        //question asked in the same wrong place twice; one button died, and this
+        //one lied.
+        var sync = forkSyncFrom(r, bt);
         var behind = bt.behind > 0;
         return (
             <Card>
@@ -737,11 +755,14 @@ module.exports = function repos(theme, okc) {
                     </KvRow>
                 </Kv>
                 <div className="row" style={{ marginTop: '8px' }}>
-                    <Button kind="ok" disabled={!!busy || !behind} onClick={forkSync}
-                        title={behind
-                            ? 'One call to GitHub: merge ' + bt.on + ' ' + bt.base + ' into the fork’s ' + bt.head + ', the way the Sync fork button does'
-                            : 'The fork is level with where its work goes'}>
-                        {busy === 'fork' ? 'syncing the fork…' : 'Sync fork from ' + bt.on.split('/')[0]}
+                    <Button kind="ok" disabled={!!busy || !sync.canSync || !behind} onClick={forkSync}
+                        title={sync.why
+                            ? sync.why
+                            : behind
+                                ? 'One call to GitHub: merge ' + sync.from + ' ' + bt.base + ' into the fork’s ' + bt.head
+                                : 'The fork is level with where its work goes'}>
+                        {busy === 'fork' ? 'syncing the fork…'
+                            : 'Sync fork from ' + (sync.from ? sync.from.split('/')[0] : 'its parent')}
                     </Button>
                     <Button disabled={!!busy || r.inStep === true} onClick={pullHere}
                         title={r.inStep === true ? 'This host is at the same commit as your fork' : 'Fetch from your remote and fast-forward ' + bt.head + ' here'}>
