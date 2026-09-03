@@ -67,7 +67,22 @@ module.exports = function onejudgement(deps) {
     var kept = d.kept || function () { return false; };
     var keep = d.keep || function () {};
 
-    var tipsFor = d.tipsFor || function () { return null; };
+    //REQUIRED, AND SEE ./dispatching FOR WHY. This defaulted to a function
+    //returning null, which is what a judgement's `tips` was set to on every run
+    //this host has ever made — so nothing could ever go stale, and the gate that
+    //stops a pull request being cut on a reading of a different tree had never
+    //once been able to close.
+    //
+    //A STUB THAT ANSWERS DIFFERENTLY FROM THE REAL ONE IS WORSE THAN NO STUB.
+    //The test for this file supplies a working `tipsFor` and asserts the tips
+    //are written, so it passed throughout — proving the code here was right and
+    //saying nothing about the wiring, which was the part that was wrong.
+    if (typeof d.tipsFor !== 'function') {
+        throw new Error('A judgement cannot be run without `tipsFor`: it would be filed without any '
+            + 'record of what it was read against, and would then read as describing the current code '
+            + 'for ever.');
+    }
+    var tipsFor = d.tipsFor;
     var wakes = d.wakes || function () { return false; };
     var now = d.now || function () { return Date.now(); };
     var stamp = d.stamp || function () { return new Date().toISOString(); };

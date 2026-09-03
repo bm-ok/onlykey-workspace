@@ -58,7 +58,31 @@ module.exports = function dispatching(deps) {
     //until the Runners tab became a second reader — see ../meter/ledger.js for
     //the note that asked for exactly that move.
     var meter = d.meter;
-    var tipsFor = d.tipsFor || function () { return null; };
+
+    //---- REQUIRED, BECAUSE ITS DEFAULT WAS THE BUG ------------------------
+    //
+    //THIS WAS `d.tipsFor || function () { return null; }`, and so was the same
+    //line in ./onejudgement — two silent defaults in a row, with nothing at
+    //either end supplying the real one. Every judgement this host filed
+    //therefore recorded no tips; `gate.staleAgainst` reads a judgement with no
+    //tips as NOT stale, by a deliberate rule of its own; and so every judgement
+    //ever made here read as current for ever.
+    //
+    //NOTHING POINTED AT IT. The unit test passes a working `tipsFor` and so
+    //proves the write happens; the field is in the record shape; the panel has
+    //a `stale` column that was simply always false. It was found by a
+    //supervisor noticing that a judgement it had watched two commits land on
+    //still said `stale: false`, and saying so rather than working around it.
+    //
+    //SO IT THROWS NOW. A missing dependency that answers null is indisinguishable
+    //from a dependency that ran and found nothing, and the difference is
+    //everything: one is "the code has not moved", the other is "nobody looked".
+    if (typeof d.tipsFor !== 'function') {
+        throw new Error('The queue was built without `tipsFor`, so nothing could record what a '
+            + 'judgement was read against — and every judgement it filed would read as current for '
+            + 'ever. It comes from the judge plugin; see ../judge/server.js.');
+    }
+    var tipsFor = d.tipsFor;
 
     //---- EVERY STEP GOES THROUGH THE ACTIONS -------------------------------
     //

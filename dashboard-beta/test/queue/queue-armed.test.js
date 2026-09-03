@@ -142,7 +142,13 @@ async function aQueue(over) {
         },
         judge: {
             all: () => judgements, get: () => null, update: () => {},
-            refOf: (n) => 'J' + n
+            refOf: (n) => 'J' + n,
+            //WHAT A JUDGEMENT WAS READ AGAINST. Answers `{}` here because this
+            //host's `refs.heads` does too, which is what the real one would
+            //return given the same stub — the queue now REFUSES to be built
+            //without it, because defaulting it to null is what stopped every
+            //judgement this app ever filed from being able to go stale.
+            tipsFor: async () => ({})
         },
         ours: { update: () => {}, get: () => null, read: () => [] },
         refs: { heads: async () => ({}) },
@@ -183,6 +189,31 @@ test('the plugin builds against the services it declares', async () => {
     //how "which of these is the real one" becomes a question.
     assert.equal(queue.spent, undefined,
         'the queue is re-exporting the spending record again');
+});
+
+test('and it refuses to build without a way to record what a judgement read', async () => {
+    //THE BUG THIS GUARDS WAS ENTIRELY IN THE WIRING, WHICH IS WHY NOTHING
+    //CAUGHT IT. `dispatching` and `onejudgement` each defaulted `tipsFor` to a
+    //function returning null, and nothing at either end supplied the real one.
+    //So every judgement this host ever filed recorded no tips; `staleAgainst`
+    //reads a judgement with no tips as NOT stale, deliberately; and therefore
+    //no judgement could ever go stale and `prCutMake`'s gate on "a judgement
+    //that still describes what is there" had never once been able to close.
+    //
+    //EVERY OTHER CHECK WAS GREEN. The unit test for onejudgement passes a
+    //working `tipsFor` and asserts the tips are written, so it proved the code
+    //and said nothing about the wiring. The field was in the record shape. The
+    //panel had a `stale` column that was simply always false. It was found by a
+    //supervisor noticing a judgement it had watched two commits land on still
+    //reported `stale: false`.
+    //
+    //SO THE DEPENDENCY IS REQUIRED AND THE REFUSAL IS TESTED. A default that
+    //answers null is indistinguishable from a lookup that ran and found the
+    //code unmoved, and those two are opposites.
+    await assert.rejects(
+        () => aQueue({ judge: { all: () => [], get: () => null, update: () => {}, refOf: (n) => 'J' + n } }),
+        /tipsFor/,
+        'the queue built happily without any way to record what a judgement was read against');
 });
 
 test('and the clock is given the tick, rather than being left unarmed', async () => {
@@ -336,7 +367,8 @@ test('and an adoption that throws does not stop this host dispatching for ever',
     await aQueue({
         judge: {
             all: () => { throw new Error('the judging store is gone'); },
-            get: () => null, update: () => {}, refOf: (n) => 'J' + n
+            get: () => null, update: () => {}, refOf: (n) => 'J' + n,
+            tipsFor: async () => ({})
         }
     });
 

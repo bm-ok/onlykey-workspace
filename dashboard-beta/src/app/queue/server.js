@@ -509,6 +509,23 @@ async function plugin(imports, register) {
         ours: imports.ours,
         guests: imports.guests,
         judge: imports.judge,
+
+        //WHAT A JUDGEMENT WAS READ AGAINST, so the one this queue files can say
+        //later whether it still describes the code.
+        //
+        //THIS LINE IS THE WHOLE OF THE BUG IT FIXES. ../judge has always had the
+        //function and ./onejudgement has always written what it returns — but
+        //nothing joined them, and both ends defaulted to a stub answering null.
+        //So every judgement this host ever made recorded no tips, `staleAgainst`
+        //read every one of them as current for ever, and `prCutMake`'s gate on
+        //"a judgement that still describes what is there" could not fire once.
+        //Five judgements, none stale, including two on a branch that had been
+        //pushed to twice since.
+        //
+        //FROM THE JUDGE PLUGIN, NOT REBUILT HERE off `refs`. It is the same rule
+        //`judgementVerdict` records with, and two implementations of "is this
+        //reading still current" is how the two answers start disagreeing.
+        tipsFor: imports.judge.tipsFor,
         refs: imports.refs,
         channel: imports.channel,
         workspace: imports.workspace,

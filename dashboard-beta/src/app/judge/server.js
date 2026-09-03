@@ -1195,7 +1195,20 @@ async function plugin(imports, register) {
             subjectFrom: store.subjectFrom,
             refOf: store.refOf,
             STATES: store.STATES,
-            VERDICTS: store.VERDICTS
+            VERDICTS: store.VERDICTS,
+
+            //WHAT A SUBJECT IS AT NOW, HANDED OUT BECAUSE THE QUEUE RECORDS IT.
+            //
+            //A judgement stores the tips it was read against so it can say
+            //later whether it still describes the code, and the queue is what
+            //files a finished judgement — so the queue needs this, and until
+            //now it had no way to get it and silently recorded nothing. See
+            //../queue/dispatching.
+            //
+            //THE SAME FUNCTION `judgementVerdict` USES, not a second one that
+            //agrees today. Staleness is this plugin's rule, and a rule with two
+            //implementations is a rule that has already started to drift.
+            tipsFor: tipsFor
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });
