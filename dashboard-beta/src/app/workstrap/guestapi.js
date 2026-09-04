@@ -32,12 +32,36 @@ module.exports = function guestapi(deps) {
 
     var read = d.read;      //() -> { text, mine, at }
     var say = d.say;        //(who, name, 'guest') -> a logger
+    var gave = d.gave;      //(machine, text) -> remember what this machine was handed
 
     async function notes(at) {
         var name = at.vm.name;
 
         try {
             var got = await read();
+
+            //---- WHAT THIS MACHINE WAS GIVEN, WRITTEN DOWN AS IT GOES ------
+            //
+            //SO A STALE COPY IS NEVER MISTAKEN FOR AN EDIT. When the notes are
+            //read back at shutdown there are three values, not two: what this
+            //machine was GIVEN, what the host has NOW, and what is on the
+            //machine. Comparing the last two is the obvious thing and it is
+            //wrong — a seat that booted this morning and touched nothing would
+            //look like it had reverted every change approved since.
+            //
+            //RECORDED HERE BECAUSE THIS IS THE ONLY PLACE THAT KNOWS. The door
+            //hands over an exact string to an exact machine; anywhere else has
+            //to guess which version that was, and guessing is the whole problem.
+            //
+            //NOT WORTH FAILING THE FETCH OVER. A machine that got its notes but
+            //whose base was not recorded is one this app cannot later tell an
+            //edit from a stale copy on — and `changed` treats a missing base as
+            //"cannot tell", which drafts nothing and says so.
+            try { if (gave) gave(name, got.text); }
+            catch (e) {
+                say('workstrap', name, 'guest').warn('could not record what ' + name
+                    + ' was given, so a later change on it cannot be told from a stale copy: ' + e.message);
+            }
 
             at.res.writeHead(200, {
                 'content-type': 'text/markdown; charset=utf-8',

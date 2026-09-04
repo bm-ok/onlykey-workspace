@@ -3,6 +3,7 @@ var path = require('path');
 
 var makeGuestApi = require('./guestapi');
 var doc = require('./doc');
+var changed = require('./changed');
 
 //---------------------------------------------------------------------------
 //WHAT A MACHINE IS TOLD ABOUT THE WORKSPACE ITSELF.
@@ -38,7 +39,12 @@ var doc = require('./doc');
 //ONE FILE, ONE ROUTE, AND NOTHING ELSE REACHABLE. See ./guestapi.js.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'state', 'guestApi'];
+//`ours` TO REMEMBER WHAT EACH MACHINE WAS GIVEN, `channel` TO ASK FOR IT BACK,
+//`versions` FOR THE HISTORY. The first is the one that makes any of this safe:
+//without a record of which copy went to which machine, a seat that booted this
+//morning and touched nothing is indistinguishable from one somebody wrote three
+//paragraphs into. See ./changed.js.
+plugin.consumes = ['app', 'log', 'state', 'guestApi', 'ours', 'channel', 'versions'];
 
 //HANDED OUT SO ../bootstrap CAN SHIP IT. A bundle is what a fresh workspace
 //starts from, and the starter belongs in one -- but the starter lives beside
@@ -132,6 +138,113 @@ async function plugin(imports, register) {
     }));
     }
 
+    //---- READING THE NOTES BACK OFF A MACHINE -----------------------------
+    //
+    //THE HOST ASKS; THE MACHINE DOES NOT PUSH. No shutdown unit on the guest, no
+    //new door, no code on the machine at all — this host reads the file over the
+    //channel it already holds, before it stops the machine. `putAway` in
+    //../queue/putting.js already does exactly this shape of thing one line
+    //earlier, taking the credential back "while the machine can still be spoken
+    //to", which is the same moment for the same reason.
+    //
+    //THE ONE CASE IT MISSES is somebody powering a machine off from inside it.
+    //That is a person's own seat and they can stop it from the window; a
+    //shutdown unit racing the network on every machine costs more than that.
+    async function collect(name, why) {
+        var to = imports.log.on('workstrap', name);
+        var vm = imports.ours.get(name);
+
+        //BASE64 SO THE ROUND TRIP CANNOT MANGLE IT. The channel hands back a
+        //command's output as text, and a document full of newlines, box-drawing
+        //and non-ASCII is exactly the thing that arrives subtly different — and
+        //"subtly different" here means a change proposed that nobody made.
+        var out = null;
+        try {
+            out = await imports.channel.run(name,
+                'base64 -w0 "$HOME/workspace/CLAUDE.md" 2>/dev/null || true',
+                { what: 'reading the workspace notes back off ' + name, timeout: 60000, quiet: true });
+        } catch (e) {
+            //NOT FATAL, EVER. This runs on the way to stopping a machine, and a
+            //machine that would not shut down because a document could not be
+            //read is a worse fault than the one being fixed.
+            to.warn('could not read the workspace notes off ' + name + ': ' + e.message);
+            return { machine: name, is: 'unreachable', why: e.message };
+        }
+
+        var lines = String((out && out.output) || '').split('\n')
+            .map(function (l) { return l.trim(); })
+            .filter(Boolean);
+        var text = '';
+        try { text = Buffer.from(lines[lines.length - 1] || '', 'base64').toString('utf8'); }
+        catch (e) { text = ''; }
+
+        var here = await notes.read();
+        var said = changed.changedOf({
+            base: (vm && vm.notesGiven) || null,
+            host: changed.hashOf(here.text),
+            //NULL RATHER THAN THE HASH OF AN EMPTY STRING: a machine that never
+            //received the notes reads identically to one that deleted them, and
+            //an absence is not a deletion. See ./changed.js.
+            guest: text.trim() ? changed.hashOf(text) : null
+        });
+
+        if (!changed.worthKeeping(said.is)) {
+            to.info(name + ': ' + said.why);
+            return { machine: name, is: said.is, why: said.why };
+        }
+
+        var box = await imports.state.here.doc('workstrap-waiting');
+        var all = box.read({}) || {};
+
+        //ONE PER MACHINE, REPLACING. A second reading from the same machine is
+        //a later state of the same document, not a queue — two proposals from
+        //one seat is a person choosing which of them is current, which is the
+        //question this is supposed to be answering for them.
+        all[name] = {
+            machine: name, at: new Date().toISOString(), why: why || null,
+            is: said.is, note: said.why,
+            text: text,
+            hash: changed.hashOf(text),
+            //WHAT IT WAS WRITTEN ON TOP OF, kept so the fork can still be shown
+            //against the right thing later — the host may move again before
+            //anybody reads this.
+            base: (vm && vm.notesGiven) || null,
+            hostWas: changed.hashOf(here.text)
+        };
+        box.write(all);
+
+        to[said.is === 'forked' ? 'warn' : 'good'](name + ' changed the workspace notes — ' + said.why);
+        return { machine: name, is: said.is, why: said.why, kept: true };
+    }
+
+    if (actions) {
+        undo.push(actions.define('workstrapCollect', {
+            about: "Read the workspace notes back off a machine and keep what it changed. Run before stopping one",
+            takes: ['name', 'why'],
+            run: async function (a) {
+                var args = a || {};
+                if (!args.name) throw new Error('Say which machine: workstrapCollect --name <machine>.');
+                return await collect(String(args.name), args.why || null);
+            }
+        }));
+
+        undo.push(actions.define('workstrapWaiting', {
+            about: 'Notes a machine changed, waiting to be read and approved',
+            run: async function () {
+                var box = await imports.state.here.doc('workstrap-waiting');
+                var all = box.read({}) || {};
+                var rows = Object.keys(all).map(function (k) { return all[k]; });
+                rows.sort(function (p, q) { return String(q.at || '').localeCompare(String(p.at || '')); });
+                return {
+                    waiting: rows,
+                    note: rows.length
+                        ? rows.length + ' machine(s) changed the notes. Nothing is applied until somebody reads it.'
+                        : 'No machine has changed the workspace notes.'
+                };
+            }
+        }));
+    }
+
     //---- THE DOOR A MACHINE FETCHES IT THROUGH ----------------------------
     //
     //REGISTERED WITH ../vms/https, which owns the certificate and the port and
@@ -139,7 +252,16 @@ async function plugin(imports, register) {
     //./guestapi.js runs. What is this plugin's is the one verb.
     undo.push(imports.guestApi.api(makeGuestApi({
         read: notes.read,
-        say: imports.log.on
+        say: imports.log.on,
+
+        //WHAT WENT TO WHICH MACHINE, KEPT AS A HASH. The text itself is already
+        //on the host — this only has to answer "is what came back the same
+        //string we handed over", and a hash answers that in sixty-four
+        //characters instead of three thousand, in a file that also holds every
+        //machine's token.
+        gave: function (name, text) {
+            imports.ours.update(name, { notesGiven: changed.hashOf(text) });
+        }
     })));
 
     await register(null, {

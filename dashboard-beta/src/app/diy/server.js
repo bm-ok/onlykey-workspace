@@ -459,6 +459,33 @@ async function plugin(imports, register) {
                 var to = log.on('diy', it.id);
                 var did = [];
 
+                //---- WHAT IT LEARNED ABOUT THE WORKSPACE, BEFORE IT STOPS ----
+                //
+                //THE SAME REASON THE KEY GOES FIRST, one line down: this is the
+                //last moment the machine can be spoken to. A seat where somebody
+                //spent an afternoon finding out how to build the thing is
+                //exactly where the workspace notes get better, and after the
+                //power button that knowledge is on a disk nobody reads.
+                //
+                //IT KEEPS NOTHING UNLESS THE MACHINE ACTUALLY CHANGED THEM, and
+                //"changed" is measured against what this machine was GIVEN
+                //rather than against what the host has now — otherwise a seat
+                //that booted this morning and touched nothing would propose
+                //reverting everything approved since. See ../workstrap/changed.
+                //
+                //NEVER FATAL. Putting a machine to sleep must not fail because a
+                //document could not be read: the sleep is the act, and this is a
+                //service to whoever opens the workspace next.
+                try {
+                    var notes = await actions.call('workstrapCollect',
+                        { name: it.machine, why: 'put to sleep' });
+                    if (notes && notes.kept) {
+                        did.push('kept the workspace notes it changed, for you to read');
+                    }
+                } catch (e) {
+                    to.warn('could not read the workspace notes off ' + it.machine + ': ' + e.message);
+                }
+
                 //THE KEY FIRST, WHILE THE MACHINE CAN STILL BE SPOKEN TO. Same
                 //order and the same reason as ../queue/putting.js: taking it
                 //back means it stops existing on that disk, not that the
