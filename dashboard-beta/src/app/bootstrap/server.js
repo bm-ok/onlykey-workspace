@@ -137,10 +137,13 @@ async function plugin(imports, register) {
         //to the starter on the other side anyway, so failing an export over this
         //would be refusing to ship the contracts because a README was missing.
         var notes = null;
+        var starter = null;
         try { notes = (await imports.workstrap.read()).text; }
         catch (e) { notes = null; }
+        try { starter = imports.workstrap.starter(); }
+        catch (e) { starter = null; }
 
-        return { sets: sets, code: code, scripts: scripts, notes: notes };
+        return { sets: sets, code: code, scripts: scripts, notes: notes, starter: starter };
     }
 
     //---- WHERE THE ONE THAT SHIPPED WITH THIS APP IS -----------------------
@@ -520,7 +523,21 @@ async function plugin(imports, register) {
         //not worth a second transport.
         //THE FILES OF A BUNDLE, once, for the two actions that write one. The
         //manifest is built alongside and goes last, after everything it names.
-        async function bundleFiles() {
+        //---- `generic` IS THE ONE THING THE TWO CALLERS DISAGREE ABOUT ------
+        //
+        //`bootstrapFile` is somebody keeping their own set, so it carries what
+        //THIS workspace says about itself. `bootstrapShip` rewrites the tar the
+        //repository commits and every fresh workspace starts from, so it must
+        //carry the STARTER — a workspace opening for the first time with another
+        //project's build and test instructions in it is worse than one with
+        //none, because it reads as written FOR them.
+        //
+        //THE SAME MISTAKE ALREADY SHIPPED ONCE, in a delivery contract and a
+        //supervisor skill that went into the tar naming the repositories they
+        //happened to be found on. This file is the most likely of the lot to
+        //repeat it: notes ARE project-specific, and that is their whole job.
+        async function bundleFiles(opts) {
+            var generic = !!(opts && opts.generic);
             var here = await whatThereIs();
 
             var files = [];
@@ -546,8 +563,9 @@ async function plugin(imports, register) {
             //place and the same name a workspace keeps them under, because a
             //bundle folder IS a `.okc` folder and nothing else here is mapped on
             //the way in or out either.
-            if (here.notes && String(here.notes).trim()) {
-                files.push({ name: imports.workstrap.NAME, data: String(here.notes) });
+            var carry = generic ? here.starter : here.notes;
+            if (carry && String(carry).trim()) {
+                files.push({ name: imports.workstrap.NAME, data: String(carry) });
                 manifest.workstrap = imports.workstrap.NAME;
             }
 
@@ -647,7 +665,10 @@ async function plugin(imports, register) {
                     }
                 }
 
-                var files = await bundleFiles();
+                //GENERIC, BECAUSE THIS ONE GETS COMMITTED. See `bundleFiles`:
+                //the workspace notes it carries are the STARTER, not what this
+                //workspace happens to say about itself.
+                var files = await bundleFiles({ generic: true });
                 var moved = bundle.changes(filesInside(to) || [], files);
                 var bytes = imports.archive.make(files);
 

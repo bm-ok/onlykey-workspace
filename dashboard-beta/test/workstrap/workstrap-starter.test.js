@@ -69,6 +69,43 @@ test('every machine is given it at boot, and a failed fetch never stops the boot
         'a failed fetch does not say it is carrying on, so it probably is not');
 });
 
+test('the tar the repository ships carries the starter, not a workspace\'s own notes', () => {
+    //THE DRIFT THIS EXISTS TO CATCH, AND IT HAS ALREADY HAPPENED ONCE: a
+    //delivery contract and a supervisor skill went into this tar naming the
+    //repositories they happened to be found on, so a fresh workspace would have
+    //opened carrying somebody else's project.
+    //
+    //NOTES ARE THE MOST LIKELY TO REPEAT IT, because being project-specific is
+    //their whole job. `bootstrapShip` rewrites the committed tar and asks for
+    //the starter deliberately; `bootstrapFile`, which is somebody keeping their
+    //own set, carries what their workspace actually says. One line apart, and
+    //only one of them is committed.
+    const tar = fs.readFileSync(path.join(__dirname, '..', '..', 'okc-bootstrap.tar'));
+    const starter = fs.readFileSync(AT, 'utf8');
+
+    //READ OUT OF THE TAR BY HAND rather than with a library: it is a plain
+    //ustar archive of small text files, and pulling one entry out is a header
+    //walk. A test that needed a dependency to check the shipped artifact is one
+    //that gets skipped.
+    let at = 0;
+    let found = null;
+    while (at + 512 <= tar.length) {
+        const name = tar.slice(at, at + 100).toString('utf8').replace(/\0.*$/, '');
+        const size = parseInt(tar.slice(at + 124, at + 136).toString('utf8').replace(/\0.*$/, '').trim() || '0', 8);
+        if (!name) break;
+        if (name === 'workspace_claude.md') {
+            found = tar.slice(at + 512, at + 512 + size).toString('utf8');
+            break;
+        }
+        at += 512 + Math.ceil(size / 512) * 512;
+    }
+
+    assert.ok(found, 'the shipped tar carries no workspace notes at all');
+    assert.equal(found, starter,
+        'the shipped tar carries notes that are not the starter — most likely one workspace\'s own, '
+            + 'which every new workspace would then open with');
+});
+
 test('a supervisor may not read it, and the three that open the code may', () => {
     //THE SUPERVISOR CANNOT SEE THE CODE. That is the design and its own skill
     //leads with it — so it has no workspace to finalise, no tests to run and
