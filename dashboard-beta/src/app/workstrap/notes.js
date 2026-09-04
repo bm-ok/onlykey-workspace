@@ -23,17 +23,134 @@ var { useState, useEffect } = React;
 module.exports = function notes(theme, okc) {
     var {
         Pane, Panel, Stack, TitleRow, Grow, Badge, Button, Views, Skeleton,
-        Note, Mono, Kv, KvRow, Notice, Editor, Markdown, ask
+        Note, Mono, Kv, KvRow, Notice, Editor, Markdown, Diff, Card, CardTitle,
+        CardSub, Code, ask
     } = theme;
+
+    //THE SAME SHORTENING EVERY OTHER PANE USES, defined here because it is two
+    //lines and a shared one would be a service nobody asked for.
+    var day = function (s) { return s ? String(s).replace('T', ' ').slice(0, 16) : null; };
 
     function sized(n) {
         if (n == null) return null;
         return n < 2048 ? n + ' characters' : (Math.round(n / 102.4) / 10) + 'k characters';
     }
 
+    //---- WHAT A MACHINE WROTE, WAITING TO BE READ --------------------------
+    //
+    //ABOVE THE DOCUMENT, WHICH IS THE ONE PLACE ON THIS PANE THAT ASKS FOR
+    //ANYTHING. Everything below it is a thing to read; this is a thing to
+    //decide, and a decision under a screenful of prose is one nobody makes.
+    //
+    //A DIFFERENCE AND NOT THE WHOLE FILE. What matters is what CHANGED — a
+    //machine that added two lines about a virtualenv sends back three thousand
+    //characters, and reading them all to find the two is how somebody approves
+    //without looking.
+    function Waiting({ rows, now, again }) {
+        if (!rows || !rows.length) return null;
+
+        function take(x) {
+            ask({
+                title: 'Take the notes ' + x.machine + ' wrote?',
+                plain: [
+                    'They become the workspace notes: every worker, judge and DIY seat that opens this workspace from now on is given them.',
+                    x.is === 'forked'
+                        ? 'This was written on top of an older version — the notes here changed while that machine was running. Taking it keeps what the machine wrote and drops what changed here in the meantime.'
+                        : 'It was written on top of exactly what is here now, so nothing else is lost.',
+                    'What is here now is kept as a version, so it can be read again afterwards.'
+                ],
+                cost: 'What is here now is replaced.',
+                confirm: 'Take it',
+                danger: x.is === 'forked',
+                onYes: function () {
+                    return okc.call('workstrapApprove', { machine: x.machine }).then(function () { again(); });
+                }
+            });
+        }
+
+        function drop(x) {
+            ask({
+                title: 'Throw away what ' + x.machine + ' wrote?',
+                plain: [
+                    'It is not kept anywhere else. That machine has been stopped or rolled back, so this is the only copy of what it wrote.'
+                ],
+                cost: 'Gone, and not recoverable.',
+                confirm: 'Throw it away',
+                danger: true,
+                onYes: function () {
+                    return okc.call('workstrapDiscard', { machine: x.machine }).then(function () { again(); });
+                }
+            });
+        }
+
+        return (
+            <Panel>
+                <TitleRow>
+                    <span>What a machine wrote</span>
+                    <Grow />
+                </TitleRow>
+
+                {rows.map(function (x) {
+                    return (
+                        <Card key={x.machine}>
+                            <CardTitle>
+                                <Mono>{x.machine}</Mono>
+                                <Badge kind={x.is === 'forked' ? 'warn' : 'ok'}>
+                                    {x.is === 'forked' ? 'written on an older version' : 'a change'}
+                                </Badge>
+                            </CardTitle>
+                            <CardSub>
+                                {day(x.at)}{x.why ? ' · ' + x.why : ''}
+                                {x.added != null ? ' · ' + x.added + ' added, ' + x.gone + ' removed' : ''}
+                            </CardSub>
+
+                            <Note>{x.note}</Note>
+
+                            {/* WHAT CHANGED, BEFORE THE SIDE-BY-SIDE. A change
+                                appended to the end of a long document leaves both
+                                panes of a diff showing identical text, and the
+                                only way to see it is to scroll — which is how
+                                somebody approves without looking. This is the
+                                same arithmetic the version history is written
+                                with, so it counts the lines the same way. */}
+                            {x.asText ? <Code text={x.asText} mode="diff" /> : null}
+
+                            {/* STALE MEANS THE DIFFERENCE BELOW IS AGAINST THE
+                                WRONG THING, and saying so is the whole of what
+                                this flag is for: `workstrapApprove` refuses in
+                                that case, and a button that refuses without
+                                warning is a button that looks broken. */}
+                            {x.stale ? (
+                                <Notice kind="warn">
+                                    The notes here have changed since this was read, so this difference is
+                                    against an older version. Taking it is refused until the pane is read
+                                    again — nothing is lost.
+                                </Notice>
+                            ) : null}
+
+                            <Diff left={now} right={x.text} mode="markdown" height={320} />
+
+                            <div className="row">
+                                <Button kind="ok" disabled={x.stale}
+                                    title={x.stale ? 'read it again first' : 'make it the workspace notes'}
+                                    onClick={function () { take(x); }}>Take it</Button>
+                                <Button onClick={function () { drop(x); }}>Throw it away</Button>
+                            </div>
+                        </Card>
+                    );
+                })}
+            </Panel>
+        );
+    }
+
     return function Notes() {
         var got = okc.use('workstrapRead', {}, 0);
         var said = got.state;
+
+        //ASKED ON A CADENCE, unlike the document beside it: a machine going to
+        //sleep is something that happens while this pane is open, and a proposal
+        //that only appears when somebody switches tab is one that waits a day.
+        var queue = okc.use('workstrapWaiting', {}, 5000);
 
         var [look, setLook] = useState('Read');
         var [draft, setDraft] = useState(null);
@@ -117,6 +234,11 @@ module.exports = function notes(theme, okc) {
                     </TitleRow>
 
                     {problem ? <Notice kind="bad">{problem}</Notice> : null}
+
+                    <Waiting
+                        rows={queue.state && queue.state.waiting}
+                        now={(queue.state && queue.state.now) || served}
+                        again={function () { queue.again(); got.again(); }} />
 
                     {!said.mine ? (
                         <Note>

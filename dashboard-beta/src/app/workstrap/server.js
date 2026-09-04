@@ -75,6 +75,18 @@ async function plugin(imports, register) {
         starter: starter
     });
 
+    //ONE ID, BECAUSE A WORKSPACE HAS ONE SET OF NOTES. ../core/versions files
+    //by (kind, id) and every other kind has many; this has exactly one, so the
+    //id is a constant rather than something a caller could get wrong.
+    var KEPT = 'notes';
+
+    function keepVersion(text, by, why) {
+        //NOT FATAL. Saving is the act; keeping a copy is a service to whoever
+        //reads later, and losing that must not stop somebody writing the notes.
+        try { imports.versions.keep('workstrap', KEPT, text, { by: by, why: why }); }
+        catch (e) { imports.log.on('workstrap').warn('could not keep a version: ' + e.message); }
+    }
+
     //---- READING IT -------------------------------------------------------
     //
     //GUARDED, BECAUSE THE SUITE BUILDS THIS AGAINST A BARE HOST. There is no
@@ -132,6 +144,17 @@ async function plugin(imports, register) {
             }
 
             var at = await notes.write(text);
+
+            //EVERY SAVE IS KEPT, and this is the only history the document has.
+            //A machine's proposal is read against what is live, and "what was it
+            //before somebody changed it" is otherwise unanswerable — the file is
+            //rewritten in place.
+            //
+            //../core/versions RATHER THAN A SECOND HISTORY. It already keeps
+            //jobs, prompts, contracts and skills with the same fields, the same
+            //diff arithmetic and the same drawer.
+            keepVersion(text, 'the window', args.why || null);
+
             imports.log.on('workstrap').good('the workspace notes were saved — ' + text.length + ' characters');
             return { saved: true, at: at, bytes: text.length };
         }
@@ -235,11 +258,141 @@ async function plugin(imports, register) {
                 var all = box.read({}) || {};
                 var rows = Object.keys(all).map(function (k) { return all[k]; });
                 rows.sort(function (p, q) { return String(q.at || '').localeCompare(String(p.at || '')); });
+                //WHAT IT WOULD BE READ AGAINST, ON THE ANSWER. The pane draws a
+                //difference and a difference is only meaningful against
+                //something — sending the live text with the list means the pane
+                //never has to ask twice and never draws one against a copy that
+                //moved between the two calls.
+                var here = await notes.read();
                 return {
-                    waiting: rows,
+                    waiting: rows.map(function (r) {
+                        //---- WHAT CHANGED, IN WORDS, BESIDE THE DIFFERENCE ---
+                        //
+                        //THE SIDE-BY-SIDE IS NOT ENOUGH ON ITS OWN and the first
+                        //real proposal proved it: five lines appended to a three
+                        //thousand character document put the change below the
+                        //fold, so both panes showed identical text and the only
+                        //way to see what was being approved was to scroll. That
+                        //is exactly the shape of "approved without looking".
+                        //
+                        //../core/versions' OWN ARITHMETIC, not a second kind of
+                        //difference. It is what the version history is written
+                        //with, so what somebody reads here and what they read
+                        //afterwards are the same lines counted the same way.
+                        var d = null;
+                        try { d = imports.versions.diff(here.text, r.text, { around: 3 }); }
+                        catch (e) { d = null; }
+
+                        return Object.assign({}, r, {
+                            added: d ? d.added : null,
+                            gone: d ? d.gone : null,
+                            summary: d ? d.note : null,
+                            asText: d ? imports.versions.asText(d, 120) : null,
+                            //WHETHER WHAT IT WAS READ AGAINST IS STILL WHAT IS
+                            //HERE. A proposal collected an hour ago may have been
+                            //overtaken by a save at the window since, and the
+                            //difference on screen would then be against the wrong
+                            //thing without saying so.
+                            stale: r.hostWas !== changed.hashOf(here.text)
+                        });
+                    }),
+                    now: here.text,
                     note: rows.length
                         ? rows.length + ' machine(s) changed the notes. Nothing is applied until somebody reads it.'
                         : 'No machine has changed the workspace notes.'
+                };
+            }
+        }));
+
+        //---- TAKING ONE, OR THROWING IT AWAY ------------------------------
+        //
+        //A PERSON AT THE WINDOW, THE SAME AS WRITING THEM BY HAND. This is the
+        //whole point of collecting rather than applying: a machine's edit
+        //becomes what every future machine is told, and the step where somebody
+        //reads it is the feature rather than an obstacle to it.
+        function onlyAPerson(a) {
+            if (a._overTheWire || a._driven || a._fromMachine) {
+                throw new Error('Taking a machine\'s notes is done in the window, by somebody who has read '
+                    + 'them. They become what every machine that opens this workspace is given, and a model '
+                    + 'approving its own writing is not an approval.');
+            }
+        }
+
+        async function waitingFor(machine) {
+            var box = await imports.state.here.doc('workstrap-waiting');
+            var all = box.read({}) || {};
+            var one = all[machine];
+            if (!one) {
+                throw new Error('"' + machine + '" has no notes waiting. `workstrapWaiting` says what has.');
+            }
+            return { box: box, all: all, one: one };
+        }
+
+        undo.push(actions.define('workstrapApprove', {
+            about: "Take what a machine wrote and make it the workspace's notes. A person at the window only",
+            takes: ['machine'],
+            run: async function (a) {
+                var args = a || {};
+                onlyAPerson(args);
+                if (!args.machine) throw new Error('Say which machine: workstrapApprove --machine <name>.');
+
+                var got = await waitingFor(String(args.machine));
+                var here = await notes.read();
+
+                //RE-CHECKED ON THE WAY OUT, AND THIS IS THE FORWARD RULE'S LAST
+                //GATE. The difference somebody read was against the notes as
+                //they stood when this was collected; if they have moved since —
+                //a save at the window, another machine taken — then approving
+                //would drop that change without anybody seeing it go.
+                //
+                //REFUSED RATHER THAN MERGED. There is no correct automatic
+                //answer here, and the proposal is not lost: it stays waiting,
+                //and the next read of the pane shows it against what is actually
+                //there now.
+                if (got.one.hostWas !== changed.hashOf(here.text)) {
+                    throw new Error('The workspace notes have changed since ' + args.machine + '\'s copy was '
+                        + 'read, so what you were shown is a difference against an older version. Nothing was '
+                        + 'applied and nothing was lost — look at it again and it will be drawn against what '
+                        + 'is there now.');
+                }
+
+                await notes.write(got.one.text);
+                keepVersion(got.one.text, args.machine, got.one.why || null);
+
+                delete got.all[String(args.machine)];
+                got.box.write(got.all);
+
+                imports.log.on('workstrap', String(args.machine))
+                    .good('took the workspace notes ' + args.machine + ' wrote — every machine gets them now');
+
+                return {
+                    took: true, machine: args.machine, bytes: got.one.text.length,
+                    note: 'Every machine that opens this workspace from now on is given these.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('workstrapDiscard', {
+            about: 'Throw away what a machine wrote, without taking it. A person at the window only',
+            takes: ['machine'],
+            run: async function (a) {
+                var args = a || {};
+                onlyAPerson(args);
+                if (!args.machine) throw new Error('Say which machine: workstrapDiscard --machine <name>.');
+
+                var got = await waitingFor(String(args.machine));
+                delete got.all[String(args.machine)];
+                got.box.write(got.all);
+
+                imports.log.on('workstrap', String(args.machine))
+                    .info('threw away the workspace notes ' + args.machine + ' wrote');
+
+                //SAID PLAINLY, because this is the one act here that loses
+                //something. The machine is gone or rolled back by now, so the
+                //only copy of that writing was the one just deleted.
+                return {
+                    discarded: true, machine: args.machine,
+                    note: 'Gone. That machine has been rolled back or stopped, so this was the only copy.'
                 };
             }
         }));
