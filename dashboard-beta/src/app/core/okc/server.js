@@ -216,10 +216,28 @@ async function plugin(imports, register) {
         //off with it. Without this each reload would leave another interval
         //running and another set of handlers listening, which is what the whole
         //onDestroy contract is for.
+        //---- AND THE LINE THAT WAS HERE IS WHY ANY OF THIS MATTERED --------
+        //
+        //`unwatching()` STOOD BETWEEN THESE TWO AND WAS NOT DEFINED. It was the
+        //undo handle of a `watching` action this file used to register — the
+        //relay cut removed the action and left the call, and nothing anywhere
+        //registers `watching` now.
+        //
+        //A FREE IDENTIFIER IS VALID SYNTAX, so it compiled, bundled and passed
+        //every check. It only runs on a RELOAD, and it threw before reaching the
+        //line below it — so every single save leaked another `connection`
+        //handler, each one attaching its own `okc:call` listener to the same
+        //socket. That is why one press in the window ran an action four times: a
+        //rebuild refusing itself with "already being deleted", and a GitHub
+        //comment posted four times over.
+        //
+        //THE GUARD ABOVE MAKES THE LEAK SURVIVABLE and this makes it stop
+        //happening. Both are worth having: this file is not the only one that
+        //hooks `connection`, and the next broken `onDestroy` will not announce
+        //itself either.
         onDestroy: function () {
             if (beat) { clearInterval(beat); beat = null; }
             watchers.clear();
-            unwatching();
             io.off('connection', onConnection);
         }
     });
